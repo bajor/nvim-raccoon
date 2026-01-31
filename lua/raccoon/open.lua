@@ -312,6 +312,15 @@ local function sync_pr(silent)
         return
       end
 
+      -- Also update base branch to keep it current
+      local base_branch = pr.base.ref
+      git.update_base_branch(clone_path, base_branch, function(base_success, base_err)
+        if not base_success then
+          -- Non-fatal, just warn
+          vim.notify("Warning: Could not update base branch: " .. (base_err or ""), vim.log.levels.WARN)
+        end
+      end)
+
       -- Update PR data
       state.set_pr(new_pr)
       last_known_sha = new_sha
@@ -521,8 +530,17 @@ function M.open_pr(url)
         return
       end
 
-      -- Check sync status with base branch (behind count + conflicts)
       local base_branch = pr.base.ref
+
+      -- Update local base branch to match origin (keeps it current for future use)
+      git.update_base_branch(clone_path, base_branch, function(base_success, base_err)
+        if not base_success then
+          -- Non-fatal, just warn
+          vim.notify("Warning: Could not update base branch: " .. (base_err or ""), vim.log.levels.WARN)
+        end
+      end)
+
+      -- Check sync status with base branch (behind count + conflicts)
       git.get_sync_status(clone_path, base_branch, function(sync_status)
         if sync_status.checked then
           commits_behind = sync_status.behind
