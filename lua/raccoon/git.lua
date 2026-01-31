@@ -349,6 +349,40 @@ function M.check_merge_conflicts(path, base_branch, callback)
   })
 end
 
+--- Update the local base branch to match origin (without checking it out)
+--- This ensures the local base branch is up to date for future branch creation
+---@param path string Repository path
+---@param base_branch string Base branch name (e.g., "main")
+---@param callback fun(success: boolean, err: string|nil)
+function M.update_base_branch(path, base_branch, callback)
+  -- Use fetch with refspec to update local branch without checkout
+  -- git fetch origin main:main
+  run_git({ "fetch", "origin", base_branch .. ":" .. base_branch }, {
+    cwd = path,
+    on_exit = function(code, _, stderr)
+      if code == 0 then
+        callback(true, nil)
+      else
+        -- If fetch with refspec fails (e.g., branch doesn't exist locally), force update it
+        run_git({ "branch", "-f", base_branch, "origin/" .. base_branch }, {
+          cwd = path,
+          on_exit = function(branch_code, _, branch_stderr)
+            if branch_code == 0 then
+              callback(true, nil)
+            else
+              local err_msg = table.concat(branch_stderr, "\n")
+              if err_msg == "" then
+                err_msg = table.concat(stderr, "\n")
+              end
+              callback(false, err_msg)
+            end
+          end,
+        })
+      end
+    end,
+  })
+end
+
 --- Get full sync status (behind count + conflict check)
 ---@param path string Repository path
 ---@param base_branch string Base branch

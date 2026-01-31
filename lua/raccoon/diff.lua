@@ -228,7 +228,7 @@ function M.open_file(file)
   return buf
 end
 
---- Navigate to the next file in the PR
+--- Navigate to the next file in the PR (wraps to first file at end)
 ---@return boolean success
 function M.next_file()
   if not state.is_active() then
@@ -236,21 +236,26 @@ function M.next_file()
     return false
   end
 
-  if state.next_file() then
-    local file = state.get_current_file()
-    if file then
-      M.open_file(file)
-      local files = state.get_files()
-      vim.notify(string.format("File %d/%d: %s", state.get_current_file_index(), #files, file.filename))
-      return true
-    end
-  else
-    vim.notify("Already at last file", vim.log.levels.INFO)
+  local files = state.get_files()
+  if #files == 0 then
+    return false
+  end
+
+  if not state.next_file() then
+    -- At last file, wrap to first
+    state.goto_file(1)
+  end
+
+  local file = state.get_current_file()
+  if file then
+    M.open_file(file)
+    vim.notify(string.format("File %d/%d: %s", state.get_current_file_index(), #files, file.filename))
+    return true
   end
   return false
 end
 
---- Navigate to the previous file in the PR
+--- Navigate to the previous file in the PR (wraps to last file at beginning)
 ---@return boolean success
 function M.prev_file()
   if not state.is_active() then
@@ -258,16 +263,21 @@ function M.prev_file()
     return false
   end
 
-  if state.prev_file() then
-    local file = state.get_current_file()
-    if file then
-      M.open_file(file)
-      local files = state.get_files()
-      vim.notify(string.format("File %d/%d: %s", state.get_current_file_index(), #files, file.filename))
-      return true
-    end
-  else
-    vim.notify("Already at first file", vim.log.levels.INFO)
+  local files = state.get_files()
+  if #files == 0 then
+    return false
+  end
+
+  if not state.prev_file() then
+    -- At first file, wrap to last
+    state.goto_file(#files)
+  end
+
+  local file = state.get_current_file()
+  if file then
+    M.open_file(file)
+    vim.notify(string.format("File %d/%d: %s", state.get_current_file_index(), #files, file.filename))
+    return true
   end
   return false
 end
