@@ -80,7 +80,7 @@ function M.show_comments(buf, comments)
 
   for _, comment in ipairs(comments or {}) do
     local line = comment.line or comment.original_line or comment.position
-    if line and line > 0 and line <= line_count then
+    if line and type(line) == "number" and line > 0 and line <= line_count then
       -- Place sign with high priority
       local sign_name = "RaccoonComment"
       if comment.resolved then
@@ -138,7 +138,7 @@ function M.find_next_comment()
 
   for _, comment in ipairs(comments) do
     local line = comment.line or comment.original_line or comment.position
-    if line and line > current_line and line < next_line then
+    if line and type(line) == "number" and line > current_line and line < next_line then
       next_comment = comment
       next_line = line
     end
@@ -162,7 +162,7 @@ function M.find_prev_comment()
 
   for _, comment in ipairs(comments) do
     local line = comment.line or comment.original_line or comment.position
-    if line and line < current_line and line > prev_line then
+    if line and type(line) == "number" and line < current_line and line > prev_line then
       prev_comment = comment
       prev_line = line
     end
@@ -279,7 +279,7 @@ function M.show_comment_thread()
   local line_comments = {}
   for _, comment in ipairs(file_comments) do
     local comment_line = comment.line or comment.original_line or comment.position
-    if comment_line == current_line then
+    if comment_line and type(comment_line) == "number" and comment_line == current_line then
       table.insert(line_comments, comment)
     end
   end
@@ -866,8 +866,10 @@ function M.list_comments()
     if a.file ~= b.file then
       return a.file < b.file
     end
-    local line_a = a.comment.line or a.comment.original_line or a.comment.position or 0
-    local line_b = b.comment.line or b.comment.original_line or b.comment.position or 0
+    local line_a_val = a.comment.line or a.comment.original_line or a.comment.position
+    local line_b_val = b.comment.line or b.comment.original_line or b.comment.position
+    local line_a = type(line_a_val) == "number" and line_a_val or 0
+    local line_b = type(line_b_val) == "number" and line_b_val or 0
     return line_a < line_b
   end)
 
@@ -975,7 +977,7 @@ function M.toggle_resolved()
 
   for _, comment in ipairs(comments) do
     local line = comment.line or comment.original_line or comment.position
-    if line == current_line then
+    if line and type(line) == "number" and line == current_line then
       comment.resolved = not comment.resolved
       vim.notify(
         comment.resolved and "Comment marked resolved" or "Comment marked unresolved",
