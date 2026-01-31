@@ -209,7 +209,7 @@ function M.open_file(file)
   if not ok then
     -- Extract first line of error for cleaner display
     local short_err = tostring(err):match("^[^\n]+") or "unknown error"
-    vim.notify("Failed to open file: " .. file.filename .. " (treesitter/filetype error)", vim.log.levels.WARN)
+    vim.notify("Failed to open file: " .. file.filename .. " (" .. short_err .. ")", vim.log.levels.WARN)
     -- File may still be open despite the error, continue if buffer exists
   end
   local buf = vim.api.nvim_get_current_buf()
