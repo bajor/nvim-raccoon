@@ -80,7 +80,7 @@ function M.show_comments(buf, comments)
 
   for _, comment in ipairs(comments or {}) do
     local line = comment.line or comment.original_line or comment.position
-    if line and line > 0 and line <= line_count then
+    if line and type(line) == "number" and line > 0 and line <= line_count then
       -- Place sign with high priority
       local sign_name = "RaccoonComment"
       if comment.resolved then
@@ -138,7 +138,7 @@ function M.find_next_comment()
 
   for _, comment in ipairs(comments) do
     local line = comment.line or comment.original_line or comment.position
-    if line and line > current_line and line < next_line then
+    if line and type(line) == "number" and line > current_line and line < next_line then
       next_comment = comment
       next_line = line
     end
@@ -162,7 +162,7 @@ function M.find_prev_comment()
 
   for _, comment in ipairs(comments) do
     local line = comment.line or comment.original_line or comment.position
-    if line and line < current_line and line > prev_line then
+    if line and type(line) == "number" and line < current_line and line > prev_line then
       prev_comment = comment
       prev_line = line
     end
@@ -279,7 +279,7 @@ function M.show_comment_thread()
   local line_comments = {}
   for _, comment in ipairs(file_comments) do
     local comment_line = comment.line or comment.original_line or comment.position
-    if comment_line == current_line then
+    if comment_line and type(comment_line) == "number" and comment_line == current_line then
       table.insert(line_comments, comment)
     end
   end
@@ -350,7 +350,7 @@ function M.show_comment_thread()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = string.format(" Comments on L%d (s=save, r=resolve, q=close) ", current_line),
+    title = string.format(" Comments on L%d (s=save, r=resolve, u=unresolve, q=close) ", current_line),
     title_pos = "center",
   })
 
@@ -506,43 +506,141 @@ function M.show_comment_thread()
       return
     end
 
-    -- Toggle resolved status on all comments in this thread
-    local all_resolved = true
-    for _, comment in ipairs(line_comments) do
-      if not comment.resolved then
-        all_resolved = false
-        break
-      end
+    local thread_id = line_comments[1].thread_id
+    if not thread_id then
+      vim.notify("Cannot resolve thread: thread_id not found", vim.log.levels.ERROR)
+      return
     end
 
-    -- Toggle: if all resolved, unresolve all; otherwise resolve all
-    local new_status = not all_resolved
-    for _, comment in ipairs(line_comments) do
-      comment.resolved = new_status
+    local cfg, cfg_err = config.load()
+    if cfg_err then
+      vim.notify("Config error: " .. cfg_err, vim.log.levels.ERROR)
+      return
     end
 
-    -- Update state
-    state.set_comments(path, file_comments)
+    local owner = state.get_owner()
+    local repo = state.get_repo()
+    local token = config.get_token_for_owner(cfg, owner)
 
-    -- Refresh the current buffer's comment display
-    for _, b in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_is_valid(b) then
-        local name = vim.api.nvim_buf_get_name(b)
-        if name:find(path, 1, true) then
-          M.show_comments(b, file_comments)
-          break
+    vim.notify("Resolving thread...", vim.log.levels.INFO)
+
+    api.resolve_review_thread(owner, repo, thread_id, token, function(err)
+      vim.schedule(function()
+        if err then
+          vim.notify("Failed to resolve thread: " .. err, vim.log.levels.ERROR)
+          return
         end
-      end
+
+        -- Toggle resolved status on all comments in this thread
+        local all_resolved = true
+        for _, comment in ipairs(line_comments) do
+          if not comment.resolved then
+            all_resolved = false
+            break
+          end
+        end
+
+        local new_status = not all_resolved
+        for _, comment in ipairs(line_comments) do
+          comment.resolved = new_status
+        end
+
+        -- Update state
+        state.set_comments(path, file_comments)
+
+        -- Refresh the current buffer's comment display
+        for _, b in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_is_valid(b) then
+            local name = vim.api.nvim_buf_get_name(b)
+            if name:find(path, 1, true) then
+              M.show_comments(b, file_comments)
+              break
+            end
+          end
+        end
+
+        local msg = new_status and "Thread resolved" or "Thread unresolved"
+        vim.notify(msg, vim.log.levels.INFO)
+        vim.api.nvim_win_close(win, true)
+      end)
+    end)
+  end
+
+  -- Unresolve thread function (explicit unresolve, not toggle)
+  local function unresolve_thread()
+    if #line_comments == 0 then
+      vim.notify("No comments to unresolve", vim.log.levels.WARN)
+      return
     end
 
-    local msg = new_status and "Thread resolved" or "Thread unresolved"
-    vim.notify(msg, vim.log.levels.INFO)
-    vim.api.nvim_win_close(win, true)
+    local thread_id = line_comments[1].thread_id
+    if not thread_id then
+      vim.notify("Cannot unresolve thread: thread_id not found", vim.log.levels.ERROR)
+      return
+    end
+
+    local cfg, cfg_err = config.load()
+    if cfg_err then
+      vim.notify("Config error: " .. cfg_err, vim.log.levels.ERROR)
+      return
+    end
+
+    local owner = state.get_owner()
+    local repo = state.get_repo()
+    local token = config.get_token_for_owner(cfg, owner)
+
+    vim.notify("Unresolving thread...", vim.log.levels.INFO)
+
+    api.unresolve_review_thread(owner, repo, thread_id, token, function(err)
+      vim.schedule(function()
+        if err then
+          vim.notify("Failed to unresolve thread: " .. err, vim.log.levels.ERROR)
+          return
+        end
+
+        -- Check if any are resolved
+        local any_resolved = false
+        for _, comment in ipairs(line_comments) do
+          if comment.resolved then
+            any_resolved = true
+            break
+          end
+        end
+
+        if not any_resolved then
+          vim.notify("Thread already unresolved", vim.log.levels.INFO)
+          return
+        end
+
+        -- Unresolve all comments
+        for _, comment in ipairs(line_comments) do
+          comment.resolved = false
+        end
+
+        -- Update state
+        state.set_comments(path, file_comments)
+
+        -- Refresh the current buffer's comment display
+        for _, b in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_is_valid(b) then
+            local name = vim.api.nvim_buf_get_name(b)
+            if name:find(path, 1, true) then
+              M.show_comments(b, file_comments)
+              break
+            end
+          end
+        end
+
+        vim.notify("Thread unresolved", vim.log.levels.INFO)
+        vim.api.nvim_win_close(win, true)
+      end)
+    end)
   end
 
   -- Keymaps
   vim.keymap.set("n", "s", save_comment, { buffer = buf, noremap = true, silent = true })
   vim.keymap.set("n", "r", resolve_thread, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set("n", "u", unresolve_thread, { buffer = buf, noremap = true, silent = true })
   vim.keymap.set("n", "q", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
@@ -768,8 +866,10 @@ function M.list_comments()
     if a.file ~= b.file then
       return a.file < b.file
     end
-    local line_a = a.comment.line or a.comment.original_line or a.comment.position or 0
-    local line_b = b.comment.line or b.comment.original_line or b.comment.position or 0
+    local line_a_val = a.comment.line or a.comment.original_line or a.comment.position
+    local line_b_val = b.comment.line or b.comment.original_line or b.comment.position
+    local line_a = type(line_a_val) == "number" and line_a_val or 0
+    local line_b = type(line_b_val) == "number" and line_b_val or 0
     return line_a < line_b
   end)
 
@@ -877,7 +977,7 @@ function M.toggle_resolved()
 
   for _, comment in ipairs(comments) do
     local line = comment.line or comment.original_line or comment.position
-    if line == current_line then
+    if line and type(line) == "number" and line == current_line then
       comment.resolved = not comment.resolved
       vim.notify(
         comment.resolved and "Comment marked resolved" or "Comment marked unresolved",

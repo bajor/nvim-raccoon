@@ -54,7 +54,7 @@ local function get_file_points(file)
   local file_comments = state.get_comments(file.filename)
   for _, comment in ipairs(file_comments) do
     local line = comment.line or comment.original_line or comment.position
-    if line and line > 0 and not seen[line] then
+    if line and type(line) == "number" and line > 0 and not seen[line] then
       table.insert(points, { line = line, type = "comment" })
       seen[line] = true
     end
@@ -191,7 +191,7 @@ local function get_all_comment_points()
 
     for _, comment in ipairs(file_comments) do
       local line = comment.line or comment.original_line or comment.position
-      if line and line > 0 and not seen[line] then
+      if line and type(line) == "number" and line > 0 and not seen[line] then
         table.insert(comment_points, {
           file_index = file_idx,
           file = file,

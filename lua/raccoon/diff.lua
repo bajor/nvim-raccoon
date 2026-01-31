@@ -205,7 +205,7 @@ function M.open_file(file)
   end
 
   -- Open the file (wrapped in pcall to handle treesitter/filetype plugin errors gracefully)
-  local ok, err = pcall(vim.cmd, "edit " .. vim.fn.fnameescape(file_path))
+  local ok, err = pcall(vim.cmd, "edit! " .. vim.fn.fnameescape(file_path))
   if not ok then
     -- Extract first line of error for cleaner display
     local short_err = tostring(err):match("^[^\n]+") or "unknown error"

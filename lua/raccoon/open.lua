@@ -254,7 +254,8 @@ end
 
 --- Sync the PR with remote (fetch latest, update files/comments)
 ---@param silent boolean If true, don't show notifications unless something changed
-local function sync_pr(silent)
+---@param force boolean If true, bypass SHA cache and always re-fetch
+local function sync_pr(silent, force)
   if not state.is_active() then
     return
   end
@@ -290,9 +291,9 @@ local function sync_pr(silent)
       return
     end
 
-    -- Check if SHA changed
+    -- Check if SHA changed (skip check if force = true)
     local new_sha = new_pr.head.sha
-    if new_sha == last_known_sha then
+    if new_sha == last_known_sha and not force then
       -- No changes
       if not silent then
         vim.notify("PR is up to date", vim.log.levels.INFO)
@@ -300,9 +301,13 @@ local function sync_pr(silent)
       return
     end
 
-    -- SHA changed, do full sync
+    -- Do full sync
     if not silent then
-      notify_loading("Syncing PR (new commits detected)...")
+      if force and new_sha == last_known_sha then
+        notify_loading("Syncing PR...")
+      else
+        notify_loading("Syncing PR (new commits detected)...")
+      end
     end
 
     -- Update local repo
@@ -441,9 +446,9 @@ local function start_sync_timer()
   end))
 end
 
---- Manual sync command
+--- Manual sync command (bypasses SHA cache)
 function M.sync()
-  sync_pr(false)
+  sync_pr(false, true)
 end
 
 --- Clone or update the repository
