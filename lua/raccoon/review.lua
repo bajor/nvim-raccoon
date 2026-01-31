@@ -35,11 +35,8 @@ function M.submit_review(event, body, callback)
   local number = state.get_number()
   local token = config.get_token_for_owner(cfg, owner)
 
-  -- Get pending comments
-  local pending = comments.get_pending_comments()
-
   -- Submit review with comments
-  api.submit_review(owner, repo, number, event, body, token, function(result, err)
+  api.submit_review(owner, repo, number, event, body, token, function(_result, err)
     if err then
       callback(err)
     else
@@ -183,13 +180,8 @@ function M.prompt_review_body(event)
     local body_lines = {}
     local skip = true
     for _, line in ipairs(lines) do
-      if line == "" and skip then
-        -- Skip initial empty lines and header
-      elseif line:match("^#") and skip then
-        -- Skip header
-      elseif line:match("^Enter your review") and skip then
-        -- Skip instruction
-      else
+      local should_skip = skip and (line == "" or line:match("^#") or line:match("^Enter your review"))
+      if not should_skip then
         skip = false
         table.insert(body_lines, line)
       end
@@ -232,10 +224,9 @@ function M.quick_approve(force)
   if behind > 0 and not force then
     local pr = state.get_pr()
     local base = pr and pr.base and pr.base.ref or "base"
-    vim.notify(
-      string.format("Cannot approve: branch is %d commit(s) behind %s. Run :Raccoon sync first, or use :Raccoon approve! to force.", behind, base),
-      vim.log.levels.ERROR
-    )
+    local msg = "Cannot approve: branch is %d commit(s) behind %s. "
+      .. "Run :Raccoon sync first, or use :Raccoon approve! to force."
+    vim.notify(string.format(msg, behind, base), vim.log.levels.ERROR)
     return
   end
 

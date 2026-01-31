@@ -33,48 +33,6 @@ function M.has_merge_conflicts()
   return has_conflicts
 end
 
---- Setup the statusline highlight groups
-local function setup_statusline_highlight()
-  -- Yellow/orange for out of sync (same as comment highlight)
-  vim.api.nvim_set_hl(0, "RaccoonWarning", { fg = "#ffcc00", bg = "#4a3d00", bold = true })
-  -- Red for conflicts
-  vim.api.nvim_set_hl(0, "RaccoonConflict", { fg = "#ffffff", bg = "#8b0000", bold = true })
-  -- Green for in sync
-  vim.api.nvim_set_hl(0, "RaccoonOk", { fg = "#88cc88", bg = "#1a3d1a", bold = true })
-end
-
---- Update the statusline to show sync status
-local function update_statusline()
-  setup_statusline_highlight()
-  local pr = state.get_pr()
-  if not pr then return end
-
-  local parts = {}
-
-  -- Conflict warning (highest priority - red)
-  if has_conflicts then
-    table.insert(parts, "%#RaccoonConflict# ⛔ MERGE CONFLICTS %*")
-  end
-
-  -- Behind warning (yellow)
-  if commits_behind > 0 then
-    local plural = commits_behind == 1 and "commit" or "commits"
-    table.insert(parts, string.format("%%#RaccoonWarning# ⚠ %d %s behind %s %%*",
-      commits_behind, plural, pr.base.ref))
-  end
-
-  -- Build the statusline string
-  local status_str
-  if #parts > 0 then
-    status_str = table.concat(parts, " ")
-  elseif commits_behind == 0 and not has_conflicts then
-    status_str = "%#RaccoonOk# ✓ In sync with " .. pr.base.ref .. " %*"
-  else
-    return -- No status to show
-  end
-
-end
-
 --- Get sync status for lualine/statusline integration
 --- Usage in lualine: { require('raccoon').statusline, cond = require('raccoon').is_active }
 ---@return string
@@ -171,12 +129,12 @@ local function fetch_pr_data(owner, repo, number, token, callback)
       state.set_files(files)
 
       -- Fetch review comments (line-level)
-      api.get_pr_comments(owner, repo, number, token, function(comments, comments_err)
+      api.get_pr_comments(owner, repo, number, token, function(review_comments, comments_err)
         if comments_err then
           vim.notify("Warning: Could not fetch review comments: " .. comments_err, vim.log.levels.WARN)
         else
           -- Index comments by file path
-          for _, comment in ipairs(comments or {}) do
+          for _, comment in ipairs(review_comments or {}) do
             if comment.path then
               local file_comments = state.get_comments(comment.path)
               table.insert(file_comments, comment)
@@ -513,9 +471,6 @@ function M.open_pr(url)
 
         -- Open the first file
         open_first_file()
-
-        -- Update statusline (show warning if behind base)
-        vim.defer_fn(update_statusline, 100)
 
         notify_success(string.format(
           "PR #%d: %s (%d files) - auto-sync enabled",

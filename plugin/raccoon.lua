@@ -90,7 +90,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     api.merge_pr(owner, repo, number, {
       merge_method = merge_method,
       commit_title = pr.title,
-    }, token, function(result, err)
+    }, token, function(_result, err)
       vim.schedule(function()
         if err then
           vim.notify("Merge failed: " .. err, vim.log.levels.ERROR)

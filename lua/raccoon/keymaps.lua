@@ -85,30 +85,6 @@ local function get_all_points()
   return all_points
 end
 
---- Get current position in the all_points list
----@param all_points table[]
----@return number|nil current_index
-local function get_current_position(all_points)
-  local current_file_idx = state.get_current_file_index()
-  local current_line = vim.fn.line(".")
-
-  -- Find the closest point at or before current position
-  local best_idx = nil
-  for i, point in ipairs(all_points) do
-    if point.file_index == current_file_idx then
-      if point.line <= current_line then
-        best_idx = i
-      elseif point.line > current_line then
-        break
-      end
-    elseif point.file_index > current_file_idx then
-      break
-    end
-  end
-
-  return best_idx
-end
-
 --- Navigate to a point (opens file if needed)
 ---@param point table {file_index, file, line, type}
 local function goto_point(point)
@@ -333,7 +309,6 @@ function M.merge_picker()
     return
   end
 
-  local pr = state.get_pr()
   local number = state.get_number()
 
   -- Create picker buffer
@@ -389,8 +364,9 @@ function M.merge_picker()
     elseif cursor_line == 5 then do_merge("rebase")
     end
   end, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "q", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<Esc>", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, noremap = true, silent = true })
+  local close_win = function() vim.api.nvim_win_close(win, true) end
+  vim.keymap.set("n", "q", close_win, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set("n", "<Esc>", close_win, { buffer = buf, noremap = true, silent = true })
 end
 
 --- All PR review keymaps (simplified)

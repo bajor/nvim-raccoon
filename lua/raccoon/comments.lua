@@ -483,7 +483,7 @@ function M.show_comment_thread()
 
       vim.notify("Updating comment...", vim.log.levels.INFO)
 
-      api.update_comment(owner, repo, comment.id, body, token, function(result, err)
+      api.update_comment(owner, repo, comment.id, body, token, function(_result, err)
         vim.schedule(function()
           if err then
             vim.notify("Failed: " .. err, vim.log.levels.ERROR)
