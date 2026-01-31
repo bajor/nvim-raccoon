@@ -340,6 +340,140 @@ function M.parse_pr_url(url)
   return nil, nil, nil
 end
 
+--- Get check runs for a commit (CI status)
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param ref string Commit SHA or branch name
+---@param token string GitHub token
+---@param callback fun(check_runs: table|nil, err: string|nil)
+function M.get_check_runs(owner, repo, ref, token, callback)
+  vim.schedule(function()
+    local url = string.format("%s/repos/%s/%s/commits/%s/check-runs", M.base_url, owner, repo, ref)
+    local response, err = request({
+      url = url,
+      method = "GET",
+      token = token,
+    })
+
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    callback(response.data, nil)
+  end)
+end
+
+--- Make a GraphQL API request
+---@param query string GraphQL query
+---@param variables table Query variables
+---@param token string GitHub token
+---@return table|nil response, string|nil error
+local function graphql_request(query, variables, token)
+  local headers = default_headers(token)
+  headers["Content-Type"] = "application/json"
+
+  local response = curl.request({
+    url = "https://api.github.com/graphql",
+    method = "POST",
+    headers = headers,
+    body = vim.json.encode({
+      query = query,
+      variables = variables,
+    }),
+    timeout = 30000,
+  })
+
+  if not response then
+    return nil, "GraphQL request failed: no response"
+  end
+
+  if response.status >= 400 then
+    local err_body = vim.json.decode(response.body or "{}") or {}
+    local message = err_body.message or "Unknown error"
+    return nil, string.format("GraphQL API error (%d): %s", response.status, message)
+  end
+
+  local body = vim.json.decode(response.body or "{}")
+  if body.errors then
+    local err_msg = body.errors[1] and body.errors[1].message or "Unknown GraphQL error"
+    return nil, "GraphQL error: " .. err_msg
+  end
+
+  return body.data, nil
+end
+
+--- Get review threads with resolution status (GraphQL)
+--- This fetches thread resolution status which is not available via REST API
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param number number PR number
+---@param token string GitHub token
+---@param callback fun(resolution_map: table|nil, err: string|nil)
+function M.get_pr_review_threads(owner, repo, number, token, callback)
+  vim.schedule(function()
+    local query = [[
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100) {
+              nodes {
+                id
+                isResolved
+                resolvedBy { login }
+                comments(first: 100) {
+                  nodes {
+                    databaseId
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ]]
+
+    local variables = {
+      owner = owner,
+      repo = repo,
+      number = number,
+    }
+
+    local data, err = graphql_request(query, variables, token)
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    -- Build comment_id -> resolution map
+    local resolution_map = {}
+    local threads = data
+        and data.repository
+        and data.repository.pullRequest
+        and data.repository.pullRequest.reviewThreads
+        and data.repository.pullRequest.reviewThreads.nodes
+
+    if threads then
+      for _, thread in ipairs(threads) do
+        local comments = thread.comments and thread.comments.nodes
+        if comments then
+          for _, comment in ipairs(comments) do
+            if comment.databaseId then
+              resolution_map[comment.databaseId] = {
+                isResolved = thread.isResolved,
+                resolvedBy = thread.resolvedBy and thread.resolvedBy.login,
+                thread_id = thread.id,
+              }
+            end
+          end
+        end
+      end
+    end
+
+    callback(resolution_map, nil)
+  end)
+end
+
 --- Merge a pull request
 ---@param owner string Repository owner
 ---@param repo string Repository name

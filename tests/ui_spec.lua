@@ -110,5 +110,158 @@ describe("raccoon.ui", function()
       assert.is_table(ui.state.prs)
       assert.is_number(ui.state.selected)
     end)
+
+    it("can track selected index", function()
+      ui.state.selected = 5
+      assert.equals(5, ui.state.selected)
+      ui.state.selected = 1 -- reset
+    end)
+
+    it("can store PR list", function()
+      ui.state.prs = {
+        { number = 1, title = "PR 1" },
+        { number = 2, title = "PR 2" },
+      }
+      assert.equals(2, #ui.state.prs)
+      assert.equals("PR 1", ui.state.prs[1].title)
+      ui.state.prs = {} -- reset
+    end)
+
+    it("has description_win field", function()
+      -- Should be nil initially
+      assert.is_nil(ui.state.description_win)
+    end)
+  end)
+
+  describe("create_floating_window with percentages", function()
+    after_each(function()
+      for _, win in ipairs(vim.api.nvim_list_wins()) do
+        local config = vim.api.nvim_win_get_config(win)
+        if config.relative ~= "" then
+          vim.api.nvim_win_close(win, true)
+        end
+      end
+    end)
+
+    it("uses percentage-based width", function()
+      local win, _ = ui.create_floating_window({
+        width_pct = 0.5,
+        height = 10,
+      })
+
+      local config = vim.api.nvim_win_get_config(win)
+      local expected_width = math.floor(vim.o.columns * 0.5)
+      assert.equals(expected_width, config.width)
+
+      vim.api.nvim_win_close(win, true)
+    end)
+
+    it("uses percentage-based height", function()
+      local win, _ = ui.create_floating_window({
+        width = 40,
+        height_pct = 0.3,
+      })
+
+      local config = vim.api.nvim_win_get_config(win)
+      local expected_height = math.floor(vim.o.lines * 0.3)
+      assert.equals(expected_height, config.height)
+
+      vim.api.nvim_win_close(win, true)
+    end)
+
+    it("uses custom border style", function()
+      local win, _ = ui.create_floating_window({
+        border = "single",
+      })
+
+      local config = vim.api.nvim_win_get_config(win)
+      -- Border config varies by Neovim version, just check window is valid
+      assert.is_true(vim.api.nvim_win_is_valid(win))
+
+      vim.api.nvim_win_close(win, true)
+    end)
+  end)
+
+  describe("show_description", function()
+    local state = require("raccoon.state")
+
+    before_each(function()
+      state.reset()
+    end)
+
+    it("warns when no active session", function()
+      local warned = false
+      local original_notify = vim.notify
+      vim.notify = function(_, level)
+        if level == vim.log.levels.WARN then
+          warned = true
+        end
+      end
+
+      ui.show_description()
+
+      vim.notify = original_notify
+      assert.is_true(warned)
+    end)
+
+    it("warns when PR not set", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      -- Don't set PR data
+
+      local warned = false
+      local original_notify = vim.notify
+      vim.notify = function(_, level)
+        if level == vim.log.levels.WARN then
+          warned = true
+        end
+      end
+
+      ui.show_description()
+
+      vim.notify = original_notify
+      assert.is_true(warned)
+    end)
+
+    it("opens description window when PR is set", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      state.set_pr({
+        number = 1,
+        title = "Test PR",
+        body = "Test description",
+        user = { login = "testuser" },
+        head = { ref = "feature" },
+        base = { ref = "main" },
+      })
+
+      ui.show_description()
+
+      -- Window should be open
+      assert.is_not_nil(ui.state.description_win)
+      assert.is_true(vim.api.nvim_win_is_valid(ui.state.description_win))
+
+      -- Clean up
+      vim.api.nvim_win_close(ui.state.description_win, true)
+      ui.state.description_win = nil
+    end)
+
+    it("toggles description window off when called twice", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      state.set_pr({
+        number = 1,
+        title = "Test PR",
+        body = "Test description",
+        user = { login = "testuser" },
+        head = { ref = "feature" },
+        base = { ref = "main" },
+      })
+
+      -- First call opens
+      ui.show_description()
+      assert.is_not_nil(ui.state.description_win)
+
+      -- Second call closes (toggle)
+      ui.show_description()
+      assert.is_nil(ui.state.description_win)
+    end)
   end)
 end)

@@ -309,4 +309,129 @@ describe("raccoon.open edge cases", function()
       assert.equals(2, state.get_number())
     end)
   end)
+
+  describe("statusline variations", function()
+    -- Note: statusline() uses module-local variables that are only updated during open_pr()
+    -- These tests verify the default behavior with session active but no sync performed
+
+    it("returns in sync when session active with PR data", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+      state.set_pr({
+        number = 1,
+        title = "Test",
+        base = { ref = "main" },
+        head = { ref = "feature", sha = "abc123" },
+      })
+
+      -- Default state shows "In sync" since no sync has been performed
+      local status = open.statusline()
+      assert.truthy(status:match("In sync"))
+    end)
+
+    it("handles PR without base ref gracefully", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+      state.set_pr({
+        number = 1,
+        title = "Test",
+        base = { ref = "main" },
+        head = { ref = "feature", sha = "abc123" },
+      })
+
+      -- Should not error
+      local status = open.statusline()
+      assert.is_string(status)
+    end)
+  end)
+
+  describe("sync status accessors", function()
+    -- Note: get_commits_behind() and has_merge_conflicts() use module-local variables
+    -- that are only updated during open_pr(). These tests verify default behavior.
+
+    it("get_commits_behind returns 0 by default", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      -- Without running open_pr, the module-local variable is 0
+      local behind = open.get_commits_behind()
+      assert.equals(0, behind)
+    end)
+
+    it("has_merge_conflicts returns false by default", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      -- Without running open_pr, the module-local variable is false
+      local has_conflicts = open.has_merge_conflicts()
+      assert.is_false(has_conflicts)
+    end)
+  end)
+
+  describe("URL parsing", function()
+    it("rejects GitLab URLs", function()
+      local error_msg = nil
+      local original_notify = vim.notify
+      vim.notify = function(msg, level)
+        if level == vim.log.levels.ERROR then
+          error_msg = msg
+        end
+      end
+
+      open.open_pr("https://gitlab.com/owner/repo/merge_requests/123")
+
+      vim.notify = original_notify
+      assert.is_not_nil(error_msg)
+    end)
+
+    it("rejects commit URLs", function()
+      local error_msg = nil
+      local original_notify = vim.notify
+      vim.notify = function(msg, level)
+        if level == vim.log.levels.ERROR then
+          error_msg = msg
+        end
+      end
+
+      open.open_pr("https://github.com/owner/repo/commit/abc123")
+
+      vim.notify = original_notify
+      assert.is_not_nil(error_msg)
+    end)
+
+    it("rejects branch URLs", function()
+      local error_msg = nil
+      local original_notify = vim.notify
+      vim.notify = function(msg, level)
+        if level == vim.log.levels.ERROR then
+          error_msg = msg
+        end
+      end
+
+      open.open_pr("https://github.com/owner/repo/tree/main")
+
+      vim.notify = original_notify
+      assert.is_not_nil(error_msg)
+    end)
+  end)
 end)

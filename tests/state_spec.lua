@@ -182,4 +182,193 @@ describe("raccoon.state", function()
       assert.equals("/path/to/clone", state.get_clone_path())
     end)
   end)
+
+  describe("PR data", function()
+    it("set_pr and get_pr work", function()
+      local pr = {
+        number = 123,
+        title = "Test PR",
+        body = "PR description",
+        head = { ref = "feature-branch", sha = "abc123" },
+        base = { ref = "main" },
+        user = { login = "testuser" },
+      }
+      state.set_pr(pr)
+      local retrieved = state.get_pr()
+      assert.is_not_nil(retrieved)
+      assert.equals(123, retrieved.number)
+      assert.equals("Test PR", retrieved.title)
+      assert.equals("feature-branch", retrieved.head.ref)
+    end)
+
+    it("get_pr returns nil when not set", function()
+      assert.is_nil(state.get_pr())
+    end)
+  end)
+
+  describe("buffers", function()
+    it("add_buffer adds buffer to session", function()
+      assert.equals(0, #state.session.buffers)
+      state.add_buffer(1)
+      assert.equals(1, #state.session.buffers)
+      state.add_buffer(2)
+      assert.equals(2, #state.session.buffers)
+    end)
+
+    it("add_buffer allows duplicate buffers", function()
+      state.add_buffer(1)
+      state.add_buffer(1)
+      assert.equals(2, #state.session.buffers)
+    end)
+  end)
+
+  describe("stop", function()
+    it("resets session after stop", function()
+      state.start({
+        owner = "test",
+        repo = "repo",
+        number = 1,
+        clone_path = "/tmp/test",
+      })
+      state.set_pr({ title = "Test" })
+      state.set_files({ { filename = "test.lua" } })
+
+      state.stop()
+
+      assert.is_false(state.is_active())
+      assert.is_nil(state.get_pr())
+      assert.equals(0, #state.get_files())
+    end)
+
+    it("clears buffers on stop", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      -- Note: We can't easily test buffer deletion without creating real buffers
+      -- but we can verify the session is reset
+      state.add_buffer(99999) -- fake buffer id
+      state.stop()
+      assert.equals(0, #state.session.buffers)
+    end)
+  end)
+
+  describe("sync_status", function()
+    it("has default sync status", function()
+      local sync = state.get_sync_status()
+      assert.is_table(sync)
+      assert.equals(0, sync.behind)
+      assert.is_false(sync.has_conflicts)
+      assert.is_table(sync.conflict_files)
+      assert.is_false(sync.checked)
+    end)
+
+    it("set_sync_status updates sync status", function()
+      local new_status = {
+        behind = 5,
+        has_conflicts = true,
+        conflict_files = { "file1.lua", "file2.lua" },
+        checked = true,
+      }
+      state.set_sync_status(new_status)
+
+      local sync = state.get_sync_status()
+      assert.equals(5, sync.behind)
+      assert.is_true(sync.has_conflicts)
+      assert.equals(2, #sync.conflict_files)
+      assert.is_true(sync.checked)
+    end)
+
+    it("reset clears sync status", function()
+      state.set_sync_status({ behind = 10, has_conflicts = true, checked = true })
+      state.reset()
+
+      local sync = state.get_sync_status()
+      assert.equals(0, sync.behind)
+      assert.is_false(sync.has_conflicts)
+      assert.is_false(sync.checked)
+    end)
+  end)
+
+  describe("get_statusline_component", function()
+    it("returns empty string when not active", function()
+      assert.equals("", state.get_statusline_component())
+    end)
+
+    it("returns empty string when sync not checked", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      assert.equals("", state.get_statusline_component())
+    end)
+
+    it("returns in sync message when up to date", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      state.set_sync_status({ behind = 0, has_conflicts = false, checked = true })
+      local component = state.get_statusline_component()
+      assert.matches("In sync", component)
+    end)
+
+    it("shows behind count", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      state.set_sync_status({ behind = 3, has_conflicts = false, checked = true })
+      local component = state.get_statusline_component()
+      assert.matches("3 behind", component)
+    end)
+
+    it("shows conflicts warning", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      state.set_sync_status({ behind = 0, has_conflicts = true, checked = true })
+      local component = state.get_statusline_component()
+      assert.matches("CONFLICTS", component)
+    end)
+
+    it("shows both behind and conflicts", function()
+      state.start({ owner = "o", repo = "r", number = 1 })
+      state.set_sync_status({ behind = 2, has_conflicts = true, checked = true })
+      local component = state.get_statusline_component()
+      assert.matches("2 behind", component)
+      assert.matches("CONFLICTS", component)
+    end)
+  end)
+
+  describe("edge cases", function()
+    it("get_current_file returns nil for out of bounds index", function()
+      state.set_files({ { filename = "test.lua" } })
+      state.session.current_file = 5
+      assert.is_nil(state.get_current_file())
+    end)
+
+    it("get_current_file returns nil for zero index", function()
+      state.set_files({ { filename = "test.lua" } })
+      state.session.current_file = 0
+      assert.is_nil(state.get_current_file())
+    end)
+
+    it("get_current_file returns nil for negative index", function()
+      state.set_files({ { filename = "test.lua" } })
+      state.session.current_file = -1
+      assert.is_nil(state.get_current_file())
+    end)
+
+    it("comments for different files are isolated", function()
+      state.set_comments("file1.lua", { { id = 1, body = "comment1" } })
+      state.set_comments("file2.lua", { { id = 2, body = "comment2" } })
+
+      local comments1 = state.get_comments("file1.lua")
+      local comments2 = state.get_comments("file2.lua")
+
+      assert.equals(1, #comments1)
+      assert.equals(1, #comments2)
+      assert.equals(1, comments1[1].id)
+      assert.equals(2, comments2[1].id)
+    end)
+
+    it("navigation at boundaries stays in bounds", function()
+      state.set_files({ { filename = "only.lua" } })
+
+      -- Try to go prev from first (should fail)
+      assert.is_false(state.prev_file())
+      assert.equals(1, state.get_current_file_index())
+
+      -- Try to go next from last (should fail)
+      assert.is_false(state.next_file())
+      assert.equals(1, state.get_current_file_index())
+    end)
+  end)
 end)
