@@ -3,7 +3,9 @@
 ---Only 3 shortcuts: nn (next), pp (previous), cc (comment)
 local M = {}
 
+local api = require("raccoon.api")
 local comments = require("raccoon.comments")
+local config = require("raccoon.config")
 local diff = require("raccoon.diff")
 local state = require("raccoon.state")
 
@@ -295,6 +297,38 @@ function M.list_comments()
   comments.list_comments()
 end
 
+--- Format CI check status for display
+---@param check_runs table Check runs response from GitHub API
+---@return string status_line Formatted status line
+local function format_ci_status(check_runs)
+  if not check_runs or not check_runs.check_runs then
+    return "CI: Unable to fetch status"
+  end
+
+  local passed, failed, pending = 0, 0, 0
+  for _, run in ipairs(check_runs.check_runs) do
+    if run.conclusion == "success" then
+      passed = passed + 1
+    elseif run.conclusion == "failure" or run.conclusion == "timed_out" then
+      failed = failed + 1
+    elseif run.status == "in_progress" or run.status == "queued" or not run.conclusion then
+      pending = pending + 1
+    end
+  end
+
+  local total = passed + failed + pending
+  if total == 0 then
+    return "CI: No checks configured"
+  end
+
+  local parts = {}
+  if passed > 0 then table.insert(parts, passed .. " passed") end
+  if failed > 0 then table.insert(parts, failed .. " failed") end
+  if pending > 0 then table.insert(parts, pending .. " pending") end
+
+  return "CI: " .. table.concat(parts, ", ")
+end
+
 --- Show merge type picker and merge PR
 function M.merge_picker()
   if not state.is_active() then
@@ -309,64 +343,92 @@ function M.merge_picker()
     return
   end
 
+  local pr = state.get_pr()
   local number = state.get_number()
+  local owner = state.get_owner()
+  local repo = state.get_repo()
+  local cfg = config.get()
+  local token = config.get_token_for_owner(cfg, owner)
 
-  -- Create picker buffer
-  local lines = {
-    "Select merge method for PR #" .. number .. ":",
-    "",
-    "  [1] Merge        - Create a merge commit",
-    "  [2] Squash       - Squash and merge",
-    "  [3] Rebase       - Rebase and merge",
-    "",
-    "  [q] Cancel",
-  }
+  -- Fetch check runs first, then show picker
+  vim.notify("Fetching CI status...", vim.log.levels.INFO)
+  api.get_check_runs(owner, repo, pr.head.sha, token, function(check_runs, err)
+    vim.schedule(function()
+      local ci_status
+      if err then
+        ci_status = "CI: Failed to fetch (" .. err:sub(1, 30) .. ")"
+      else
+        ci_status = format_ci_status(check_runs)
+      end
 
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.api.nvim_buf_set_option(buf, "modifiable", false)
+      -- Create picker buffer with CI status
+      local lines = {
+        "Select merge method for PR #" .. number .. ":",
+        "",
+        "  " .. ci_status,
+        "",
+        "  [1] Merge        - Create a merge commit",
+        "  [2] Squash       - Squash and merge",
+        "  [3] Rebase       - Rebase and merge",
+        "",
+        "  [q] Cancel",
+      }
 
-  local width = 50
-  local height = #lines + 1
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    row = math.floor((vim.o.lines - height) / 2),
-    col = math.floor((vim.o.columns - width) / 2),
-    width = width,
-    height = height,
-    style = "minimal",
-    border = "rounded",
-    title = " Merge PR ",
-    title_pos = "center",
-  })
+      local width = 50
+      local height = #lines + 1
 
-  -- Highlight the title
-  vim.api.nvim_buf_call(buf, function()
-    vim.fn.matchadd("Title", "^Select merge method.*")
-    vim.fn.matchadd("Number", "\\[1\\]\\|\\[2\\]\\|\\[3\\]")
-    vim.fn.matchadd("Comment", "\\[q\\]")
+      local win = vim.api.nvim_open_win(buf, true, {
+        relative = "editor",
+        row = math.floor((vim.o.lines - height) / 2),
+        col = math.floor((vim.o.columns - width) / 2),
+        width = width,
+        height = height,
+        style = "minimal",
+        border = "rounded",
+        title = " Merge PR ",
+        title_pos = "center",
+      })
+
+      -- Highlight the title and CI status
+      vim.api.nvim_buf_call(buf, function()
+        vim.fn.matchadd("Title", "^Select merge method.*")
+        vim.fn.matchadd("Number", "\\[1\\]\\|\\[2\\]\\|\\[3\\]")
+        vim.fn.matchadd("Comment", "\\[q\\]")
+        -- Highlight CI status based on content
+        if ci_status:find("failed") then
+          vim.fn.matchadd("ErrorMsg", "CI:.*failed.*")
+        elseif ci_status:find("pending") then
+          vim.fn.matchadd("WarningMsg", "CI:.*pending.*")
+        elseif ci_status:find("passed") then
+          vim.fn.matchadd("DiagnosticOk", "CI:.*passed.*")
+        end
+      end)
+
+      local function do_merge(method)
+        vim.api.nvim_win_close(win, true)
+        vim.cmd("Raccoon " .. method)
+      end
+
+      -- Keymaps for selection (adjusted line numbers for CI status line)
+      vim.keymap.set("n", "1", function() do_merge("merge") end, { buffer = buf, noremap = true, silent = true })
+      vim.keymap.set("n", "2", function() do_merge("squash") end, { buffer = buf, noremap = true, silent = true })
+      vim.keymap.set("n", "3", function() do_merge("rebase") end, { buffer = buf, noremap = true, silent = true })
+      vim.keymap.set("n", "<CR>", function()
+        local cursor_line = vim.fn.line(".")
+        if cursor_line == 5 then do_merge("merge")
+        elseif cursor_line == 6 then do_merge("squash")
+        elseif cursor_line == 7 then do_merge("rebase")
+        end
+      end, { buffer = buf, noremap = true, silent = true })
+      local close_win = function() vim.api.nvim_win_close(win, true) end
+      vim.keymap.set("n", "q", close_win, { buffer = buf, noremap = true, silent = true })
+      vim.keymap.set("n", "<Esc>", close_win, { buffer = buf, noremap = true, silent = true })
+    end)
   end)
-
-  local function do_merge(method)
-    vim.api.nvim_win_close(win, true)
-    vim.cmd("Raccoon " .. method)
-  end
-
-  -- Keymaps for selection
-  vim.keymap.set("n", "1", function() do_merge("merge") end, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "2", function() do_merge("squash") end, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "3", function() do_merge("rebase") end, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<CR>", function()
-    local cursor_line = vim.fn.line(".")
-    if cursor_line == 3 then do_merge("merge")
-    elseif cursor_line == 4 then do_merge("squash")
-    elseif cursor_line == 5 then do_merge("rebase")
-    end
-  end, { buffer = buf, noremap = true, silent = true })
-  local close_win = function() vim.api.nvim_win_close(win, true) end
-  vim.keymap.set("n", "q", close_win, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<Esc>", close_win, { buffer = buf, noremap = true, silent = true })
 end
 
 --- All PR review keymaps (simplified)

@@ -340,6 +340,30 @@ function M.parse_pr_url(url)
   return nil, nil, nil
 end
 
+--- Get check runs for a commit (CI status)
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param ref string Commit SHA or branch name
+---@param token string GitHub token
+---@param callback fun(check_runs: table|nil, err: string|nil)
+function M.get_check_runs(owner, repo, ref, token, callback)
+  vim.schedule(function()
+    local url = string.format("%s/repos/%s/%s/commits/%s/check-runs", M.base_url, owner, repo, ref)
+    local response, err = request({
+      url = url,
+      method = "GET",
+      token = token,
+    })
+
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    callback(response.data, nil)
+  end)
+end
+
 --- Merge a pull request
 ---@param owner string Repository owner
 ---@param repo string Repository name
