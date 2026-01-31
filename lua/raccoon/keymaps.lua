@@ -120,7 +120,7 @@ end
 function M.next_point()
   if not state.is_active() then
     vim.notify("No active PR session", vim.log.levels.WARN)
-    return
+    return false
   end
 
   local all_points = get_all_points()
@@ -150,7 +150,7 @@ end
 function M.prev_point()
   if not state.is_active() then
     vim.notify("No active PR session", vim.log.levels.WARN)
-    return
+    return false
   end
 
   local all_points = get_all_points()

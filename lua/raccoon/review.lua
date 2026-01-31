@@ -252,7 +252,7 @@ function M.get_status()
     files_reviewed = state.get_current_file_index(),
     total_files = #files,
     pending_comments = #pending,
-    pr_title = pr and pr.title or "Unknown",
+    pr_title = pr and pr.title,
     pr_number = state.get_number(),
     owner = state.get_owner(),
     repo = state.get_repo(),
@@ -270,7 +270,7 @@ function M.show_status()
   local lines = {
     "PR Review Status",
     "",
-    string.format("PR: #%d - %s", status.pr_number or 0, status.pr_title),
+    string.format("PR: #%d - %s", status.pr_number or 0, status.pr_title or "Unknown"),
     string.format("Repo: %s/%s", status.owner or "?", status.repo or "?"),
     "",
     string.format("Files: %d/%d reviewed", status.files_reviewed, status.total_files),
