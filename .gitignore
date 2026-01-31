@@ -1,0 +1,25 @@
+# Neovim
+.nvimlog
+*.swp
+*.swo
+*~
+
+# Lua
+*.luac
+luac.out
+
+# Testing
+.testenv/
+luacov.stats.out
+luacov.report.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# Local config (keep .luarc.json for LSP settings)
