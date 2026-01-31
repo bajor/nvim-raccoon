@@ -848,7 +848,12 @@ function M.list_comments()
       local clone_path = state.get_clone_path()
       if clone_path then
         local full_path = clone_path .. "/" .. entry.file
-        vim.cmd("edit " .. vim.fn.fnameescape(full_path))
+        local ok, open_err = pcall(vim.cmd, "edit " .. vim.fn.fnameescape(full_path))
+        if not ok then
+          local short_err = tostring(open_err):match("^[^\n]+") or "unknown error"
+          vim.notify("Failed to open file: " .. entry.file .. " (" .. short_err .. ")", vim.log.levels.WARN)
+          return
+        end
 
         -- Jump to line
         local target_line = entry.comment.line or entry.comment.original_line or entry.comment.position
