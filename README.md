@@ -76,6 +76,8 @@ Or run `:Raccoon config` to create a default config file.
 |-----|--------|
 | `nn` | Next diff/comment |
 | `pp` | Previous diff/comment |
+| `nf` | Next file |
+| `pf` | Previous file |
 | `nt` | Next comment thread |
 | `pt` | Previous comment thread |
 | `cc` | Comment at cursor |
