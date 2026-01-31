@@ -146,6 +146,17 @@ function M.prev_file()
   return false
 end
 
+--- Go to a specific file by index
+---@param index number File index (1-based)
+---@return boolean success
+function M.goto_file(index)
+  if index >= 1 and index <= #M.session.files then
+    M.session.current_file = index
+    return true
+  end
+  return false
+end
+
 --- Set comments for a file
 ---@param path string File path
 ---@param comments table[] Comments
