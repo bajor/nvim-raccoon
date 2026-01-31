@@ -33,6 +33,10 @@ describe("raccoon.api", function()
     it("has submit_review function", function()
       assert.is_function(api.submit_review)
     end)
+
+    it("has get_pr_review_threads function", function()
+      assert.is_function(api.get_pr_review_threads)
+    end)
   end)
 
   describe("parse_pr_url", function()
@@ -217,6 +221,10 @@ describe("raccoon.api edge cases", function()
 
     it("create_issue_comment is a function", function()
       assert.is_function(api.create_issue_comment)
+    end)
+
+    it("get_pr_review_threads is a function", function()
+      assert.is_function(api.get_pr_review_threads)
     end)
   end)
 

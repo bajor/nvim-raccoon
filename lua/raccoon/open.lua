@@ -217,7 +217,26 @@ local function fetch_pr_data(owner, repo, number, token, callback)
             end
           end
 
-          callback(nil)
+          -- Fetch thread resolution status via GraphQL
+          api.get_pr_review_threads(owner, repo, number, token, function(resolution_map, res_err)
+            if res_err then
+              vim.notify("Warning: Could not fetch thread resolution: " .. res_err, vim.log.levels.WARN)
+            elseif resolution_map then
+              -- Apply resolution status to stored comments
+              for _, file in ipairs(files) do
+                local file_comments = state.get_comments(file.filename)
+                for _, comment in ipairs(file_comments) do
+                  if comment.id and resolution_map[comment.id] then
+                    comment.resolved = resolution_map[comment.id].isResolved
+                    comment.resolved_by = resolution_map[comment.id].resolvedBy
+                    comment.thread_id = resolution_map[comment.id].thread_id
+                  end
+                end
+              end
+            end
+
+            callback(nil)
+          end)
         end)
       end)
     end)
@@ -368,15 +387,34 @@ local function sync_pr(silent)
               end
             end
 
-            -- Refresh current file display
-            local current_file = state.get_current_file()
-            if current_file then
-              local buf = vim.api.nvim_get_current_buf()
-              diff.apply_highlights(buf, current_file.patch)
-              comments.show_comments(buf, state.get_comments(current_file.filename))
-            end
+            -- Fetch thread resolution status via GraphQL (overwrites local state)
+            api.get_pr_review_threads(owner, repo, number, token, function(resolution_map, res_err)
+              if res_err then
+                vim.notify("Warning: Could not fetch thread resolution: " .. res_err, vim.log.levels.WARN)
+              elseif resolution_map then
+                -- Apply server-side resolution status (overwrites local)
+                for _, file in ipairs(files) do
+                  local file_comments = state.get_comments(file.filename)
+                  for _, comment in ipairs(file_comments) do
+                    if comment.id and resolution_map[comment.id] then
+                      comment.resolved = resolution_map[comment.id].isResolved
+                      comment.resolved_by = resolution_map[comment.id].resolvedBy
+                      comment.thread_id = resolution_map[comment.id].thread_id
+                    end
+                  end
+                end
+              end
 
-            vim.notify("PR synced - new commits loaded", vim.log.levels.INFO)
+              -- Refresh current file display
+              local current_file = state.get_current_file()
+              if current_file then
+                local buf = vim.api.nvim_get_current_buf()
+                diff.apply_highlights(buf, current_file.patch)
+                comments.show_comments(buf, state.get_comments(current_file.filename))
+              end
+
+              vim.notify("PR synced - new commits loaded", vim.log.levels.INFO)
+            end)
           end)
         end)
       end)
