@@ -540,9 +540,54 @@ function M.show_comment_thread()
     vim.api.nvim_win_close(win, true)
   end
 
+  -- Unresolve thread function (explicit unresolve, not toggle)
+  local function unresolve_thread()
+    if #line_comments == 0 then
+      vim.notify("No comments to unresolve", vim.log.levels.WARN)
+      return
+    end
+
+    -- Check if any are resolved
+    local any_resolved = false
+    for _, comment in ipairs(line_comments) do
+      if comment.resolved then
+        any_resolved = true
+        break
+      end
+    end
+
+    if not any_resolved then
+      vim.notify("Thread already unresolved", vim.log.levels.INFO)
+      return
+    end
+
+    -- Unresolve all comments
+    for _, comment in ipairs(line_comments) do
+      comment.resolved = false
+    end
+
+    -- Update state
+    state.set_comments(path, file_comments)
+
+    -- Refresh the current buffer's comment display
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_valid(b) then
+        local name = vim.api.nvim_buf_get_name(b)
+        if name:find(path, 1, true) then
+          M.show_comments(b, file_comments)
+          break
+        end
+      end
+    end
+
+    vim.notify("Thread unresolved", vim.log.levels.INFO)
+    vim.api.nvim_win_close(win, true)
+  end
+
   -- Keymaps
   vim.keymap.set("n", "s", save_comment, { buffer = buf, noremap = true, silent = true })
   vim.keymap.set("n", "r", resolve_thread, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set("n", "u", unresolve_thread, { buffer = buf, noremap = true, silent = true })
   vim.keymap.set("n", "q", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
