@@ -507,12 +507,10 @@ function M.merge_pr(owner, repo, number, opts, token, callback)
 end
 
 --- Resolve a review thread (GraphQL)
----@param owner string Repository owner
----@param repo string Repository name
 ---@param thread_id string The node ID of the review thread
 ---@param token string GitHub token
 ---@param callback fun(err: string|nil)
-function M.resolve_review_thread(owner, repo, thread_id, token, callback)
+function M.resolve_review_thread(thread_id, token, callback)
   vim.schedule(function()
     local query = [[
       mutation($thread_id: ID!) {
@@ -532,12 +530,10 @@ function M.resolve_review_thread(owner, repo, thread_id, token, callback)
 end
 
 --- Unresolve a review thread (GraphQL)
----@param owner string Repository owner
----@param repo string Repository name
 ---@param thread_id string The node ID of the review thread
 ---@param token string GitHub token
 ---@param callback fun(err: string|nil)
-function M.unresolve_review_thread(owner, repo, thread_id, token, callback)
+function M.unresolve_review_thread(thread_id, token, callback)
   vim.schedule(function()
     local query = [[
       mutation($thread_id: ID!) {
