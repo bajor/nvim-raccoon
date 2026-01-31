@@ -1,6 +1,15 @@
 # raccoon.nvim
 
-A Neovim plugin for reviewing GitHub pull requests and examining individual commits one by one.
+A Neovim plugin for reviewing GitHub pull requests and examining individual commits one by one. Designed to work with the [prs-and-issues-preview-osx](https://github.com/bajor/prs-and-issues-preview-osx) macOS menu bar app for a seamless PR workflow.
+
+## Companion App
+
+This plugin is designed to integrate with [prs-and-issues-preview-osx](https://github.com/bajor/prs-and-issues-preview-osx), a macOS menu bar application that:
+
+- Displays your current pull requests in the menu bar
+- Opens PRs directly in Neovim with Racoon
+
+When you click a PR in the menu bar app, it launches Neovim with raccoon.nvim and opens the PR for review automatically.
 
 ## Features
 
