@@ -279,4 +279,222 @@ describe("raccoon.diff", function()
       assert.is_nil(diff.open_file({ filename = "test.lua" }))
     end)
   end)
+
+  describe("next_diff and prev_diff", function()
+    it("next_diff returns false when no session", function()
+      assert.is_false(diff.next_diff())
+    end)
+
+    it("prev_diff returns false when no session", function()
+      assert.is_false(diff.prev_diff())
+    end)
+  end)
+
+  describe("parse_patch edge cases", function()
+    it("handles patch with only additions", function()
+      local patch = [[
+@@ -0,0 +1,3 @@
++line1
++line2
++line3]]
+      local hunks = diff.parse_patch(patch)
+      assert.equals(1, #hunks)
+      -- Count added lines
+      local add_count = 0
+      for _, line in ipairs(hunks[1].lines) do
+        if line.type == "add" then
+          add_count = add_count + 1
+        end
+      end
+      assert.equals(3, add_count)
+    end)
+
+    it("handles patch with only deletions", function()
+      local patch = [[
+@@ -1,3 +0,0 @@
+-line1
+-line2
+-line3]]
+      local hunks = diff.parse_patch(patch)
+      assert.equals(1, #hunks)
+      -- Count deleted lines
+      local del_count = 0
+      for _, line in ipairs(hunks[1].lines) do
+        if line.type == "del" then
+          del_count = del_count + 1
+        end
+      end
+      assert.equals(3, del_count)
+    end)
+
+    it("handles mixed additions and deletions in same hunk", function()
+      local patch = [[
+@@ -1,5 +1,5 @@
+ context1
+-old line 1
+-old line 2
++new line 1
++new line 2
+ context2]]
+      local hunks = diff.parse_patch(patch)
+      assert.equals(1, #hunks)
+
+      local add_count = 0
+      local del_count = 0
+      local ctx_count = 0
+      for _, line in ipairs(hunks[1].lines) do
+        if line.type == "add" then
+          add_count = add_count + 1
+        elseif line.type == "del" then
+          del_count = del_count + 1
+        elseif line.type == "ctx" then
+          ctx_count = ctx_count + 1
+        end
+      end
+      assert.equals(2, add_count)
+      assert.equals(2, del_count)
+      assert.equals(2, ctx_count)
+    end)
+
+    it("handles large line numbers", function()
+      local start, count = diff.parse_hunk_header("@@ -1000,50 +1050,75 @@")
+      assert.equals(1050, start)
+      assert.equals(75, count)
+    end)
+
+    it("handles single line addition", function()
+      local patch = [[
+@@ -5,0 +6 @@
++single new line]]
+      local hunks = diff.parse_patch(patch)
+      assert.equals(1, #hunks)
+    end)
+
+    it("handles patch with file headers (should ignore them)", function()
+      local patch = [[
+--- a/file.lua
++++ b/file.lua
+@@ -1,3 +1,4 @@
+ line1
++added
+ line2
+ line3]]
+      local hunks = diff.parse_patch(patch)
+      assert.equals(1, #hunks)
+      -- Verify --- and +++ lines are not counted as changes
+      for _, line in ipairs(hunks[1].lines) do
+        assert.is_not_nil(line.type)
+        if line.type == "add" then
+          assert.not_matches("^%+%+%+", "+" .. line.content)
+        end
+      end
+    end)
+  end)
+
+  describe("get_changed_lines edge cases", function()
+    it("handles consecutive additions correctly", function()
+      local patch = [[
+@@ -1,2 +1,5 @@
+ line1
++add1
++add2
++add3
+ line2]]
+      local changes = diff.get_changed_lines(patch)
+      assert.equals(3, #changes.added)
+      assert.equals(2, changes.added[1])
+      assert.equals(3, changes.added[2])
+      assert.equals(4, changes.added[3])
+    end)
+
+    it("handles non-consecutive additions correctly", function()
+      local patch = [[
+@@ -1,4 +1,6 @@
+ line1
++add1
+ line2
+ line3
++add2
+ line4]]
+      local changes = diff.get_changed_lines(patch)
+      assert.equals(2, #changes.added)
+    end)
+
+    it("handles deletion tracking with line content", function()
+      local patch = [[
+@@ -1,3 +1,2 @@
+ line1
+-deleted line content
+ line2]]
+      local changes = diff.get_changed_lines(patch)
+      assert.equals(1, #changes.deleted)
+      assert.is_not_nil(changes.deleted[1].content)
+      assert.equals("deleted line content", changes.deleted[1].content)
+    end)
+  end)
+
+  describe("apply_highlights edge cases", function()
+    it("handles invalid buffer gracefully", function()
+      -- Should not error
+      diff.apply_highlights(-1, "@@ -1,1 +1,2 @@\n line\n+added")
+      diff.apply_highlights(nil, "@@ -1,1 +1,2 @@\n line\n+added")
+    end)
+
+    it("handles buffer with content", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+        "line 1",
+        "line 2",
+        "line 3",
+      })
+
+      local patch = [[
+@@ -1,3 +1,4 @@
+ line 1
++new line
+ line 2
+ line 3]]
+
+      -- Should not error
+      diff.apply_highlights(buf, patch)
+
+      -- Verify namespace was used
+      local ns = diff.get_namespace()
+      assert.is_number(ns)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+  end)
+
+  describe("keymaps", function()
+    it("setup_keymaps does not error", function()
+      -- Should not error even without active session
+      diff.setup_keymaps()
+    end)
+
+    it("clear_keymaps does not error", function()
+      -- Should not error even if keymaps weren't set
+      diff.clear_keymaps()
+    end)
+  end)
+
+  describe("parse_hunk_header edge cases", function()
+    it("handles zero line count", function()
+      local start, count = diff.parse_hunk_header("@@ -1,0 +1,0 @@")
+      assert.equals(1, start)
+      assert.equals(0, count)
+    end)
+
+    it("handles hunk with function context", function()
+      local start, count = diff.parse_hunk_header("@@ -10,5 +10,7 @@ func TestSomething() {")
+      assert.equals(10, start)
+      assert.equals(7, count)
+    end)
+
+    it("handles hunk with special characters in context", function()
+      local start, count = diff.parse_hunk_header("@@ -1,2 +1,3 @@ function foo(a, b) -- comment")
+      assert.equals(1, start)
+      assert.equals(3, count)
+    end)
+  end)
 end)

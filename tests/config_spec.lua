@@ -195,4 +195,223 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
   end)
+
+  describe("get_token_for_owner", function()
+    it("returns default token when no owner-specific token exists", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {},
+      }
+      local token = config.get_token_for_owner(cfg, "some-owner")
+      assert.equals("default_token", token)
+    end)
+
+    it("returns owner-specific token when available", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {
+          ["my-org"] = "org_specific_token",
+        },
+      }
+      local token = config.get_token_for_owner(cfg, "my-org")
+      assert.equals("org_specific_token", token)
+    end)
+
+    it("returns default token for non-matching owner", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {
+          ["other-org"] = "other_token",
+        },
+      }
+      local token = config.get_token_for_owner(cfg, "my-org")
+      assert.equals("default_token", token)
+    end)
+
+    it("handles nil tokens table", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = nil,
+      }
+      local token = config.get_token_for_owner(cfg, "any-owner")
+      assert.equals("default_token", token)
+    end)
+
+    it("handles empty tokens table", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {},
+      }
+      local token = config.get_token_for_owner(cfg, "any-owner")
+      assert.equals("default_token", token)
+    end)
+  end)
+
+  describe("get_token_for_repo", function()
+    it("extracts owner from repo string and returns token", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {
+          ["my-org"] = "org_token",
+        },
+      }
+      local token = config.get_token_for_repo(cfg, "my-org/my-repo")
+      assert.equals("org_token", token)
+    end)
+
+    it("returns default token for unrecognized owner", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {
+          ["other-org"] = "other_token",
+        },
+      }
+      local token = config.get_token_for_repo(cfg, "my-org/my-repo")
+      assert.equals("default_token", token)
+    end)
+
+    it("returns default token for invalid repo format", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {},
+      }
+      local token = config.get_token_for_repo(cfg, "invalid-format")
+      assert.equals("default_token", token)
+    end)
+
+    it("returns default token for empty string", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {},
+      }
+      local token = config.get_token_for_repo(cfg, "")
+      assert.equals("default_token", token)
+    end)
+
+    it("handles repo with multiple slashes", function()
+      local cfg = {
+        github_token = "default_token",
+        tokens = {
+          ["my-org"] = "org_token",
+        },
+      }
+      -- Should extract "my-org" as owner
+      local token = config.get_token_for_repo(cfg, "my-org/my-repo/extra")
+      assert.equals("org_token", token)
+    end)
+  end)
+
+  describe("load with tokens", function()
+    it("accepts config with tokens map instead of github_token", function()
+      local tmpfile = test_tmp_dir .. "/tokens_only.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_username": "testuser",
+        "tokens": {
+          "org1": "token1",
+          "org2": "token2"
+        },
+        "repos": ["org1/repo1"]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.is_table(cfg.tokens)
+      assert.equals("token1", cfg.tokens["org1"])
+
+      os.remove(tmpfile)
+    end)
+
+    it("accepts config with both github_token and tokens", function()
+      local tmpfile = test_tmp_dir .. "/both_tokens.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_token": "default_token",
+        "github_username": "testuser",
+        "tokens": {
+          "special-org": "special_token"
+        },
+        "repos": ["owner/repo"]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.equals("default_token", cfg.github_token)
+      assert.equals("special_token", cfg.tokens["special-org"])
+
+      os.remove(tmpfile)
+    end)
+  end)
+
+  describe("load edge cases", function()
+    it("handles repos with dots in name", function()
+      local tmpfile = test_tmp_dir .. "/dotted_repo.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_token": "ghp_xxx",
+        "github_username": "user",
+        "repos": ["owner/repo.nvim", "owner/my-plugin.lua"]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.equals(2, #cfg.repos)
+
+      os.remove(tmpfile)
+    end)
+
+    it("handles repos with underscores and hyphens", function()
+      local tmpfile = test_tmp_dir .. "/special_chars_repo.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_token": "ghp_xxx",
+        "github_username": "user",
+        "repos": ["my_org/my-repo_name", "org-name/repo_name"]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.equals(2, #cfg.repos)
+
+      os.remove(tmpfile)
+    end)
+
+    it("overrides default notification settings", function()
+      local tmpfile = test_tmp_dir .. "/custom_notifications.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_token": "ghp_xxx",
+        "github_username": "user",
+        "repos": ["owner/repo"],
+        "notifications": {
+          "new_commits": false,
+          "sound": false
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.is_false(cfg.notifications.new_commits)
+      assert.is_false(cfg.notifications.sound)
+      -- Should still have default for new_comments
+      assert.is_true(cfg.notifications.new_comments)
+
+      os.remove(tmpfile)
+    end)
+  end)
 end)
