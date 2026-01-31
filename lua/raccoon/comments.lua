@@ -350,7 +350,7 @@ function M.show_comment_thread()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = string.format(" Comments on L%d (s=save, r=resolve, q=close) ", current_line),
+    title = string.format(" Comments on L%d (s=save, r=resolve, u=unresolve, q=close) ", current_line),
     title_pos = "center",
   })
 
@@ -506,38 +506,64 @@ function M.show_comment_thread()
       return
     end
 
-    -- Toggle resolved status on all comments in this thread
-    local all_resolved = true
-    for _, comment in ipairs(line_comments) do
-      if not comment.resolved then
-        all_resolved = false
-        break
-      end
+    local thread_id = line_comments[1].thread_id
+    if not thread_id then
+      vim.notify("Cannot resolve thread: thread_id not found", vim.log.levels.ERROR)
+      return
     end
 
-    -- Toggle: if all resolved, unresolve all; otherwise resolve all
-    local new_status = not all_resolved
-    for _, comment in ipairs(line_comments) do
-      comment.resolved = new_status
+    local cfg, cfg_err = config.load()
+    if cfg_err then
+      vim.notify("Config error: " .. cfg_err, vim.log.levels.ERROR)
+      return
     end
 
-    -- Update state
-    state.set_comments(path, file_comments)
+    local owner = state.get_owner()
+    local repo = state.get_repo()
+    local token = config.get_token_for_owner(cfg, owner)
 
-    -- Refresh the current buffer's comment display
-    for _, b in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_is_valid(b) then
-        local name = vim.api.nvim_buf_get_name(b)
-        if name:find(path, 1, true) then
-          M.show_comments(b, file_comments)
-          break
+    vim.notify("Resolving thread...", vim.log.levels.INFO)
+
+    api.resolve_review_thread(owner, repo, thread_id, token, function(err)
+      vim.schedule(function()
+        if err then
+          vim.notify("Failed to resolve thread: " .. err, vim.log.levels.ERROR)
+          return
         end
-      end
-    end
 
-    local msg = new_status and "Thread resolved" or "Thread unresolved"
-    vim.notify(msg, vim.log.levels.INFO)
-    vim.api.nvim_win_close(win, true)
+        -- Toggle resolved status on all comments in this thread
+        local all_resolved = true
+        for _, comment in ipairs(line_comments) do
+          if not comment.resolved then
+            all_resolved = false
+            break
+          end
+        end
+
+        local new_status = not all_resolved
+        for _, comment in ipairs(line_comments) do
+          comment.resolved = new_status
+        end
+
+        -- Update state
+        state.set_comments(path, file_comments)
+
+        -- Refresh the current buffer's comment display
+        for _, b in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_is_valid(b) then
+            local name = vim.api.nvim_buf_get_name(b)
+            if name:find(path, 1, true) then
+              M.show_comments(b, file_comments)
+              break
+            end
+          end
+        end
+
+        local msg = new_status and "Thread resolved" or "Thread unresolved"
+        vim.notify(msg, vim.log.levels.INFO)
+        vim.api.nvim_win_close(win, true)
+      end)
+    end)
   end
 
   -- Unresolve thread function (explicit unresolve, not toggle)
@@ -547,41 +573,68 @@ function M.show_comment_thread()
       return
     end
 
-    -- Check if any are resolved
-    local any_resolved = false
-    for _, comment in ipairs(line_comments) do
-      if comment.resolved then
-        any_resolved = true
-        break
-      end
-    end
-
-    if not any_resolved then
-      vim.notify("Thread already unresolved", vim.log.levels.INFO)
+    local thread_id = line_comments[1].thread_id
+    if not thread_id then
+      vim.notify("Cannot unresolve thread: thread_id not found", vim.log.levels.ERROR)
       return
     end
 
-    -- Unresolve all comments
-    for _, comment in ipairs(line_comments) do
-      comment.resolved = false
+    local cfg, cfg_err = config.load()
+    if cfg_err then
+      vim.notify("Config error: " .. cfg_err, vim.log.levels.ERROR)
+      return
     end
 
-    -- Update state
-    state.set_comments(path, file_comments)
+    local owner = state.get_owner()
+    local repo = state.get_repo()
+    local token = config.get_token_for_owner(cfg, owner)
 
-    -- Refresh the current buffer's comment display
-    for _, b in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_is_valid(b) then
-        local name = vim.api.nvim_buf_get_name(b)
-        if name:find(path, 1, true) then
-          M.show_comments(b, file_comments)
-          break
+    vim.notify("Unresolving thread...", vim.log.levels.INFO)
+
+    api.unresolve_review_thread(owner, repo, thread_id, token, function(err)
+      vim.schedule(function()
+        if err then
+          vim.notify("Failed to unresolve thread: " .. err, vim.log.levels.ERROR)
+          return
         end
-      end
-    end
 
-    vim.notify("Thread unresolved", vim.log.levels.INFO)
-    vim.api.nvim_win_close(win, true)
+        -- Check if any are resolved
+        local any_resolved = false
+        for _, comment in ipairs(line_comments) do
+          if comment.resolved then
+            any_resolved = true
+            break
+          end
+        end
+
+        if not any_resolved then
+          vim.notify("Thread already unresolved", vim.log.levels.INFO)
+          return
+        end
+
+        -- Unresolve all comments
+        for _, comment in ipairs(line_comments) do
+          comment.resolved = false
+        end
+
+        -- Update state
+        state.set_comments(path, file_comments)
+
+        -- Refresh the current buffer's comment display
+        for _, b in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_is_valid(b) then
+            local name = vim.api.nvim_buf_get_name(b)
+            if name:find(path, 1, true) then
+              M.show_comments(b, file_comments)
+              break
+            end
+          end
+        end
+
+        vim.notify("Thread unresolved", vim.log.levels.INFO)
+        vim.api.nvim_win_close(win, true)
+      end)
+    end)
   end
 
   -- Keymaps
