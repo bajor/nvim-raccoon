@@ -347,7 +347,11 @@ function M.merge_picker()
   local number = state.get_number()
   local owner = state.get_owner()
   local repo = state.get_repo()
-  local cfg = config.get()
+  local cfg, cfg_err = config.load()
+  if cfg_err then
+    vim.notify("Config error: " .. cfg_err, vim.log.levels.ERROR)
+    return
+  end
   local token = config.get_token_for_owner(cfg, owner)
 
   -- Fetch check runs first, then show picker
