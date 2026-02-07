@@ -248,6 +248,81 @@ local function apply_highlights(buf, highlights)
   end
 end
 
+--- Show the PR list picker
+--- Opens a floating window with all open PRs from configured repos
+function M.show_pr_list()
+  -- Toggle: if already open, close it
+  if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
+    M.close_pr_list()
+    return
+  end
+
+  -- Create floating window
+  local win, buf = M.create_floating_window({
+    width_pct = 0.6,
+    height_pct = 0.6,
+    title = "Pull Requests",
+    border = "rounded",
+  })
+
+  -- Store state
+  M.state.win = win
+  M.state.buf = buf
+  M.state.prs = {}
+  M.state.selected = 1
+
+  -- Show loading state
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  Loading..." })
+  vim.bo[buf].modifiable = false
+
+  -- Setup buffer-local keymaps
+  local opts = { buffer = buf, noremap = true, silent = true }
+
+  local function move_down()
+    if M.state.selected < #M.state.prs then
+      M.state.selected = M.state.selected + 1
+      update_selection()
+    end
+  end
+
+  local function move_up()
+    if M.state.selected > 1 then
+      M.state.selected = M.state.selected - 1
+      update_selection()
+    end
+  end
+
+  vim.keymap.set("n", "j", move_down, opts)
+  vim.keymap.set("n", "<Down>", move_down, opts)
+  vim.keymap.set("n", "k", move_up, opts)
+  vim.keymap.set("n", "<Up>", move_up, opts)
+
+  -- Open selected PR on Enter
+  vim.keymap.set("n", "<CR>", function()
+    local pr = M.state.prs[M.state.selected]
+    if not pr then return end
+
+    local url = pr.html_url
+    if not url then return end
+
+    M.close_pr_list()
+
+    local open = require("raccoon.open")
+    open.open_pr(url)
+  end, opts)
+
+  -- Close on q or Esc
+  vim.keymap.set("n", "q", function() M.close_pr_list() end, opts)
+  vim.keymap.set("n", "<Esc>", function() M.close_pr_list() end, opts)
+
+  -- Refresh on r
+  vim.keymap.set("n", "r", function() M.refresh_pr_list() end, opts)
+
+  -- Fetch and display PRs
+  M.refresh_pr_list()
+end
+
 --- Refresh the PR list
 function M.refresh_pr_list()
   if not M.state.buf or not vim.api.nvim_buf_is_valid(M.state.buf) then
@@ -314,7 +389,8 @@ function M.fetch_all_prs(callback)
   for _, repo_str in ipairs(cfg.repos) do
     local owner, repo = repo_str:match("^([^/]+)/(.+)$")
     if owner and repo then
-      api.list_prs(owner, repo, cfg.github_token, function(prs, api_err)
+      local token = config.get_token_for_repo(cfg, repo_str)
+      api.list_prs(owner, repo, token, function(prs, api_err)
         pending = pending - 1
 
         if api_err then
