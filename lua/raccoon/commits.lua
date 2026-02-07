@@ -25,6 +25,7 @@ local commit_state = {
   all_hunks = {},
   current_page = 1,
   saved_buf = nil,
+  saved_laststatus = nil,
   grid_rows = 2,
   grid_cols = 2,
   maximize_win = nil,
@@ -50,6 +51,7 @@ local function reset_state()
     all_hunks = {},
     current_page = 1,
     saved_buf = nil,
+    saved_laststatus = nil,
     grid_rows = 2,
     grid_cols = 2,
     maximize_win = nil,
@@ -477,20 +479,40 @@ local function create_grid_layout(rows, cols)
     end
   end
 
+  -- Reverse to reading order: top-left=1, top-right=2, bottom-left=3, etc.
+  local n = #grid_wins
+  for i = 1, math.floor(n / 2) do
+    grid_wins[i], grid_wins[n - i + 1] = grid_wins[n - i + 1], grid_wins[i]
+    grid_bufs[i], grid_bufs[n - i + 1] = grid_bufs[n - i + 1], grid_bufs[i]
+  end
+
   commit_state.grid_wins = grid_wins
   commit_state.grid_bufs = grid_bufs
 
-  -- Set cell number labels in winbar (top-right corner)
+  -- Set cell number labels in winbar (no background highlight)
   for i, win in ipairs(grid_wins) do
     if vim.api.nvim_win_is_valid(win) then
-      vim.wo[win].winbar = "%=%#Comment# " .. i .. " %*"
+      vim.wo[win].winbar = "%=" .. i
+      vim.wo[win].winhl = "WinBar:Normal,WinBarNC:Normal"
     end
   end
 
-  -- Equalize grid windows, then restore sidebar width
+  -- Blend sidebar winbar background
+  if vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
+    vim.wo[commit_state.sidebar_win].winhl = "WinBar:Normal,WinBarNC:Normal"
+  end
+
+  -- Equalize grid windows, then restore sidebar width and even row heights
   vim.cmd("wincmd =")
   if vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
     vim.api.nvim_win_set_width(commit_state.sidebar_win, SIDEBAR_WIDTH)
+  end
+  local total_height = vim.o.lines - vim.o.cmdheight - 1
+  local row_height = math.floor(total_height / rows)
+  for _, win in ipairs(grid_wins) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_set_height(win, row_height)
+    end
   end
 
   -- Focus sidebar
@@ -557,8 +579,10 @@ local function enter_commit_mode()
     return
   end
 
-  -- Save current buffer for restore
+  -- Save current buffer and settings for restore
   commit_state.saved_buf = vim.api.nvim_get_current_buf()
+  commit_state.saved_laststatus = vim.o.laststatus
+  vim.o.laststatus = 3
 
   -- Clear PR review keymaps and pause sync
   keymaps.clear()
@@ -654,6 +678,11 @@ local function exit_commit_mode()
   close_sidebar()
 
   state.set_commit_mode(false)
+
+  -- Restore laststatus
+  if commit_state.saved_laststatus then
+    vim.o.laststatus = commit_state.saved_laststatus
+  end
 
   -- Restore: close all windows, open saved buffer
   vim.cmd("only")
