@@ -4,19 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.3] - 2026-02-07
-
-### Added
-- `<leader>pr` keymap to browse all open PRs in a floating picker window
-- `:Raccoon prs` command as alternative to the keymap
-- j/k and arrow key navigation in PR list, Enter to open, q to close, r to refresh
-
-### Changed
-- Move navigation keymaps to leader-prefixed: `<leader>j`/`<leader>k` (next/prev point), `<leader>nf`/`<leader>pf` (next/prev file), `<leader>nt`/`<leader>pt` (next/prev thread), `<leader>c` (comment). Eliminates conflicts with built-in Vim keys.
-
-### Fixed
-- Use per-repo tokens in PR list fetch instead of hardcoded global token
-
 ## [0.2] - 2026-02-07
 
 ### Added

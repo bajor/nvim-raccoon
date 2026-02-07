@@ -53,11 +53,6 @@ function M.setup(opts)
     group = vim.api.nvim_create_augroup("RaccoonHighlights", { clear = true }),
     callback = setup_highlights,
   })
-
-  -- Global PR list picker keymap (always available)
-  vim.keymap.set("n", "<leader>pr", function()
-    require("raccoon.ui").show_pr_list()
-  end, { noremap = true, silent = true, desc = "Raccoon: PR list" })
 end
 
 --- Get sync status for lualine/statusline integration
