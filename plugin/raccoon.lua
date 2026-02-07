@@ -127,13 +127,6 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   ],
   "clone_root": "~/.local/share/raccoon/repos",
   "poll_interval_seconds": 300,
-  "ghostty_path": "/Applications/Ghostty.app",
-  "nvim_path": "/opt/homebrew/bin/nvim",
-  "notifications": {
-    "new_commits": true,
-    "new_comments": true,
-    "sound": true
-  },
   "commit_viewer": {
     "grid": { "rows": 2, "cols": 2 },
     "base_commits_count": 20
