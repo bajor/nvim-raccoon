@@ -893,7 +893,8 @@ function M.list_comments()
     end
 
     local comment = entry.comment
-    local line_num = comment.line or comment.original_line or comment.position or 0
+    local line_val = comment.line or comment.original_line or comment.position
+    local line_num = (type(line_val) == "number" and line_val) or 0
     local author = comment.user and comment.user.login or "unknown"
     local preview = (comment.body or ""):gsub("\n", " "):sub(1, 60)
     local status = comment.pending and " [pending]" or (comment.resolved and " [resolved]" or "")
