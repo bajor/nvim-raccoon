@@ -296,7 +296,7 @@ local function maximize_cell(cell_num)
 
   vim.wo[win].winbar = " " .. filename .. "%=%#Comment# <leader>q to exit %*"
   vim.wo[win].signcolumn = "yes:1"
-  vim.wo[win].wrap = false
+  vim.wo[win].wrap = true
 
   -- Buffer-local keymaps to close
   local buf_opts = { buffer = buf, noremap = true, silent = true }
@@ -547,7 +547,7 @@ local function create_grid_layout(rows, cols)
     for _, win in ipairs(col_wins) do
       local buf = create_scratch_buf()
       vim.api.nvim_win_set_buf(win, buf)
-      vim.wo[win].wrap = false
+      vim.wo[win].wrap = true
       vim.wo[win].number = false
       vim.wo[win].relativenumber = false
       vim.wo[win].signcolumn = "yes:1"
