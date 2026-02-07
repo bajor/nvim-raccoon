@@ -66,6 +66,10 @@ describe("raccoon.comments", function()
     it("has get_namespace function", function()
       assert.is_function(comments.get_namespace)
     end)
+
+    it("has show_readonly_thread function", function()
+      assert.is_function(comments.show_readonly_thread)
+    end)
   end)
 
   describe("get_namespace", function()
@@ -465,5 +469,285 @@ describe("raccoon.comments edge cases", function()
       local file_comments = state.get_comments("test.lua")
       assert.equals(99999, file_comments[1].line)
     end)
+
+    it("handles comments with original_line instead of line", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+      state.set_files({ { filename = "test.lua" } })
+      state.set_comments("test.lua", {
+        { id = 1, path = "test.lua", original_line = 42, body = "Outdated comment" },
+      })
+
+      local file_comments = state.get_comments("test.lua")
+      assert.equals(42, file_comments[1].original_line)
+    end)
+
+    it("handles comments with position instead of line", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+      state.set_files({ { filename = "test.lua" } })
+      state.set_comments("test.lua", {
+        { id = 1, path = "test.lua", position = 15, body = "Old API style" },
+      })
+
+      local file_comments = state.get_comments("test.lua")
+      assert.equals(15, file_comments[1].position)
+    end)
+
+    it("handles comments with nil line (vim.NIL from JSON null)", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+      state.set_files({ { filename = "test.lua" } })
+      -- Simulate vim.NIL by using a non-number type
+      state.set_comments("test.lua", {
+        { id = 1, path = "test.lua", line = vim.NIL, original_line = 30, body = "Outdated" },
+      })
+
+      local file_comments = state.get_comments("test.lua")
+      -- line is vim.NIL, but original_line should be accessible
+      assert.equals(30, file_comments[1].original_line)
+    end)
+  end)
+end)
+
+-- show_readonly_thread tests
+describe("raccoon.comments show_readonly_thread", function()
+  -- Helper to close all floating windows after each test
+  after_each(function()
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      local config = vim.api.nvim_win_get_config(win)
+      if config.relative and config.relative ~= "" then
+        pcall(vim.api.nvim_win_close, win, true)
+      end
+    end
+  end)
+
+  it("does nothing with nil comments", function()
+    local win_count = #vim.api.nvim_list_wins()
+    comments.show_readonly_thread({ comments = nil, title = " Test " })
+    assert.equals(win_count, #vim.api.nvim_list_wins())
+  end)
+
+  it("does nothing with empty comments", function()
+    local win_count = #vim.api.nvim_list_wins()
+    comments.show_readonly_thread({ comments = {}, title = " Test " })
+    assert.equals(win_count, #vim.api.nvim_list_wins())
+  end)
+
+  it("opens a floating window for a single comment", function()
+    local win_count = #vim.api.nvim_list_wins()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Hello world", user = { login = "alice" } },
+      },
+      title = " Thread ",
+    })
+    assert.equals(win_count + 1, #vim.api.nvim_list_wins())
+  end)
+
+  it("renders author header and body", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Fix this bug", user = { login = "bob" } },
+      },
+      title = " Thread ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.equals("@ bob", lines[1])
+    assert.equals("", lines[2])
+    assert.equals("Fix this bug", lines[3])
+  end)
+
+  it("shows pending status", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Draft", user = { login = "alice" }, pending = true },
+      },
+      title = " Thread ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.equals("@ alice [pending]", lines[1])
+  end)
+
+  it("shows resolved status", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Done", user = { login = "alice" }, resolved = true },
+      },
+      title = " Thread ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.equals("@ alice [resolved]", lines[1])
+  end)
+
+  it("shows review state", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "LGTM", user = { login = "alice" }, is_review = true, state = "APPROVED" },
+      },
+      title = " Review ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.equals("@ alice [approved]", lines[1])
+  end)
+
+  it("renders multiple comments with dividers", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "First", user = { login = "alice" } },
+        { body = "Second", user = { login = "bob" } },
+      },
+      title = " Thread ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+    -- First comment
+    assert.equals("@ alice", lines[1])
+    assert.equals("First", lines[3])
+
+    -- Find divider
+    local has_divider = false
+    for _, line in ipairs(lines) do
+      if line:match("^────") then
+        has_divider = true
+        break
+      end
+    end
+    assert.is_true(has_divider)
+
+    -- Second comment present
+    local has_bob = false
+    for _, line in ipairs(lines) do
+      if line == "@ bob" then
+        has_bob = true
+        break
+      end
+    end
+    assert.is_true(has_bob)
+  end)
+
+  it("creates a read-only buffer", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Test", user = { login = "alice" } },
+      },
+      title = " Thread ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    assert.is_false(vim.api.nvim_buf_get_option(buf, "modifiable"))
+  end)
+
+  it("renders multiline comment body", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Line one\nLine two\nLine three", user = { login = "alice" } },
+      },
+      title = " Thread ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    -- All three body lines should appear in the buffer
+    local found = {}
+    for _, line in ipairs(lines) do
+      if line == "Line one" or line == "Line two" or line == "Line three" then
+        found[line] = true
+      end
+    end
+    assert.is_true(found["Line one"])
+    assert.is_true(found["Line two"])
+    assert.is_true(found["Line three"])
+  end)
+
+  it("handles missing user gracefully", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "No user", user = nil },
+      },
+      title = " Thread ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.equals("@ unknown", lines[1])
+  end)
+
+  it("handles nil body gracefully", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = nil, user = { login = "alice" } },
+      },
+      title = " Thread ",
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.equals("@ alice", lines[1])
+  end)
+
+  it("uses provided title", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Test", user = { login = "alice" } },
+      },
+      title = " Custom Title ",
+    })
+
+    local win = vim.api.nvim_get_current_win()
+    local config = vim.api.nvim_win_get_config(win)
+    -- nvim_win_get_config returns title as nested table {{text}}
+    assert.equals(" Custom Title ", config.title[1][1])
+  end)
+
+  it("uses default title when not provided", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Test", user = { login = "alice" } },
+      },
+    })
+
+    local win = vim.api.nvim_get_current_win()
+    local config = vim.api.nvim_win_get_config(win)
+    assert.equals(" Thread ", config.title[1][1])
+  end)
+
+  it("closes on q keypress", function()
+    comments.show_readonly_thread({
+      comments = {
+        { body = "Test", user = { login = "alice" } },
+      },
+      title = " Thread ",
+    })
+
+    local win_count = #vim.api.nvim_list_wins()
+    -- Simulate pressing q
+    vim.api.nvim_feedkeys("q", "x", false)
+    assert.equals(win_count - 1, #vim.api.nvim_list_wins())
   end)
 end)
