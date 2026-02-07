@@ -546,7 +546,9 @@ end
 ---@param sha string Commit SHA
 ---@param callback fun(files: table[]|nil, err: string|nil)
 function M.show_commit(path, sha, callback)
-  run_git({ "show", "--format=", "--patch", sha }, {
+  -- Use diff-tree instead of show: -m --first-parent handles merge commits
+  -- (git show produces empty combined diff for clean merges)
+  run_git({ "diff-tree", "-p", "-m", "--first-parent", "--no-commit-id", sha }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
