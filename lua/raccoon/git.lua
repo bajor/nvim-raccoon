@@ -256,6 +256,25 @@ function M.get_remote_url(path, callback)
   })
 end
 
+--- Parse owner/repo from a git remote URL
+---@param url string|nil Git remote URL (SSH or HTTPS)
+---@return string|nil repo_string "owner/repo" format, or nil if unparseable
+function M.parse_repo_from_remote_url(url)
+  if not url or url == "" then
+    return nil
+  end
+  -- SSH: git@github.com:owner/repo.git
+  local owner, repo = url:match("git@github%.com:([^/]+)/(.+)$")
+  if not owner then
+    -- HTTPS: https://github.com/owner/repo.git
+    owner, repo = url:match("github%.com/([^/]+)/(.+)$")
+  end
+  if owner and repo then
+    return owner .. "/" .. repo:gsub("%.git$", "")
+  end
+  return nil
+end
+
 --- Build the clone path for a PR
 ---@param clone_root string Root directory for clones
 ---@param owner string Repository owner
