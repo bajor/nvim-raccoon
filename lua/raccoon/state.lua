@@ -223,7 +223,16 @@ function M.get_statusline_component()
   local parts = {}
   local sync = M.session.sync_status
 
+  -- File count indicator
+  local files = M.session.files
+  if #files > 0 then
+    table.insert(parts, string.format("[%d/%d]", M.session.current_file, #files))
+  end
+
   if not sync.checked then
+    if #parts > 0 then
+      return table.concat(parts, " │ ")
+    end
     return ""
   end
 

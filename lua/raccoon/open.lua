@@ -51,6 +51,12 @@ local function update_statusline()
 
   local parts = {}
 
+  -- File count indicator
+  local files = state.get_files()
+  if #files > 0 then
+    table.insert(parts, string.format("[%d/%d]", state.get_current_file_index(), #files))
+  end
+
   -- Conflict warning (highest priority - red)
   if has_conflicts then
     table.insert(parts, "%#RaccoonConflict# ⛔ MERGE CONFLICTS %*")
@@ -88,13 +94,20 @@ function M.statusline()
   local pr = state.get_pr()
   if not pr then return "" end
 
+  -- File count prefix
+  local files = state.get_files()
+  local file_part = ""
+  if #files > 0 then
+    file_part = string.format("[%d/%d] ", state.get_current_file_index(), #files)
+  end
+
   if has_conflicts then
-    return "⛔ CONFLICTS"
+    return file_part .. "⛔ CONFLICTS"
   elseif commits_behind > 0 then
     local plural = commits_behind == 1 and "commit" or "commits"
-    return string.format("⚠ %d %s behind %s", commits_behind, plural, pr.base.ref)
+    return file_part .. string.format("⚠ %d %s behind %s", commits_behind, plural, pr.base.ref)
   else
-    return "✓ In sync"
+    return file_part .. "✓ In sync"
   end
 end
 
