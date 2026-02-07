@@ -124,7 +124,7 @@ local function render_pr_list(prs, buf_width)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    table.insert(lines, "  Press 'r' to refresh, 'q' to close")
+    table.insert(lines, "  Press 'r' to refresh, '<leader>q' to close")
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -180,7 +180,7 @@ local function render_pr_list(prs, buf_width)
 
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
-  table.insert(lines, " Enter: open │ q: close │ r: refresh │ j/k: navigate")
+  table.insert(lines, " Enter: open │ <leader>q: close │ r: refresh │ j/k: navigate")
 
   return lines, highlights
 end
@@ -248,6 +248,81 @@ local function apply_highlights(buf, highlights)
   end
 end
 
+--- Show the PR list picker
+--- Opens a floating window with all open PRs from configured repos
+function M.show_pr_list()
+  -- Toggle: if already open, close it
+  if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
+    M.close_pr_list()
+    return
+  end
+
+  -- Create floating window
+  local win, buf = M.create_floating_window({
+    width_pct = 0.6,
+    height_pct = 0.6,
+    title = "Pull Requests",
+    border = "rounded",
+  })
+
+  -- Store state
+  M.state.win = win
+  M.state.buf = buf
+  M.state.prs = {}
+  M.state.selected = 1
+
+  -- Show loading state
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  Loading..." })
+  vim.bo[buf].modifiable = false
+
+  -- Setup buffer-local keymaps
+  local opts = { buffer = buf, noremap = true, silent = true }
+
+  local function move_down()
+    if M.state.selected < #M.state.prs then
+      M.state.selected = M.state.selected + 1
+      update_selection()
+    end
+  end
+
+  local function move_up()
+    if M.state.selected > 1 then
+      M.state.selected = M.state.selected - 1
+      update_selection()
+    end
+  end
+
+  vim.keymap.set("n", "j", move_down, opts)
+  vim.keymap.set("n", "<Down>", move_down, opts)
+  vim.keymap.set("n", "k", move_up, opts)
+  vim.keymap.set("n", "<Up>", move_up, opts)
+
+  -- Open selected PR on Enter
+  vim.keymap.set("n", "<CR>", function()
+    local pr = M.state.prs[M.state.selected]
+    if not pr then return end
+
+    local url = pr.html_url
+    if not url then return end
+
+    M.close_pr_list()
+
+    local open = require("raccoon.open")
+    open.open_pr(url)
+  end, opts)
+
+  -- Close on <leader>q or Esc
+  vim.keymap.set("n", "<leader>q", function() M.close_pr_list() end, opts)
+  vim.keymap.set("n", "<Esc>", function() M.close_pr_list() end, opts)
+
+  -- Refresh on r
+  vim.keymap.set("n", "r", function() M.refresh_pr_list() end, opts)
+
+  -- Fetch and display PRs
+  M.refresh_pr_list()
+end
+
 --- Refresh the PR list
 function M.refresh_pr_list()
   if not M.state.buf or not vim.api.nvim_buf_is_valid(M.state.buf) then
@@ -293,7 +368,7 @@ function M.refresh_pr_list()
   end)
 end
 
---- Fetch all PRs from configured repos
+--- Fetch all open PRs involving the user across all accessible repos
 ---@param callback fun(prs: table[]|nil, err: string|nil)
 function M.fetch_all_prs(callback)
   local cfg, err = config.load()
@@ -302,44 +377,7 @@ function M.fetch_all_prs(callback)
     return
   end
 
-  local all_prs = {}
-  local pending = #cfg.repos
-  local had_error = nil
-
-  if pending == 0 then
-    callback({}, nil)
-    return
-  end
-
-  for _, repo_str in ipairs(cfg.repos) do
-    local owner, repo = repo_str:match("^([^/]+)/(.+)$")
-    if owner and repo then
-      api.list_prs(owner, repo, cfg.github_token, function(prs, api_err)
-        pending = pending - 1
-
-        if api_err then
-          had_error = api_err
-        elseif prs then
-          for _, pr in ipairs(prs) do
-            table.insert(all_prs, pr)
-          end
-        end
-
-        if pending == 0 then
-          if had_error and #all_prs == 0 then
-            callback(nil, had_error)
-          else
-            callback(all_prs, nil)
-          end
-        end
-      end)
-    else
-      pending = pending - 1
-      if pending == 0 then
-        callback(all_prs, nil)
-      end
-    end
-  end
+  api.search_user_prs(cfg.github_username, cfg.github_token, callback)
 end
 
 --- Show PR description in a floating window (toggle)
@@ -407,7 +445,7 @@ function M.show_description()
 
   -- Close keymaps (also clear state)
   local opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "q", function()
+  vim.keymap.set("n", "<leader>q", function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
   end, opts)
