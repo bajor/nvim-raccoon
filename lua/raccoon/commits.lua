@@ -27,6 +27,8 @@ local commit_state = {
   saved_buf = nil,
   grid_rows = 2,
   grid_cols = 2,
+  maximize_win = nil,
+  maximize_buf = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -50,6 +52,8 @@ local function reset_state()
     saved_buf = nil,
     grid_rows = 2,
     grid_cols = 2,
+    maximize_win = nil,
+    maximize_buf = nil,
   }
 end
 
@@ -166,6 +170,102 @@ local function prev_page()
     commit_state.current_page = commit_state.current_page - 1
     render_grid_page()
   end
+end
+
+--- Close the maximized hunk view
+local function close_maximize()
+  if commit_state.maximize_win and vim.api.nvim_win_is_valid(commit_state.maximize_win) then
+    pcall(vim.api.nvim_win_close, commit_state.maximize_win, true)
+  end
+  commit_state.maximize_win = nil
+  commit_state.maximize_buf = nil
+end
+
+--- Maximize a grid cell: show the full file diff in a floating window
+---@param cell_num number 1-based grid cell index
+local function maximize_cell(cell_num)
+  local cells = commit_state.grid_rows * commit_state.grid_cols
+  local start_idx = (commit_state.current_page - 1) * cells + 1
+  local hunk_idx = start_idx + cell_num - 1
+  local hunk_data = commit_state.all_hunks[hunk_idx]
+  if not hunk_data then return end
+
+  -- Collect all hunks from the same file
+  local filename = hunk_data.filename
+  local file_hunks = {}
+  for _, h in ipairs(commit_state.all_hunks) do
+    if h.filename == filename then
+      table.insert(file_hunks, h)
+    end
+  end
+
+  -- Build lines and track highlight info
+  local lines = {}
+  local hl_lines = {}
+  for i, fh in ipairs(file_hunks) do
+    if i > 1 then
+      table.insert(lines, "")
+      table.insert(hl_lines, { type = "ctx" })
+      table.insert(lines, string.rep("─", 60))
+      table.insert(hl_lines, { type = "sep" })
+      table.insert(lines, "")
+      table.insert(hl_lines, { type = "ctx" })
+    end
+    for _, line_data in ipairs(fh.hunk.lines) do
+      if line_data.type == "add" then
+        table.insert(lines, "+" .. line_data.content)
+      elseif line_data.type == "del" then
+        table.insert(lines, "-" .. line_data.content)
+      else
+        table.insert(lines, " " .. line_data.content)
+      end
+      table.insert(hl_lines, { type = line_data.type })
+    end
+  end
+
+  -- Create floating window
+  local width = math.floor(vim.o.columns * 0.85)
+  local height = math.floor(vim.o.lines * 0.85)
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local buf = create_scratch_buf()
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+  })
+
+  -- Apply diff highlights
+  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+  for idx, hl in ipairs(hl_lines) do
+    if hl.type == "add" then
+      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonAdd", idx - 1, 0, -1)
+    elseif hl.type == "del" then
+      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonDelete", idx - 1, 0, -1)
+    elseif hl.type == "sep" then
+      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "Comment", idx - 1, 0, -1)
+    end
+  end
+
+  vim.wo[win].winbar = " " .. filename .. "%=%#Comment# <leader>q to exit %*"
+  vim.wo[win].wrap = false
+
+  -- Buffer-local keymaps to close
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+  vim.keymap.set("n", "<leader>q", close_maximize, buf_opts)
+  vim.keymap.set("n", "q", close_maximize, buf_opts)
+
+  commit_state.maximize_win = win
+  commit_state.maximize_buf = buf
 end
 
 --- Select a commit and load its hunks into the grid
@@ -380,6 +480,13 @@ local function create_grid_layout(rows, cols)
   commit_state.grid_wins = grid_wins
   commit_state.grid_bufs = grid_bufs
 
+  -- Set cell number labels in winbar (top-right corner)
+  for i, win in ipairs(grid_wins) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.wo[win].winbar = "%=%#Comment# " .. i .. " %*"
+    end
+  end
+
   -- Equalize grid windows, then restore sidebar width
   vim.cmd("wincmd =")
   if vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
@@ -402,6 +509,17 @@ local function setup_keymaps()
     { mode = "n", lhs = "<leader>k", rhs = prev_page, desc = "Previous page of hunks" },
     { mode = "n", lhs = "<leader>l", rhs = next_page, desc = "Next page of hunks" },
   }
+
+  -- Add <leader>m<N> keymaps for each grid cell
+  local cells = commit_state.grid_rows * commit_state.grid_cols
+  for i = 1, cells do
+    table.insert(commit_mode_keymaps, {
+      mode = "n",
+      lhs = "<leader>m" .. i,
+      rhs = function() maximize_cell(i) end,
+      desc = "Maximize grid cell " .. i,
+    })
+  end
 
   for _, km in ipairs(commit_mode_keymaps) do
     vim.keymap.set(km.mode, km.lhs, km.rhs, vim.tbl_extend("force", opts, { desc = km.desc }))
@@ -520,6 +638,7 @@ end
 
 --- Exit commit viewer mode
 local function exit_commit_mode()
+  close_maximize()
   clear_keymaps()
   close_grid()
   close_sidebar()

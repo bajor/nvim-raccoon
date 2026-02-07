@@ -136,9 +136,11 @@ Press `<leader>cm` during a PR review to enter commit viewer mode. A sidebar on 
 | `<leader>j` | Next page of diff hunks |
 | `<leader>k` | Previous page of diff hunks |
 | `<leader>l` | Next page of diff hunks (alias) |
+| `<leader>m1`..`m9` | Maximize grid cell (full file diff in floating window) |
+| `<leader>q` / `q` | Exit maximized view |
 | `<leader>cm` | Exit commit viewer mode |
 
-Each grid cell shows one diff hunk with green/red highlighting. The filename is displayed at the bottom of each cell. If a file has multiple hunks, each gets its own cell. Git sync is paused while in commit mode and resumes on exit.
+Each grid cell shows one diff hunk with green/red highlighting and a numbered label in the top-right corner. The filename is displayed at the bottom of each cell. If a file has multiple hunks, each gets its own cell. Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff (all hunks) and full Vim navigation. Git sync is paused while in commit mode and resumes on exit.
 
 ### Statusline Integration
 
