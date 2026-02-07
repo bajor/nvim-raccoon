@@ -168,28 +168,26 @@ local function update_header()
   local msg_lines = vim.split(msg, "\n", { trimempty = true })
   if #msg_lines == 0 then msg_lines = { "" } end
 
-  -- Build display: page indicator left, commit message right
+  -- Build display: commit message left, page indicator right
   local lines = {}
-  local right = msg_lines[1] .. " "
-  local gap = width - #page_str - #right
+  local left = " " .. msg_lines[1]
+  local gap = width - #left - #page_str - 1
   if gap < 1 then gap = 1 end
-  table.insert(lines, page_str .. string.rep(" ", gap) .. right)
+  table.insert(lines, left .. string.rep(" ", gap) .. page_str .. " ")
 
   for i = 2, #msg_lines do
-    local ml = msg_lines[i] .. " "
-    local pad = width - #ml
-    if pad < 0 then pad = 0 end
-    table.insert(lines, string.rep(" ", pad) .. ml)
+    table.insert(lines, " " .. msg_lines[i])
   end
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  -- Highlight page indicator
+  -- Highlight page indicator on the right
   local hl_ns = vim.api.nvim_create_namespace("raccoon_header_hl")
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
-  pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #page_str)
+  local line_len = #lines[1]
+  pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, line_len - #page_str - 1, line_len)
 
   vim.api.nvim_win_set_height(win, math.max(1, #lines))
 end
