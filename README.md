@@ -99,12 +99,12 @@ Or run `:Raccoon config` to create a default config file.
 
 | Key | Action |
 |-----|--------|
-| `n` | Next diff/comment |
-| `p` | Previous diff/comment |
-| `nf` | Next file |
-| `pf` | Previous file |
-| `nt` | Next comment thread |
-| `pt` | Previous comment thread |
+| `<leader>j` | Next diff/comment |
+| `<leader>k` | Previous diff/comment |
+| `<leader>J` | Next file |
+| `<leader>K` | Previous file |
+| `<leader>n` | Next comment thread |
+| `<leader>p` | Previous comment thread |
 | `<leader>c` | Comment at cursor |
 | `<leader>dd` | Show PR description |
 | `<leader>ll` | List all comments |
@@ -118,7 +118,7 @@ The statusline shows your current position and sync status:
 - `[2/3] ⚠ 2 commits behind main` — file 2 of 3, needs sync
 - `[1/5] ⛔ CONFLICTS` — merge conflicts detected
 
-When navigating with `n`/`p`, notifications show position within the current file:
+When navigating with `<leader>j`/`<leader>k`, notifications show position within the current file:
 - `[2/5] src/main.lua:42 (change)` — point 2 of 5 in this file, at line 42
 
 For lualine:

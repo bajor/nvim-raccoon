@@ -45,18 +45,18 @@ describe("raccoon.keymaps", function()
   end)
 
   describe("keymaps table", function()
-    it("has n keymap for next point", function()
+    it("has leader-j keymap for next point", function()
       local found = false
       for _, km in ipairs(keymaps.keymaps) do
-        if km.lhs == "n" then found = true end
+        if km.lhs == "<leader>j" then found = true end
       end
       assert.is_true(found)
     end)
 
-    it("has p keymap for prev point", function()
+    it("has leader-k keymap for prev point", function()
       local found = false
       for _, km in ipairs(keymaps.keymaps) do
-        if km.lhs == "p" then found = true end
+        if km.lhs == "<leader>k" then found = true end
       end
       assert.is_true(found)
     end)

@@ -461,12 +461,12 @@ end
 
 --- All PR review keymaps (simplified)
 M.keymaps = {
-  { mode = "n", lhs = "n", rhs = function() M.next_point() end, desc = "Next diff/comment" },
-  { mode = "n", lhs = "p", rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
-  { mode = "n", lhs = "nf", rhs = function() diff.next_file() end, desc = "Next file" },
-  { mode = "n", lhs = "pf", rhs = function() diff.prev_file() end, desc = "Previous file" },
-  { mode = "n", lhs = "nt", rhs = function() M.next_thread() end, desc = "Next comment thread" },
-  { mode = "n", lhs = "pt", rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
+  { mode = "n", lhs = "<leader>j", rhs = function() M.next_point() end, desc = "Next diff/comment" },
+  { mode = "n", lhs = "<leader>k", rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
+  { mode = "n", lhs = "<leader>J", rhs = function() diff.next_file() end, desc = "Next file" },
+  { mode = "n", lhs = "<leader>K", rhs = function() diff.prev_file() end, desc = "Previous file" },
+  { mode = "n", lhs = "<leader>n", rhs = function() M.next_thread() end, desc = "Next comment thread" },
+  { mode = "n", lhs = "<leader>p", rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
   { mode = "n", lhs = "<leader>c", rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
   { mode = "n", lhs = "<leader>dd", rhs = function() M.show_description() end, desc = "Show PR description" },
   { mode = "n", lhs = "<leader>ll", rhs = function() M.list_comments() end, desc = "List all PR comments" },
