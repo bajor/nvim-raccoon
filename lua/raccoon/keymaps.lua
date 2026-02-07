@@ -45,7 +45,7 @@ local function get_file_points(file)
     end
     for _, del in ipairs(changes.deleted) do
       if del.line_num then
-        table.insert(all_lines, del.line_num)
+        table.insert(all_lines, math.max(1, del.line_num))
       end
     end
     table.sort(all_lines)
