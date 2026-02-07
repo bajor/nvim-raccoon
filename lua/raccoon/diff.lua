@@ -120,10 +120,8 @@ function M.apply_highlights(buf, patch)
   for _, line_num in ipairs(changes.added) do
     local line_idx = line_num - 1
     if line_idx >= 0 and line_idx < line_count then
-      -- Full line highlight with green background
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonAdd", line_idx, 0, -1)
-      -- Green "+" sign in gutter
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+        line_hl_group = "RaccoonAdd",
         sign_text = "+",
         sign_hl_group = "RaccoonAddSign",
       })

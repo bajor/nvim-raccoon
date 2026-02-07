@@ -100,14 +100,14 @@ local function render_hunk_to_buffer(buf, hunk, filename)
   local line_idx = 0
   for _, line_data in ipairs(hunk.lines) do
     if line_data.type == "add" then
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonAdd", line_idx, 0, -1)
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+        line_hl_group = "RaccoonAdd",
         sign_text = "+",
         sign_hl_group = "RaccoonAddSign",
       })
     elseif line_data.type == "del" then
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonDelete", line_idx, 0, -1)
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+        line_hl_group = "RaccoonDelete",
         sign_text = "-",
         sign_hl_group = "RaccoonDeleteSign",
       })
@@ -323,19 +323,21 @@ local function maximize_cell(cell_num)
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
   for idx, hl in ipairs(hl_lines) do
     if hl.type == "add" then
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonAdd", idx - 1, 0, -1)
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
+        line_hl_group = "RaccoonAdd",
         sign_text = "+",
         sign_hl_group = "RaccoonAddSign",
       })
     elseif hl.type == "del" then
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonDelete", idx - 1, 0, -1)
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
+        line_hl_group = "RaccoonDelete",
         sign_text = "-",
         sign_hl_group = "RaccoonDeleteSign",
       })
     elseif hl.type == "sep" then
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "Comment", idx - 1, 0, -1)
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
+        line_hl_group = "Comment",
+      })
     end
   end
 
