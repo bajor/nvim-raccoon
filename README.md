@@ -126,6 +126,8 @@ Or run `:Raccoon config` to create a default config file.
 
 ### Commit Viewer Mode
 
+Inspired by chess game review, where you step back and forth through moves to understand the sequence that led to the final position. Instead of seeing the PR as a flat diff, commit viewer lets you replay the author's thought process one commit at a time — understanding *how* the code got to where it is, not just *what* changed.
+
 Press `<leader>cm` during a PR review to enter commit viewer mode. A sidebar on the right lists all commits from the PR branch and recent base branch commits. The main area displays a configurable grid of diff hunks.
 
 | Key | Action |
