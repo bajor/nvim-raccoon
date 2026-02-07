@@ -111,6 +111,20 @@ local function total_pages()
   return math.max(1, math.ceil(#commit_state.all_hunks / cells))
 end
 
+--- Update the winbar page indicator on all grid windows
+local function update_page_indicator()
+  local pages = total_pages()
+  local winbar = ""
+  if pages > 1 then
+    winbar = string.format(" %d/%d ", commit_state.current_page, pages)
+  end
+  for _, win in ipairs(commit_state.grid_wins) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.wo[win].winbar = winbar
+    end
+  end
+end
+
 --- Render the current page of hunks into the grid
 local function render_grid_page()
   local cells = commit_state.grid_rows * commit_state.grid_cols
@@ -137,11 +151,7 @@ local function render_grid_page()
     ::continue::
   end
 
-  -- Show page indicator
-  local pages = total_pages()
-  if pages > 1 then
-    vim.notify(string.format("Page %d/%d (%d hunks)", commit_state.current_page, pages, #commit_state.all_hunks))
-  end
+  update_page_indicator()
 end
 
 --- Go to next page of hunks
