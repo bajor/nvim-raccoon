@@ -1,6 +1,6 @@
 ---@class RaccoonKeymaps
 ---Keymap management for PR review sessions
----Only 3 shortcuts: n (next), p (previous), <leader>c (comment)
+---All keymaps use <leader> prefix to avoid conflicts with Vim builtins
 local M = {}
 
 local api = require("raccoon.api")
@@ -147,7 +147,7 @@ function M.next_point()
 
   local all_points = get_all_points()
   if #all_points == 0 then
-    vim.notify("No changes or comments in this PR", vim.log.levels.INFO)
+    diff.next_file()
     return
   end
 
@@ -163,9 +163,8 @@ function M.next_point()
     end
   end
 
-  -- Wrap around to first point
-  vim.notify("Wrapped to first point", vim.log.levels.INFO)
-  goto_point(all_points[1])
+  -- No next point found - go to next file
+  diff.next_file()
 end
 
 --- Go to previous point of interest (diff or comment, across files)
@@ -177,7 +176,7 @@ function M.prev_point()
 
   local all_points = get_all_points()
   if #all_points == 0 then
-    vim.notify("No changes or comments in this PR", vim.log.levels.INFO)
+    diff.prev_file()
     return
   end
 
@@ -194,9 +193,8 @@ function M.prev_point()
     end
   end
 
-  -- Wrap around to last point
-  vim.notify("Wrapped to last point", vim.log.levels.INFO)
-  goto_point(all_points[#all_points])
+  -- No previous point found - go to previous file
+  diff.prev_file()
 end
 
 --- Get all comment threads across all files (comments only, no diffs)

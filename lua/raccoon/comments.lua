@@ -430,7 +430,10 @@ function M.show_comment_thread()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = string.format(" Comments on L%d (s=save, r=resolve, u=unresolve, q=close) ", current_line),
+    title = string.format(
+      " Comments on L%d (<leader>s=save, <leader>r=resolve, <leader>u=unresolve, <leader>q=close) ",
+      current_line
+    ),
     title_pos = "center",
   })
 
