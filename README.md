@@ -58,7 +58,7 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
-  "your-username/nvim-raccoon",
+  "bajor/nvim-raccoon",
   dependencies = { "nvim-lua/plenary.nvim" },
   config = function()
     require("raccoon").setup()
