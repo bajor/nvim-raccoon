@@ -111,9 +111,18 @@ local function goto_point(point)
   vim.api.nvim_win_set_cursor(0, { target_line, 0 })
   vim.cmd("normal! zz")
 
-  -- Show what we landed on
+  -- Show what we landed on with position in file
+  local file_points = get_file_points(point.file)
+  local point_idx = 1
+  for i, p in ipairs(file_points) do
+    if p.line == point.line then
+      point_idx = i
+      break
+    end
+  end
   local type_str = point.type == "comment" and "comment" or "change"
-  vim.notify(string.format("%s:%d (%s)", point.file.filename, point.line, type_str))
+  vim.notify(string.format("[%d/%d] %s:%d (%s)",
+    point_idx, #file_points, point.file.filename, point.line, type_str))
 end
 
 --- Go to next point of interest (diff or comment, across files)
