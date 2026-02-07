@@ -75,6 +75,54 @@ local function create_scratch_buf()
   return buf
 end
 
+--- Block keys that shouldn't work in commit mode buffers (sidebar, grid, header).
+--- Allows: j/k, motion, scrolling, leader-prefixed keys (global, unaffected).
+---@param buf number Buffer ID
+local function lock_buf(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local opts = { buffer = buf, noremap = true, silent = true }
+  local nop = function() end
+  local blocked = {
+    "i", "I", "a", "A", "o", "O", "s", "S", "c", "C", "R",
+    "d", "x", "p", "P", "u", "<C-r>",
+    "q", "Q", "gQ",
+    "ZZ", "ZQ",
+    "<C-z>",
+    ":",
+  }
+  for _, key in ipairs(blocked) do
+    vim.keymap.set("n", key, nop, opts)
+  end
+end
+
+--- Block editing keys and commit-mode navigation in the maximize floating window.
+--- Allows: all vim navigation, scrolling, search, q/<leader>q (close), : (ex commands).
+--- Blocks: page nav, cell maximize, editing, insert — so maximize is fully isolated.
+---@param buf number Buffer ID
+local function lock_maximize_buf(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local opts = { buffer = buf, noremap = true, silent = true }
+  local nop = function() end
+  local blocked = {
+    -- Insert/editing keys
+    "i", "I", "a", "A", "o", "O", "s", "S", "c", "C", "R",
+    "d", "x", "p", "P", "u", "<C-r>",
+    "Q", "gQ",
+    "ZZ", "ZQ",
+    "<C-z>",
+    -- Block commit-mode navigation (override globals so maximize is isolated)
+    "<leader>j", "<leader>k", "<leader>l",
+  }
+  for _, key in ipairs(blocked) do
+    vim.keymap.set("n", key, nop, opts)
+  end
+  -- Block all cell maximize keys
+  local cells = commit_state.grid_rows * commit_state.grid_cols
+  for i = 1, cells do
+    vim.keymap.set("n", "<leader>m" .. i, nop, opts)
+  end
+end
+
 --- Render a diff hunk into a buffer with highlights
 ---@param buf number Buffer ID
 ---@param hunk table Parsed hunk from diff.parse_patch
@@ -341,7 +389,9 @@ local function maximize_cell(cell_num)
   vim.wo[win].signcolumn = "yes:1"
   vim.wo[win].wrap = true
 
-  -- Buffer-local keymaps to close
+  lock_maximize_buf(buf)
+
+  -- Buffer-local keymaps to close (set after lock so these override nop)
   local buf_opts = { buffer = buf, noremap = true, silent = true }
   vim.keymap.set("n", "<leader>q", close_maximize, buf_opts)
   vim.keymap.set("n", "q", close_maximize, buf_opts)
@@ -563,6 +613,7 @@ local function create_grid_layout(rows, cols)
       vim.wo[win].number = false
       vim.wo[win].relativenumber = false
       vim.wo[win].signcolumn = "yes:1"
+      lock_buf(buf)
       table.insert(grid_wins, win)
       table.insert(grid_bufs, buf)
     end
@@ -603,6 +654,7 @@ local function create_grid_layout(rows, cols)
   vim.wo[commit_state.header_win].signcolumn = "no"
   vim.wo[commit_state.header_win].wrap = false
   vim.wo[commit_state.header_win].winhl = "Normal:Normal"
+  lock_buf(commit_state.header_buf)
 
   -- Equalize grid windows, then fix dimensions
   vim.cmd("wincmd =")
@@ -678,6 +730,7 @@ local function setup_keymaps()
     vim.keymap.set("n", "<Down>", move_down, buf_opts)
     vim.keymap.set("n", "<Up>", move_up, buf_opts)
     vim.keymap.set("n", "<CR>", function() select_commit(commit_state.selected_index) end, buf_opts)
+    lock_buf(commit_state.sidebar_buf)
   end
 
   -- Autocmd to snap focus back to sidebar if user somehow leaves it
