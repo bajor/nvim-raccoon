@@ -368,7 +368,7 @@ function M.refresh_pr_list()
   end)
 end
 
---- Fetch all PRs from configured repos
+--- Fetch all open PRs involving the user across all accessible repos
 ---@param callback fun(prs: table[]|nil, err: string|nil)
 function M.fetch_all_prs(callback)
   local cfg, err = config.load()
@@ -377,70 +377,7 @@ function M.fetch_all_prs(callback)
     return
   end
 
-  local all_prs = {}
-  local pending = #cfg.repos
-  local had_error = nil
-
-  if pending == 0 then
-    -- Auto-detect from current git repo
-    local git = require("raccoon.git")
-    git.get_remote_url(vim.fn.getcwd(), function(url, git_err)
-      if git_err or not url then
-        callback({}, nil)
-        return
-      end
-      local repo_str = git.parse_repo_from_remote_url(url)
-      if not repo_str then
-        callback({}, nil)
-        return
-      end
-      local owner, repo = repo_str:match("^([^/]+)/(.+)$")
-      if not owner or not repo then
-        callback({}, nil)
-        return
-      end
-      local token = config.get_token_for_repo(cfg, repo_str)
-      api.list_prs(owner, repo, token, function(prs, api_err)
-        if api_err then
-          callback(nil, api_err)
-        else
-          callback(prs or {}, nil)
-        end
-      end)
-    end)
-    return
-  end
-
-  for _, repo_str in ipairs(cfg.repos) do
-    local owner, repo = repo_str:match("^([^/]+)/(.+)$")
-    if owner and repo then
-      local token = config.get_token_for_repo(cfg, repo_str)
-      api.list_prs(owner, repo, token, function(prs, api_err)
-        pending = pending - 1
-
-        if api_err then
-          had_error = api_err
-        elseif prs then
-          for _, pr in ipairs(prs) do
-            table.insert(all_prs, pr)
-          end
-        end
-
-        if pending == 0 then
-          if had_error and #all_prs == 0 then
-            callback(nil, had_error)
-          else
-            callback(all_prs, nil)
-          end
-        end
-      end)
-    else
-      pending = pending - 1
-      if pending == 0 then
-        callback(all_prs, nil)
-      end
-    end
-  end
+  api.search_user_prs(cfg.github_username, cfg.github_token, callback)
 end
 
 --- Show PR description in a floating window (toggle)
