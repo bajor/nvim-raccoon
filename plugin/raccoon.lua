@@ -19,11 +19,12 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     local url = args[2]
     -- If no URL provided, read from temp file (written by macOS app to avoid long command line issues)
     if not url then
-      local f = io.open("/tmp/raccoon-url.txt", "r")
+      local url_file = vim.fn.stdpath("data") .. "/raccoon-url.txt"
+      local f = io.open(url_file, "r")
       if f then
         url = f:read("*a"):gsub("%s+$", "")
         f:close()
-        os.remove("/tmp/raccoon-url.txt")
+        os.remove(url_file)
       end
     end
     if not url or url == "" then
