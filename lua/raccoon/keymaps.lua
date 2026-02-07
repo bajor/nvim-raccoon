@@ -112,10 +112,8 @@ local function goto_point(point)
   vim.cmd("normal! zz")
 
   -- Show what we landed on
-  local files = state.get_files()
   local type_str = point.type == "comment" and "comment" or "change"
-  vim.notify(string.format("[%d/%d] %s:%d (%s)",
-    point.file_index, #files, point.file.filename, point.line, type_str))
+  vim.notify(string.format("%s:%d (%s)", point.file.filename, point.line, type_str))
 end
 
 --- Go to next point of interest (diff or comment, across files)

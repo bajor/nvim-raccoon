@@ -249,7 +249,7 @@ function M.next_file()
   local file = state.get_current_file()
   if file then
     M.open_file(file)
-    vim.notify(string.format("File %d/%d: %s", state.get_current_file_index(), #files, file.filename))
+    vim.notify(file.filename)
     return true
   end
   return false
@@ -276,7 +276,7 @@ function M.prev_file()
   local file = state.get_current_file()
   if file then
     M.open_file(file)
-    vim.notify(string.format("File %d/%d: %s", state.get_current_file_index(), #files, file.filename))
+    vim.notify(file.filename)
     return true
   end
   return false
@@ -301,7 +301,7 @@ function M.goto_file(index)
   local file = state.get_current_file()
   if file then
     M.open_file(file)
-    vim.notify(string.format("File %d/%d: %s", index, #files, file.filename))
+    vim.notify(file.filename)
     return true
   end
   return false
