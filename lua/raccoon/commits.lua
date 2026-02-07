@@ -30,6 +30,7 @@ local commit_state = {
   grid_cols = 2,
   maximize_win = nil,
   maximize_buf = nil,
+  focus_augroup = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -56,6 +57,7 @@ local function reset_state()
     grid_cols = 2,
     maximize_win = nil,
     maximize_buf = nil,
+    focus_augroup = nil,
   }
 end
 
@@ -596,15 +598,35 @@ local function create_grid_layout(rows, cols)
   end
 end
 
+--- Force focus back to sidebar (prevents leaving sidebar window)
+local function lock_to_sidebar()
+  local win = commit_state.sidebar_win
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_set_current_win(win)
+  end
+end
+
 --- Setup commit mode keymaps
 local function setup_keymaps()
   local opts = { noremap = true, silent = true }
+  local nop = function() end
 
   commit_mode_keymaps = {
     { mode = "n", lhs = "<leader>cm", rhs = function() M.toggle() end, desc = "Exit commit viewer" },
     { mode = "n", lhs = "<leader>j", rhs = next_page, desc = "Next page of hunks" },
     { mode = "n", lhs = "<leader>k", rhs = prev_page, desc = "Previous page of hunks" },
     { mode = "n", lhs = "<leader>l", rhs = next_page, desc = "Next page of hunks" },
+    -- Block window-switching keys
+    { mode = "n", lhs = "<C-w>h", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w>j", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w>k", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w>l", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w>w", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w><C-w>", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w>H", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w>J", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w>K", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = "n", lhs = "<C-w>L", rhs = nop, desc = "Blocked in commit mode" },
   }
 
   -- Add <leader>m<N> keymaps for each grid cell
@@ -631,6 +653,21 @@ local function setup_keymaps()
     vim.keymap.set("n", "<Up>", move_up, buf_opts)
     vim.keymap.set("n", "<CR>", function() select_commit(commit_state.selected_index) end, buf_opts)
   end
+
+  -- Autocmd to snap focus back to sidebar if user somehow leaves it
+  commit_state.focus_augroup = vim.api.nvim_create_augroup("RaccoonCommitFocus", { clear = true })
+  vim.api.nvim_create_autocmd("WinEnter", {
+    group = commit_state.focus_augroup,
+    callback = function()
+      if not commit_state.active then return end
+      local cur_win = vim.api.nvim_get_current_win()
+      -- Allow maximize floating window
+      if cur_win == commit_state.maximize_win then return end
+      if cur_win ~= commit_state.sidebar_win then
+        vim.schedule(lock_to_sidebar)
+      end
+    end,
+  })
 end
 
 --- Clear commit mode keymaps
@@ -747,6 +784,11 @@ end
 
 --- Exit commit viewer mode
 local function exit_commit_mode()
+  -- Remove focus lock first (before closing windows)
+  if commit_state.focus_augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
+  end
+
   close_maximize()
   clear_keymaps()
   close_grid()
