@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Commit viewer mode (`<leader>cm` or `:Raccoon commits`) — browse individual commits from the PR branch in a configurable grid of diff hunks
+- Fetch base branch before loading commits in viewer mode to support shallow single-branch clones
 - Sidebar on the right listing PR branch commits and recent base branch commits
 - Configurable grid layout via `commit_viewer.grid` in config.json (default 2x2)
 - j/k navigation in sidebar auto-loads the selected commit's diffs into the grid
