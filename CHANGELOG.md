@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Full-width header bar at top of screen showing commit message (right) and page indicator (left)
 - Syntax highlighting and gutter signs (`+`/`-`) for diffs in grid cells
 - Focus lock: sidebar stays focused, window-switching keys blocked in commit mode
+- Keybinding lockdown in commit mode — only `j`/`k`, `<leader>j`/`<leader>k`, `<leader>cm`, and `<leader>m<N>` work; `:q`, insert mode, editing keys, and other vim commands are blocked
+- Maximize window is fully isolated — page navigation and cell switching are blocked; normal vim navigation (scrolling, search, `:` commands) is allowed
 - Line wrapping enabled in grid cells and maximize view
 - Git sync pauses while in commit viewer mode and resumes on exit
 - `diff-tree` used for commit diffs to correctly handle merge commits

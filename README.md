@@ -140,7 +140,13 @@ Press `<leader>cm` during a PR review to enter commit viewer mode. A sidebar on 
 | `<leader>q` / `q` | Exit maximized view |
 | `<leader>cm` | Exit commit viewer mode |
 
-Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number (`#1`, `#2`, ...) are shown in the winbar at the top of each cell. A full-width header bar at the top of the screen displays the current commit message and page indicator. Navigation seamlessly crosses from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell. Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff (all hunks) and full Vim navigation. Focus is locked to the sidebar; window-switching keys are blocked. Git sync is paused while in commit mode and resumes on exit.
+Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number (`#1`, `#2`, ...) are shown in the winbar at the top of each cell. A full-width header bar at the top of the screen displays the current commit message and page indicator. Navigation seamlessly crosses from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
+
+**Keybinding lockdown:** In commit mode, most vim keybindings are disabled to prevent accidentally breaking the layout. Only the keys listed above work — `:q`, insert mode, editing, and other commands are blocked. Exit with `<leader>cm`.
+
+**Maximize view:** Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff (all hunks). The maximize window is fully isolated: page navigation and cell switching are blocked, but normal vim navigation works (scrolling, search, `:` commands). Close with `q` or `<leader>q`.
+
+Focus is locked to the sidebar; window-switching keys are blocked. Git sync is paused while in commit mode and resumes on exit.
 
 ### Statusline Integration
 
