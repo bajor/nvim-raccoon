@@ -30,6 +30,8 @@ jobs:
         neovim_version: ['stable', 'nightly']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Neovim
         uses: rhysd/action-setup-vim@v1
