@@ -18,8 +18,5 @@ end
 -- Load plenary
 vim.cmd("runtime plugin/plenary.vim")
 
--- Set leader key for keymap tests
-vim.g.mapleader = " "
-
 -- Disable swap files for tests
 vim.opt.swapfile = false
