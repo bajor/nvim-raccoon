@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - New git operations: `unshallow_if_needed`, `log_commits`, `log_base_commits`, `show_commit`, `fetch_branch`
 - `commit_viewer.base_commits_count` config option (default 20)
 - `commit_viewer` defaults in config template
+- Diff highlights extend to full window width
 
 ## [0.3] - 2026-02-07
 
