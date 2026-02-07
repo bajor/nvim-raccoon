@@ -226,6 +226,18 @@ describe("raccoon.api edge cases", function()
     it("get_pr_review_threads is a function", function()
       assert.is_function(api.get_pr_review_threads)
     end)
+
+    it("get_pr_reviews is a function", function()
+      assert.is_function(api.get_pr_reviews)
+    end)
+
+    it("resolve_review_thread is a function", function()
+      assert.is_function(api.resolve_review_thread)
+    end)
+
+    it("unresolve_review_thread is a function", function()
+      assert.is_function(api.unresolve_review_thread)
+    end)
   end)
 
   describe("base_url configuration", function()
