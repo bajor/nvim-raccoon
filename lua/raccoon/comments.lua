@@ -272,6 +272,72 @@ end
 local COMMENT_DIVIDER = "────────────────────────────────────────────────"
 local NEW_COMMENT_HEADER = "── New Comment ──────────────────────────────────"
 
+--- Show a read-only thread view in a floating window
+--- Displays all comments for a given thread, or a single review body
+---@param opts table {comments: table[], title: string}
+function M.show_readonly_thread(opts)
+  local thread_comments = opts.comments
+  if not thread_comments or #thread_comments == 0 then
+    return
+  end
+
+  local lines = {}
+  for i, comment in ipairs(thread_comments) do
+    local author = comment.user and comment.user.login or "unknown"
+    local status = ""
+    if comment.is_review and comment.state then
+      status = " [" .. comment.state:lower() .. "]"
+    elseif comment.resolved then
+      status = " [resolved]"
+    elseif comment.pending then
+      status = " [pending]"
+    end
+
+    table.insert(lines, "@ " .. author .. status)
+    table.insert(lines, "")
+
+    for body_line in (comment.body or ""):gmatch("[^\n]*") do
+      table.insert(lines, body_line)
+    end
+
+    if i < #thread_comments then
+      table.insert(lines, "")
+      table.insert(lines, COMMENT_DIVIDER)
+      table.insert(lines, "")
+    end
+  end
+
+  local width = math.min(140, vim.o.columns - 4)
+  local height = math.min(#lines + 2, 50)
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(buf, "modifiable", false)
+  vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = math.floor((vim.o.lines - height) / 2),
+    col = math.floor((vim.o.columns - width) / 2),
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = opts.title or " Thread ",
+    title_pos = "center",
+  })
+
+  vim.wo[win].wrap = true
+
+  local keymap_opts = { buffer = buf, noremap = true, silent = true }
+  vim.keymap.set("n", "q", function()
+    vim.api.nvim_win_close(win, true)
+  end, keymap_opts)
+  vim.keymap.set("n", "<Esc>", function()
+    vim.api.nvim_win_close(win, true)
+  end, keymap_opts)
+end
+
 --- Show threaded comment view for the current line
 --- Allows viewing, editing existing comments, and adding new ones
 function M.show_comment_thread()
@@ -538,7 +604,7 @@ function M.show_comment_thread()
 
     vim.notify("Resolving thread...", vim.log.levels.INFO)
 
-    api.resolve_review_thread(owner, repo, thread_id, token, function(err)
+    api.resolve_review_thread(thread_id, token, function(err)
       vim.schedule(function()
         if err then
           vim.notify("Failed to resolve thread: " .. err, vim.log.levels.ERROR)
@@ -605,7 +671,7 @@ function M.show_comment_thread()
 
     vim.notify("Unresolving thread...", vim.log.levels.INFO)
 
-    api.unresolve_review_thread(owner, repo, thread_id, token, function(err)
+    api.unresolve_review_thread(thread_id, token, function(err)
       vim.schedule(function()
         if err then
           vim.notify("Failed to unresolve thread: " .. err, vim.log.levels.ERROR)
@@ -925,6 +991,7 @@ function M.list_comments()
       local state_str = review.state and string.format(" [%s]", review.state:lower()) or ""
       local preview = (review.body or ""):gsub("\n", " "):sub(1, 60)
       table.insert(lines, string.format("  %s%s: %s", author, state_str, preview))
+      line_to_entry[#lines] = { review = review }
     end
   end
 
@@ -967,33 +1034,34 @@ function M.list_comments()
     comment_list_win = nil
   end
 
-  -- Jump to comment on Enter
+  -- View thread on Enter
   vim.keymap.set("n", "<CR>", function()
     local cursor_line = vim.fn.line(".")
     local entry = line_to_entry[cursor_line]
-    if entry then
-      close_list()
+    if not entry then
+      return
+    end
 
-      -- Open the file
-      local clone_path = state.get_clone_path()
-      if clone_path then
-        local full_path = clone_path .. "/" .. entry.file
-        local ok, open_err = pcall(vim.cmd, "edit " .. vim.fn.fnameescape(full_path))
-        if not ok then
-          local short_err = tostring(open_err):match("^[^\n]+") or "unknown error"
-          vim.notify("Failed to open file: " .. entry.file .. " (" .. short_err .. ")", vim.log.levels.WARN)
-          return
-        end
-
-        -- Jump to line
-        local line_val = get_comment_line(entry.comment)
-        if line_val then
-          vim.api.nvim_win_set_cursor(0, { line_val, 0 })
-          M.show_comment_popup(entry.comment)
-        else
-          vim.notify("Comment has no valid line number", vim.log.levels.WARN)
+    if entry.review then
+      M.show_readonly_thread({
+        comments = { entry.review },
+        title = " Review ",
+      })
+    elseif entry.file and entry.comment then
+      local target_line = get_comment_line(entry.comment)
+      local thread = {}
+      for _, e in ipairs(all_comments) do
+        if e.file == entry.file and get_comment_line(e.comment) == target_line then
+          table.insert(thread, e.comment)
         end
       end
+      if #thread == 0 then
+        thread = { entry.comment }
+      end
+      M.show_readonly_thread({
+        comments = thread,
+        title = string.format(" %s L%d (%d comments, q=close) ", entry.file, target_line or 0, #thread),
+      })
     end
   end, { buffer = buf, noremap = true, silent = true })
 
