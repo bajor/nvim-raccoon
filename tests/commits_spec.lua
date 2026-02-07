@@ -32,6 +32,10 @@ describe("raccoon.git commit operations", function()
       assert.is_function(git.unshallow_if_needed)
     end)
 
+    it("has fetch_branch function", function()
+      assert.is_function(git.fetch_branch)
+    end)
+
     it("has log_commits function", function()
       assert.is_function(git.log_commits)
     end)

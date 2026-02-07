@@ -470,6 +470,23 @@ function M.unshallow_if_needed(path, callback)
   })
 end
 
+--- Fetch a specific branch from origin
+---@param path string Repository path
+---@param branch string Branch name to fetch
+---@param callback fun(success: boolean, err: string|nil)
+function M.fetch_branch(path, branch, callback)
+  run_git({ "fetch", "origin", branch }, {
+    cwd = path,
+    on_exit = function(code, _, stderr)
+      if code == 0 then
+        callback(true, nil)
+      else
+        callback(false, table.concat(stderr, "\n"))
+      end
+    end,
+  })
+end
+
 --- Get commit log for PR branch (commits not on base)
 ---@param path string Repository path
 ---@param base_branch string Base branch (e.g., "main")

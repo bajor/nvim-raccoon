@@ -584,54 +584,64 @@ local function enter_commit_mode()
 
   vim.notify("Entering commit viewer mode...", vim.log.levels.INFO)
 
-  -- Unshallow if needed, then fetch commits
+  -- Unshallow if needed, then fetch base branch, then fetch commits
   git.unshallow_if_needed(clone_path, function(_, unshallow_err)
     if unshallow_err then
       vim.notify("Warning: unshallow failed: " .. unshallow_err, vim.log.levels.WARN)
     end
 
-    -- Fetch PR commits and base commits in parallel
-    local pending = 2
-
-    local function on_both_ready()
-      if #commit_state.pr_commits == 0 then
-        vim.notify("No commits found on PR branch", vim.log.levels.WARN)
+    -- Fetch base branch to ensure origin/<base_branch> ref exists
+    -- (shallow single-branch clones only track the PR branch)
+    git.fetch_branch(clone_path, base_branch, function(_, fetch_err)
+      if fetch_err then
+        vim.notify("Failed to fetch base branch: " .. fetch_err, vim.log.levels.ERROR)
         M.toggle()
         return
       end
 
-      create_grid_layout(rows, cols)
-      render_sidebar()
-      setup_keymaps()
-      select_commit(1)
-      vim.notify(string.format("Commit viewer: %d PR commits, %d base commits",
-        #commit_state.pr_commits, #commit_state.base_commits))
-    end
+      -- Fetch PR commits and base commits in parallel
+      local pending = 2
 
-    local function check_done()
-      pending = pending - 1
-      if pending == 0 then
-        vim.schedule(on_both_ready)
-      end
-    end
+      local function on_both_ready()
+        if #commit_state.pr_commits == 0 then
+          vim.notify("No commits found on PR branch", vim.log.levels.WARN)
+          M.toggle()
+          return
+        end
 
-    git.log_commits(clone_path, base_branch, function(commits, err)
-      if err then
-        vim.notify("Failed to get PR commits: " .. err, vim.log.levels.ERROR)
-        commit_state.pr_commits = {}
-      else
-        commit_state.pr_commits = commits or {}
+        create_grid_layout(rows, cols)
+        render_sidebar()
+        setup_keymaps()
+        select_commit(1)
+        vim.notify(string.format("Commit viewer: %d PR commits, %d base commits",
+          #commit_state.pr_commits, #commit_state.base_commits))
       end
-      check_done()
-    end)
 
-    git.log_base_commits(clone_path, base_branch, base_count, function(commits, err)
-      if err then
-        commit_state.base_commits = {}
-      else
-        commit_state.base_commits = commits or {}
+      local function check_done()
+        pending = pending - 1
+        if pending == 0 then
+          vim.schedule(on_both_ready)
+        end
       end
-      check_done()
+
+      git.log_commits(clone_path, base_branch, function(commits, err)
+        if err then
+          vim.notify("Failed to get PR commits: " .. err, vim.log.levels.ERROR)
+          commit_state.pr_commits = {}
+        else
+          commit_state.pr_commits = commits or {}
+        end
+        check_done()
+      end)
+
+      git.log_base_commits(clone_path, base_branch, base_count, function(commits, err)
+        if err then
+          commit_state.base_commits = {}
+        else
+          commit_state.base_commits = commits or {}
+        end
+        check_done()
+      end)
     end)
   end)
 end
