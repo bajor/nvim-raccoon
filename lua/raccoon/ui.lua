@@ -124,7 +124,7 @@ local function render_pr_list(prs, buf_width)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    table.insert(lines, "  Press 'r' to refresh, 'q' to close")
+    table.insert(lines, "  Press 'r' to refresh, '<leader>q' to close")
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -180,7 +180,7 @@ local function render_pr_list(prs, buf_width)
 
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
-  table.insert(lines, " Enter: open │ q: close │ r: refresh │ j/k: navigate")
+  table.insert(lines, " Enter: open │ <leader>q: close │ r: refresh │ j/k: navigate")
 
   return lines, highlights
 end
@@ -312,8 +312,8 @@ function M.show_pr_list()
     open.open_pr(url)
   end, opts)
 
-  -- Close on q or Esc
-  vim.keymap.set("n", "q", function() M.close_pr_list() end, opts)
+  -- Close on <leader>q or Esc
+  vim.keymap.set("n", "<leader>q", function() M.close_pr_list() end, opts)
   vim.keymap.set("n", "<Esc>", function() M.close_pr_list() end, opts)
 
   -- Refresh on r
@@ -508,7 +508,7 @@ function M.show_description()
 
   -- Close keymaps (also clear state)
   local opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "q", function()
+  vim.keymap.set("n", "<leader>q", function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
   end, opts)

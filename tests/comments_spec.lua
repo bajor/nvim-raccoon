@@ -746,8 +746,8 @@ describe("raccoon.comments show_readonly_thread", function()
     })
 
     local win_count = #vim.api.nvim_list_wins()
-    -- Simulate pressing q
-    vim.api.nvim_feedkeys("q", "x", false)
+    -- Simulate pressing <leader>q
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<leader>q", true, false, true), "x", false)
     assert.equals(win_count - 1, #vim.api.nvim_list_wins())
   end)
 end)
