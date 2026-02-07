@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `:Raccoon prs` command as alternative to the keymap
 - j/k and arrow key navigation in PR list, Enter to open, q to close, r to refresh
 
+### Changed
+- Simplify `nn`/`pp` keymaps to single `n`/`p` (fixes E486 pattern-not-found from timeout fallthrough to built-in search)
+
 ### Fixed
 - Use per-repo tokens in PR list fetch instead of hardcoded global token
 
