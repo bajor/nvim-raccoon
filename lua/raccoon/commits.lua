@@ -350,7 +350,7 @@ local function select_commit(index)
   end)
 end
 
---- Update sidebar selection highlight
+--- Update sidebar selection highlight and show full commit message
 local function update_sidebar_selection()
   local buf = commit_state.sidebar_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
@@ -364,11 +364,47 @@ local function update_sidebar_selection()
   -- Sidebar layout: header at 0, PR commits at 1..N,
   -- blank at N+1, base header at N+2, base commits at N+3..
   local pr_count = #commit_state.pr_commits
+  local base_count = #commit_state.base_commits
   local line_idx = idx
   if idx > pr_count then
     line_idx = idx + 2 -- skip blank separator + base header
   end
   pcall(vim.api.nvim_buf_add_highlight, buf, sel_ns, "Visual", line_idx, 0, -1)
+
+  -- Update detail section at bottom with full commit message
+  -- Detail starts after: header + pr commits + blank + header + base commits
+  local detail_start = 1 + pr_count + 2 + base_count -- 0-based line index
+  local commit = get_commit(idx)
+  local detail_lines = { "", "──────────────────────────────────────" }
+  if commit then
+    -- Word-wrap the full message to sidebar width
+    local msg = commit.message or ""
+    local sha = commit.sha and commit.sha:sub(1, 7) or ""
+    table.insert(detail_lines, sha)
+    for line in (msg .. "\n"):gmatch("([^\n]*)\n") do
+      if #line <= SIDEBAR_WIDTH - 2 then
+        table.insert(detail_lines, line)
+      else
+        -- Wrap long lines
+        local pos = 1
+        while pos <= #line do
+          table.insert(detail_lines, line:sub(pos, pos + SIDEBAR_WIDTH - 3))
+          pos = pos + SIDEBAR_WIDTH - 2
+        end
+      end
+    end
+  end
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, detail_start, -1, false, detail_lines)
+  vim.bo[buf].modifiable = false
+
+  -- Highlight detail separator and sha
+  local hl_ns = vim.api.nvim_create_namespace("raccoon_commit_hl")
+  pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", detail_start + 1, 0, -1)
+  if commit then
+    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Title", detail_start + 2, 0, -1)
+  end
 
   if commit_state.sidebar_win and vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
     pcall(vim.api.nvim_win_set_cursor, commit_state.sidebar_win, { line_idx + 1, 0 })
