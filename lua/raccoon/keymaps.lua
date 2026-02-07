@@ -469,7 +469,9 @@ M.keymaps = {
   { mode = "n", lhs = "<leader>dd", rhs = function() M.show_description() end, desc = "Show PR description" },
   { mode = "n", lhs = "<leader>ll", rhs = function() M.list_comments() end, desc = "List all PR comments" },
   { mode = "n", lhs = "<leader>rr", rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
-  { mode = "n", lhs = "<leader>cm", rhs = function() require("raccoon.commits").toggle() end, desc = "Toggle commit viewer" },
+  { mode = "n", lhs = "<leader>cm", rhs = function()
+    require("raccoon.commits").toggle()
+  end, desc = "Toggle commit viewer" },
 }
 
 --- Setup all keymaps for PR review mode
