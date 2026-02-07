@@ -461,8 +461,8 @@ end
 
 --- All PR review keymaps (simplified)
 M.keymaps = {
-  { mode = "n", lhs = "nn", rhs = function() M.next_point() end, desc = "Next diff/comment" },
-  { mode = "n", lhs = "pp", rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
+  { mode = "n", lhs = "n", rhs = function() M.next_point() end, desc = "Next diff/comment" },
+  { mode = "n", lhs = "p", rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
   { mode = "n", lhs = "nf", rhs = function() diff.next_file() end, desc = "Next file" },
   { mode = "n", lhs = "pf", rhs = function() diff.prev_file() end, desc = "Previous file" },
   { mode = "n", lhs = "nt", rhs = function() M.next_thread() end, desc = "Next comment thread" },
