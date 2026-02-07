@@ -566,7 +566,9 @@ function M.show_commit(path, sha, callback)
             table.insert(files, { filename = current_file, patch = table.concat(current_lines, "\n") })
           end
           -- Extract filename from "diff --git a/path b/path"
-          current_file = line:match("^diff %-%-git a/.+ b/(.+)$")
+          -- For deletions b-path is dev/null, so fall back to a-path
+          local a_path, b_path = line:match("^diff %-%-git a/(.+) b/(.+)$")
+          current_file = (b_path ~= "dev/null" and b_path) or a_path
           current_lines = {}
         elseif current_file and line:match("^@@") then
           table.insert(current_lines, line)
@@ -581,6 +583,34 @@ function M.show_commit(path, sha, callback)
       end
 
       callback(files, nil)
+    end,
+  })
+end
+
+--- Get full-context diff for a single file in a commit
+---@param path string Repository path
+---@param sha string Commit SHA
+---@param filename string File path within the repo
+---@param callback fun(patch: string|nil, err: string|nil)
+function M.show_commit_file(path, sha, filename, callback)
+  run_git({ "diff-tree", "-p", "-m", "--first-parent", "--no-commit-id", "-U99999", sha, "--", filename }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      local lines = {}
+      local in_patch = false
+      for _, line in ipairs(stdout) do
+        if line:match("^@@") then
+          in_patch = true
+        end
+        if in_patch then
+          table.insert(lines, line)
+        end
+      end
+      callback(table.concat(lines, "\n"), nil)
     end,
   })
 end

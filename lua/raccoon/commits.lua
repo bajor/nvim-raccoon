@@ -33,12 +33,27 @@ local commit_state = {
   focus_augroup = nil,
   header_win = nil,
   header_buf = nil,
+  select_generation = 0,
 }
 
 --- Commit mode keymaps (global)
 local commit_mode_keymaps = {}
 
 local SIDEBAR_WIDTH = 40
+
+--- Clamp a config value to an integer within [min_val, max_val], or return default
+---@param val any
+---@param default number
+---@param min_val number
+---@param max_val number
+---@return number
+local function clamp_int(val, default, min_val, max_val)
+  if type(val) ~= "number" then return default end
+  val = math.floor(val)
+  if val < min_val then return min_val end
+  if val > max_val then return max_val end
+  return val
+end
 
 --- Reset module state
 local function reset_state()
@@ -62,6 +77,7 @@ local function reset_state()
     focus_augroup = nil,
     header_win = nil,
     header_buf = nil,
+    select_generation = 0,
   }
 end
 
@@ -112,6 +128,7 @@ local function lock_maximize_buf(buf)
     "<C-z>",
     -- Block commit-mode navigation (override globals so maximize is isolated)
     "<leader>j", "<leader>k", "<leader>l",
+    "<leader>cm",
   }
   for _, key in ipairs(blocked) do
     vim.keymap.set("n", key, nop, opts)
@@ -309,95 +326,95 @@ local function maximize_cell(cell_num)
   local hunk_data = commit_state.all_hunks[hunk_idx]
   if not hunk_data then return end
 
-  -- Collect all hunks from the same file
   local filename = hunk_data.filename
-  local file_hunks = {}
-  for _, h in ipairs(commit_state.all_hunks) do
-    if h.filename == filename then
-      table.insert(file_hunks, h)
+  if filename == "dev/null" then return end
+  local commit = get_commit(commit_state.selected_index)
+  local clone_path = state.get_clone_path()
+  if not commit or not clone_path then return end
+
+  local generation = commit_state.select_generation
+
+  -- Fetch full-context diff for this file (shows entire file, not just hunks)
+  git.show_commit_file(clone_path, commit.sha, filename, function(patch, err)
+    if generation ~= commit_state.select_generation then return end
+
+    if err or not patch or patch == "" then
+      vim.notify("Failed to get full file diff", vim.log.levels.ERROR)
+      return
     end
-  end
 
-  -- Build lines and track highlight info
-  local lines = {}
-  local hl_lines = {}
-  for i, fh in ipairs(file_hunks) do
-    if i > 1 then
-      table.insert(lines, "")
-      table.insert(hl_lines, { type = "ctx" })
-      table.insert(lines, string.rep("─", 60))
-      table.insert(hl_lines, { type = "sep" })
-      table.insert(lines, "")
-      table.insert(hl_lines, { type = "ctx" })
+    local hunks = diff.parse_patch(patch)
+    if #hunks == 0 then return end
+
+    -- Build lines and track highlight info
+    local lines = {}
+    local hl_lines = {}
+    for _, hunk in ipairs(hunks) do
+      for _, line_data in ipairs(hunk.lines) do
+        table.insert(lines, line_data.content or "")
+        table.insert(hl_lines, { type = line_data.type })
+      end
     end
-    for _, line_data in ipairs(fh.hunk.lines) do
-      table.insert(lines, line_data.content or "")
-      table.insert(hl_lines, { type = line_data.type })
+
+    -- Create floating window
+    local width = math.floor(vim.o.columns * 0.85)
+    local height = math.floor(vim.o.lines * 0.85)
+    local row = math.floor((vim.o.lines - height) / 2)
+    local col = math.floor((vim.o.columns - width) / 2)
+
+    local buf = create_scratch_buf()
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+
+    local ft = vim.filetype.match({ filename = filename })
+    if ft then
+      vim.bo[buf].filetype = ft
     end
-  end
 
-  -- Create floating window
-  local width = math.floor(vim.o.columns * 0.85)
-  local height = math.floor(vim.o.lines * 0.85)
-  local row = math.floor((vim.o.lines - height) / 2)
-  local col = math.floor((vim.o.columns - width) / 2)
+    local win = vim.api.nvim_open_win(buf, true, {
+      relative = "editor",
+      width = width,
+      height = height,
+      row = row,
+      col = col,
+      style = "minimal",
+      border = "rounded",
+    })
 
-  local buf = create_scratch_buf()
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
+    -- Set state immediately so the WinEnter autocmd recognizes this window
+    commit_state.maximize_win = win
+    commit_state.maximize_buf = buf
 
-  -- Set filetype for syntax highlighting
-  local ft = vim.filetype.match({ filename = filename })
-  if ft then
-    vim.bo[buf].filetype = ft
-  end
-
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    width = width,
-    height = height,
-    row = row,
-    col = col,
-    style = "minimal",
-    border = "rounded",
-  })
-
-  -- Apply diff highlights and gutter signs
-  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-  for idx, hl in ipairs(hl_lines) do
-    if hl.type == "add" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
-    elseif hl.type == "del" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonDelete",
-        sign_text = "-",
-        sign_hl_group = "RaccoonDeleteSign",
-      })
-    elseif hl.type == "sep" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "Comment",
-      })
+    -- Apply diff highlights and gutter signs
+    vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+    for idx, hl in ipairs(hl_lines) do
+      if hl.type == "add" then
+        pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
+          line_hl_group = "RaccoonAdd",
+          sign_text = "+",
+          sign_hl_group = "RaccoonAddSign",
+        })
+      elseif hl.type == "del" then
+        pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
+          line_hl_group = "RaccoonDelete",
+          sign_text = "-",
+          sign_hl_group = "RaccoonDeleteSign",
+        })
+      end
     end
-  end
 
-  vim.wo[win].winbar = " " .. filename .. "%=%#Comment# <leader>q to exit %*"
-  vim.wo[win].signcolumn = "yes:1"
-  vim.wo[win].wrap = true
+    vim.wo[win].winbar = " " .. filename .. "%=%#Comment# <leader>q to exit %*"
+    vim.wo[win].signcolumn = "yes:1"
+    vim.wo[win].wrap = true
 
-  lock_maximize_buf(buf)
+    lock_maximize_buf(buf)
 
-  -- Buffer-local keymaps to close (set after lock so these override nop)
-  local buf_opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "<leader>q", close_maximize, buf_opts)
-  vim.keymap.set("n", "q", close_maximize, buf_opts)
-
-  commit_state.maximize_win = win
-  commit_state.maximize_buf = buf
+    -- Buffer-local keymaps to close (set after lock so these override nop)
+    local buf_opts = { buffer = buf, noremap = true, silent = true }
+    vim.keymap.set("n", "<leader>q", close_maximize, buf_opts)
+    vim.keymap.set("n", "q", close_maximize, buf_opts)
+  end)
 end
 
 --- Select a commit and load its hunks into the grid
@@ -409,14 +426,19 @@ local function select_commit(index)
 
   commit_state.selected_index = index
   commit_state.current_page = 1
+  commit_state.select_generation = commit_state.select_generation + 1
+  local generation = commit_state.select_generation
 
   local commit = get_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
   git.show_commit(clone_path, commit.sha, function(files, err)
+    if generation ~= commit_state.select_generation then return end
+
     if err then
-      vim.notify("Failed to get commit diff: " .. err, vim.log.levels.ERROR)
+      vim.notify("Failed to get commit diff", vim.log.levels.ERROR)
+      vim.notify("[raccoon debug] show_commit: " .. err, vim.log.levels.DEBUG)
       return
     end
 
@@ -684,9 +706,8 @@ local function lock_to_sidebar()
   end
 end
 
---- Setup commit mode keymaps
+--- Setup commit mode keymaps (buffer-local to all commit-mode buffers)
 local function setup_keymaps()
-  local opts = { noremap = true, silent = true }
   local nop = function() end
 
   commit_mode_keymaps = {
@@ -718,8 +739,26 @@ local function setup_keymaps()
     })
   end
 
-  for _, km in ipairs(commit_mode_keymaps) do
-    vim.keymap.set(km.mode, km.lhs, km.rhs, vim.tbl_extend("force", opts, { desc = km.desc }))
+  -- Collect all commit-mode buffers
+  local commit_bufs = {}
+  for _, buf in ipairs(commit_state.grid_bufs or {}) do
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      table.insert(commit_bufs, buf)
+    end
+  end
+  if commit_state.sidebar_buf and vim.api.nvim_buf_is_valid(commit_state.sidebar_buf) then
+    table.insert(commit_bufs, commit_state.sidebar_buf)
+  end
+  if commit_state.header_buf and vim.api.nvim_buf_is_valid(commit_state.header_buf) then
+    table.insert(commit_bufs, commit_state.header_buf)
+  end
+
+  -- Apply keymaps buffer-locally (no global side effects)
+  for _, buf in ipairs(commit_bufs) do
+    for _, km in ipairs(commit_mode_keymaps) do
+      vim.keymap.set(km.mode, km.lhs, km.rhs,
+        { buffer = buf, noremap = true, silent = true, desc = km.desc })
+    end
   end
 
   -- Sidebar-local keymaps
@@ -742,6 +781,15 @@ local function setup_keymaps()
       local cur_win = vim.api.nvim_get_current_win()
       -- Allow maximize floating window
       if cur_win == commit_state.maximize_win then return end
+      -- If maximize is open, always snap back to it
+      if commit_state.maximize_win and vim.api.nvim_win_is_valid(commit_state.maximize_win) then
+        vim.schedule(function()
+          if commit_state.maximize_win and vim.api.nvim_win_is_valid(commit_state.maximize_win) then
+            vim.api.nvim_set_current_win(commit_state.maximize_win)
+          end
+        end)
+        return
+      end
       if cur_win ~= commit_state.sidebar_win then
         vim.schedule(lock_to_sidebar)
       end
@@ -750,10 +798,8 @@ local function setup_keymaps()
 end
 
 --- Clear commit mode keymaps
+--- Buffer-local keymaps are automatically cleaned up when buffers are wiped
 local function clear_keymaps()
-  for _, km in ipairs(commit_mode_keymaps) do
-    pcall(vim.keymap.del, km.mode, km.lhs)
-  end
   commit_mode_keymaps = {}
 end
 
@@ -767,6 +813,13 @@ local function enter_commit_mode()
   local pr = state.get_pr()
   if not pr then
     vim.notify("No PR data", vim.log.levels.WARN)
+    return
+  end
+
+  -- Validate inputs before modifying any state
+  local clone_path = state.get_clone_path()
+  if not clone_path or clone_path == "" then
+    vim.notify("No clone path available", vim.log.levels.WARN)
     return
   end
 
@@ -788,13 +841,12 @@ local function enter_commit_mode()
   local base_count = 20
   if cfg and cfg.commit_viewer then
     if cfg.commit_viewer.grid then
-      rows = cfg.commit_viewer.grid.rows or rows
-      cols = cfg.commit_viewer.grid.cols or cols
+      rows = clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
+      cols = clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
     end
-    base_count = cfg.commit_viewer.base_commits_count or base_count
+    base_count = clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
   end
 
-  local clone_path = state.get_clone_path()
   local base_branch = pr.base.ref
 
   vim.notify("Entering commit viewer mode...", vim.log.levels.INFO)
@@ -802,14 +854,16 @@ local function enter_commit_mode()
   -- Unshallow if needed, then fetch base branch, then fetch commits
   git.unshallow_if_needed(clone_path, function(_, unshallow_err)
     if unshallow_err then
-      vim.notify("Warning: unshallow failed: " .. unshallow_err, vim.log.levels.WARN)
+      vim.notify("Warning: repository unshallow failed", vim.log.levels.WARN)
+      vim.notify("[raccoon debug] unshallow: " .. unshallow_err, vim.log.levels.DEBUG)
     end
 
     -- Fetch base branch to ensure origin/<base_branch> ref exists
     -- (shallow single-branch clones only track the PR branch)
     git.fetch_branch(clone_path, base_branch, function(_, fetch_err)
       if fetch_err then
-        vim.notify("Failed to fetch base branch: " .. fetch_err, vim.log.levels.ERROR)
+        vim.notify("Failed to fetch base branch", vim.log.levels.ERROR)
+        vim.notify("[raccoon debug] fetch_branch: " .. fetch_err, vim.log.levels.DEBUG)
         M.toggle()
         return
       end
@@ -841,7 +895,8 @@ local function enter_commit_mode()
 
       git.log_commits(clone_path, base_branch, function(commits, err)
         if err then
-          vim.notify("Failed to get PR commits: " .. err, vim.log.levels.ERROR)
+          vim.notify("Failed to get PR commits", vim.log.levels.ERROR)
+          vim.notify("[raccoon debug] log_commits: " .. err, vim.log.levels.DEBUG)
           commit_state.pr_commits = {}
         else
           commit_state.pr_commits = commits or {}
@@ -906,5 +961,9 @@ end
 -- Exposed for testing
 M._lock_buf = lock_buf
 M._lock_maximize_buf = lock_maximize_buf
+M._clamp_int = clamp_int
+M._get_state = function() return commit_state end
+M._select_commit = select_commit
+M._setup_keymaps = setup_keymaps
 
 return M
