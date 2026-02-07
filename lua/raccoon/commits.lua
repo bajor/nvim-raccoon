@@ -151,7 +151,8 @@ local function update_header()
 
   local commit = get_commit(commit_state.selected_index)
   local pages = total_pages()
-  local page_str = " " .. commit_state.current_page .. "/" .. pages
+  local show_pages = pages > 1
+  local page_str = show_pages and (" " .. commit_state.current_page .. "/" .. pages .. " ") or ""
 
   if not commit then
     vim.bo[buf].modifiable = true
@@ -162,18 +163,14 @@ local function update_header()
   end
 
   local msg = commit.message or ""
-  local width = vim.api.nvim_win_get_width(win)
 
   -- Split message into lines
   local msg_lines = vim.split(msg, "\n", { trimempty = true })
   if #msg_lines == 0 then msg_lines = { "" } end
 
-  -- Build display: commit message left, page indicator right
+  -- Build display: page indicator (if >1 page) then commit message
   local lines = {}
-  local left = " " .. msg_lines[1]
-  local gap = width - #left - #page_str - 1
-  if gap < 1 then gap = 1 end
-  table.insert(lines, left .. string.rep(" ", gap) .. page_str .. " ")
+  table.insert(lines, page_str .. " " .. msg_lines[1])
 
   for i = 2, #msg_lines do
     table.insert(lines, " " .. msg_lines[i])
@@ -183,11 +180,12 @@ local function update_header()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  -- Highlight page indicator on the right
+  -- Highlight page indicator
   local hl_ns = vim.api.nvim_create_namespace("raccoon_header_hl")
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
-  local line_len = #lines[1]
-  pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, line_len - #page_str - 1, line_len)
+  if show_pages then
+    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #page_str)
+  end
 
   vim.api.nvim_win_set_height(win, math.max(1, #lines))
 end
