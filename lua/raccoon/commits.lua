@@ -117,6 +117,24 @@ local function total_pages()
   return math.max(1, math.ceil(#commit_state.all_hunks / cells))
 end
 
+--- Total navigable commits (PR + base)
+---@return number
+local function total_commits()
+  return #commit_state.pr_commits + #commit_state.base_commits
+end
+
+--- Get commit by combined index (PR first, then base)
+---@param index number 1-based index into combined list
+---@return table|nil commit
+local function get_commit(index)
+  local pr_count = #commit_state.pr_commits
+  if index <= pr_count then
+    return commit_state.pr_commits[index]
+  else
+    return commit_state.base_commits[index - pr_count]
+  end
+end
+
 --- Update the winbar page indicator on the sidebar
 local function update_page_indicator()
   local win = commit_state.sidebar_win
@@ -273,15 +291,14 @@ end
 --- Select a commit and load its hunks into the grid
 ---@param index number Index into the combined commit list (1-based)
 local function select_commit(index)
-  local commits = commit_state.pr_commits
-  if index < 1 or index > #commits then
+  if index < 1 or index > total_commits() then
     return
   end
 
   commit_state.selected_index = index
   commit_state.current_page = 1
 
-  local commit = commits[index]
+  local commit = get_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
@@ -325,10 +342,15 @@ local function update_sidebar_selection()
   vim.api.nvim_buf_clear_namespace(buf, sel_ns, 0, -1)
 
   local idx = commit_state.selected_index
-  if idx < 1 or idx > #commit_state.pr_commits then return end
+  if idx < 1 or idx > total_commits() then return end
 
-  -- Sidebar layout: line 0 = header, line 1 = commit 1, line 2 = commit 2, etc.
-  local line_idx = idx -- 0-based line index (header at 0, first commit at 1)
+  -- Sidebar layout: header at 0, PR commits at 1..N,
+  -- blank at N+1, base header at N+2, base commits at N+3..
+  local pr_count = #commit_state.pr_commits
+  local line_idx = idx
+  if idx > pr_count then
+    line_idx = idx + 2 -- skip blank separator + base header
+  end
   pcall(vim.api.nvim_buf_add_highlight, buf, sel_ns, "Visual", line_idx, 0, -1)
 
   if commit_state.sidebar_win and vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
@@ -395,7 +417,7 @@ end
 
 --- Move selection down in sidebar
 local function move_down()
-  if commit_state.selected_index < #commit_state.pr_commits then
+  if commit_state.selected_index < total_commits() then
     commit_state.selected_index = commit_state.selected_index + 1
     update_sidebar_selection()
     select_commit(commit_state.selected_index)
