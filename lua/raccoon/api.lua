@@ -263,6 +263,20 @@ function M.get_issue_comments(owner, repo, number, token, callback)
   end)
 end
 
+--- Get reviews on a pull request (includes review bodies from bots)
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param number number PR number
+---@param token string GitHub token
+---@param callback fun(reviews: table[]|nil, err: string|nil)
+function M.get_pr_reviews(owner, repo, number, token, callback)
+  vim.schedule(function()
+    local url = string.format("%s/repos/%s/%s/pulls/%d/reviews?per_page=100", M.base_url, owner, repo, number)
+    local reviews, err = fetch_all_pages(url, token)
+    callback(reviews, err)
+  end)
+end
+
 --- Create a general PR/issue comment (not line-specific)
 --- Use this for commenting on lines outside the diff
 ---@param owner string Repository owner

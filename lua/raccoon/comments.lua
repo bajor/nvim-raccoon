@@ -843,9 +843,9 @@ function M.list_comments()
   local all_comments = {}
   local total_count = 0
 
-  -- Iterate through all file paths with comments
+  -- Iterate through all file paths with comments (skip _reviews, handled separately)
   for file_path, file_comments in pairs(state.session.comments) do
-    if #file_comments > 0 then
+    if file_path ~= "_reviews" and #file_comments > 0 then
       for _, comment in ipairs(file_comments) do
         table.insert(all_comments, {
           file = file_path,
@@ -855,6 +855,10 @@ function M.list_comments()
       end
     end
   end
+
+  -- Collect review bodies (general review comments from bots, etc.)
+  local reviews = state.session.comments["_reviews"] or {}
+  total_count = total_count + #reviews
 
   if total_count == 0 then
     vim.notify("No comments in this PR", vim.log.levels.INFO)
@@ -896,6 +900,20 @@ function M.list_comments()
 
     table.insert(lines, string.format("  L%-4d %s: %s%s", line_num, author, preview, status))
     line_to_entry[#lines] = entry
+  end
+
+  -- Add review bodies section if any exist
+  if #reviews > 0 then
+    if #lines > 0 then
+      table.insert(lines, "")
+    end
+    table.insert(lines, "── Reviews ──")
+    for _, review in ipairs(reviews) do
+      local author = review.user and review.user.login or "unknown"
+      local state_str = review.state and string.format(" [%s]", review.state:lower()) or ""
+      local preview = (review.body or ""):gsub("\n", " "):sub(1, 60)
+      table.insert(lines, string.format("  %s%s: %s", author, state_str, preview))
+    end
   end
 
   -- Create buffer

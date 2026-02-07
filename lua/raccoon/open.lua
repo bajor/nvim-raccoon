@@ -230,6 +230,30 @@ local function fetch_pr_data(owner, repo, number, token, callback)
             end
           end
 
+          -- Fetch PR reviews (includes review bodies from bots like qodo-code-review)
+          api.get_pr_reviews(owner, repo, number, token, function(reviews, reviews_err)
+            if reviews_err then
+              vim.notify("Warning: Could not fetch reviews: " .. reviews_err, vim.log.levels.WARN)
+            else
+              -- Store review bodies as general comments under "_reviews" key
+              local review_bodies = {}
+              for _, review in ipairs(reviews or {}) do
+                if review.body and review.body ~= "" then
+                  table.insert(review_bodies, {
+                    id = review.id,
+                    body = review.body,
+                    user = review.user,
+                    state = review.state, -- APPROVED, CHANGES_REQUESTED, COMMENTED, etc.
+                    submitted_at = review.submitted_at,
+                    is_review = true,
+                  })
+                end
+              end
+              if #review_bodies > 0 then
+                state.set_comments("_reviews", review_bodies)
+              end
+            end
+
           -- Fetch thread resolution status via GraphQL
           api.get_pr_review_threads(owner, repo, number, token, function(resolution_map, res_err)
             if res_err then
@@ -249,6 +273,7 @@ local function fetch_pr_data(owner, repo, number, token, callback)
             end
 
             callback(nil)
+          end)
           end)
         end)
       end)
