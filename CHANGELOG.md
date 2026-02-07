@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4] - 2026-02-07
+
+### Added
+- Commit viewer mode (`<leader>cm` or `:Raccoon commits`) — browse individual commits from the PR branch in a configurable grid of diff hunks
+- Sidebar on the right listing PR branch commits and recent base branch commits
+- Configurable grid layout via `commit_viewer.grid` in config.json (default 2x2)
+- j/k navigation in sidebar auto-loads the selected commit's diffs into the grid
+- `<leader>j`/`<leader>k` to page through diff hunks when there are more than the grid can show
+- `<leader>l` as alias for next page
+- Git sync pauses while in commit viewer mode and resumes on exit
+- New git operations: `unshallow_if_needed`, `log_commits`, `log_base_commits`, `show_commit`
+- `commit_viewer.base_commits_count` config option (default 20)
+
 ## [0.3] - 2026-02-07
 
 ### Added
