@@ -6,6 +6,20 @@ local api = require("raccoon.api")
 local config = require("raccoon.config")
 local state = require("raccoon.state")
 
+--- Get a valid line number from a comment, handling vim.NIL from JSON null
+---@param comment table
+---@return number|nil
+local function get_comment_line(comment)
+  -- Check each field, ensuring it's a real number (not vim.NIL or other types)
+  for _, field in ipairs({ "line", "original_line", "position" }) do
+    local val = comment[field]
+    if type(val) == "number" and val > 0 then
+      return val
+    end
+  end
+  return nil
+end
+
 --- Namespace for comment highlights and extmarks
 local ns_id = vim.api.nvim_create_namespace("raccoon_comments")
 
@@ -79,8 +93,8 @@ function M.show_comments(buf, comments)
   local line_count = vim.api.nvim_buf_line_count(buf)
 
   for _, comment in ipairs(comments or {}) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line > 0 and line <= line_count then
+    local line = get_comment_line(comment)
+    if line and line <= line_count then
       -- Place sign with high priority
       local sign_name = "RaccoonComment"
       if comment.resolved then
@@ -137,8 +151,8 @@ function M.find_next_comment()
   local next_line = math.huge
 
   for _, comment in ipairs(comments) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line > current_line and line < next_line then
+    local line = get_comment_line(comment)
+    if line and line > current_line and line < next_line then
       next_comment = comment
       next_line = line
     end
@@ -161,8 +175,8 @@ function M.find_prev_comment()
   local prev_line = 0
 
   for _, comment in ipairs(comments) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line < current_line and line > prev_line then
+    local line = get_comment_line(comment)
+    if line and line < current_line and line > prev_line then
       prev_comment = comment
       prev_line = line
     end
@@ -278,8 +292,8 @@ function M.show_comment_thread()
   -- Find comments for this line
   local line_comments = {}
   for _, comment in ipairs(file_comments) do
-    local comment_line = comment.line or comment.original_line or comment.position
-    if comment_line and type(comment_line) == "number" and comment_line == current_line then
+    local comment_line = get_comment_line(comment)
+    if comment_line and comment_line == current_line then
       table.insert(line_comments, comment)
     end
   end
@@ -870,10 +884,8 @@ function M.list_comments()
     if a.file ~= b.file then
       return a.file < b.file
     end
-    local line_a_val = a.comment.line or a.comment.original_line or a.comment.position
-    local line_b_val = b.comment.line or b.comment.original_line or b.comment.position
-    local line_a = type(line_a_val) == "number" and line_a_val or 0
-    local line_b = type(line_b_val) == "number" and line_b_val or 0
+    local line_a = get_comment_line(a.comment) or 0
+    local line_b = get_comment_line(b.comment) or 0
     return line_a < line_b
   end)
 
@@ -893,8 +905,7 @@ function M.list_comments()
     end
 
     local comment = entry.comment
-    local line_val = comment.line or comment.original_line or comment.position
-    local line_num = (type(line_val) == "number" and line_val) or 0
+    local line_num = get_comment_line(comment) or 0
     local author = comment.user and comment.user.login or "unknown"
     local preview = (comment.body or ""):gsub("\n", " "):sub(1, 60)
     local status = comment.pending and " [pending]" or (comment.resolved and " [resolved]" or "")
@@ -975,8 +986,8 @@ function M.list_comments()
         end
 
         -- Jump to line
-        local line_val = entry.comment.line or entry.comment.original_line or entry.comment.position
-        if type(line_val) == "number" and line_val > 0 then
+        local line_val = get_comment_line(entry.comment)
+        if line_val then
           vim.api.nvim_win_set_cursor(0, { line_val, 0 })
           M.show_comment_popup(entry.comment)
         else
@@ -997,8 +1008,8 @@ function M.toggle_resolved()
   local current_line = vim.fn.line(".")
 
   for _, comment in ipairs(comments) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line == current_line then
+    local line = get_comment_line(comment)
+    if line and line == current_line then
       comment.resolved = not comment.resolved
       vim.notify(
         comment.resolved and "Comment marked resolved" or "Comment marked unresolved",
