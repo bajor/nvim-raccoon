@@ -105,7 +105,7 @@ Or run `:Raccoon config` to create a default config file.
 | `pf` | Previous file |
 | `nt` | Next comment thread |
 | `pt` | Previous comment thread |
-| `cc` | Comment at cursor |
+| `<leader>c` | Comment at cursor |
 | `<leader>dd` | Show PR description |
 | `<leader>ll` | List all comments |
 | `<leader>pr` | Open PR list picker |

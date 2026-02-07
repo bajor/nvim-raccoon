@@ -61,10 +61,10 @@ describe("raccoon.keymaps", function()
       assert.is_true(found)
     end)
 
-    it("has cc keymap for comment", function()
+    it("has leader-c keymap for comment", function()
       local found = false
       for _, km in ipairs(keymaps.keymaps) do
-        if km.lhs == "cc" then found = true end
+        if km.lhs == "<leader>c" then found = true end
       end
       assert.is_true(found)
     end)

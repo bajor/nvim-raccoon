@@ -1,6 +1,6 @@
 ---@class RaccoonKeymaps
 ---Keymap management for PR review sessions
----Only 3 shortcuts: nn (next), pp (previous), cc (comment)
+---Only 3 shortcuts: n (next), p (previous), <leader>c (comment)
 local M = {}
 
 local api = require("raccoon.api")
@@ -467,7 +467,7 @@ M.keymaps = {
   { mode = "n", lhs = "pf", rhs = function() diff.prev_file() end, desc = "Previous file" },
   { mode = "n", lhs = "nt", rhs = function() M.next_thread() end, desc = "Next comment thread" },
   { mode = "n", lhs = "pt", rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
-  { mode = "n", lhs = "cc", rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
+  { mode = "n", lhs = "<leader>c", rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
   { mode = "n", lhs = "<leader>dd", rhs = function() M.show_description() end, desc = "Show PR description" },
   { mode = "n", lhs = "<leader>ll", rhs = function() M.list_comments() end, desc = "List all PR comments" },
   { mode = "n", lhs = "<leader>rr", rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
