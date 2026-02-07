@@ -25,9 +25,12 @@ describe("raccoon.config", function()
       assert.is_table(config.defaults.repos)
       assert.is_string(config.defaults.clone_root)
       assert.is_number(config.defaults.poll_interval_seconds)
-      assert.is_string(config.defaults.ghostty_path)
-      assert.is_string(config.defaults.nvim_path)
-      assert.is_table(config.defaults.notifications)
+    end)
+
+    it("does not contain dead config fields", function()
+      assert.is_nil(config.defaults.ghostty_path)
+      assert.is_nil(config.defaults.nvim_path)
+      assert.is_nil(config.defaults.notifications)
     end)
   end)
 
@@ -156,9 +159,6 @@ describe("raccoon.config", function()
       assert.is_not_nil(cfg)
       -- Should have default values
       assert.equals(300, cfg.poll_interval_seconds)
-      assert.equals("/Applications/Ghostty.app", cfg.ghostty_path)
-      assert.is_table(cfg.notifications)
-      assert.is_true(cfg.notifications.new_commits)
 
       os.remove(tmpfile)
     end)
@@ -388,17 +388,14 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("overrides default notification settings", function()
-      local tmpfile = test_tmp_dir .. "/custom_notifications.json"
+    it("passes through unknown fields from config file", function()
+      local tmpfile = test_tmp_dir .. "/extra_fields.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
         "github_token": "ghp_xxx",
         "github_username": "user",
         "repos": ["owner/repo"],
-        "notifications": {
-          "new_commits": false,
-          "sound": false
-        }
+        "some_extra_field": "value"
       }]])
       f:close()
 
@@ -406,10 +403,8 @@ describe("raccoon.config", function()
       local cfg, err = config.load()
       assert.is_nil(err)
       assert.is_not_nil(cfg)
-      assert.is_false(cfg.notifications.new_commits)
-      assert.is_false(cfg.notifications.sound)
-      -- Should still have default for new_comments
-      assert.is_true(cfg.notifications.new_comments)
+      -- Extra fields from JSON should be preserved via tbl_deep_extend
+      assert.equals("value", cfg.some_extra_field)
 
       os.remove(tmpfile)
     end)
