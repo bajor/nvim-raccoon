@@ -429,7 +429,10 @@ function M.fetch_all_prs(callback)
   end
 
   if cfg.github_token and cfg.github_token ~= "" and not seen[cfg.github_token] then
-    table.insert(token_entries, { key = "github_token", token = cfg.github_token })
+    table.insert(token_entries, {
+      key = cfg.github_username or "github_token",
+      token = cfg.github_token,
+    })
   end
 
   if #token_entries == 0 then
@@ -443,7 +446,7 @@ function M.fetch_all_prs(callback)
   local seen_pr = {}
 
   for _, entry in ipairs(token_entries) do
-    api.search_user_prs(cfg.github_username, entry.token, function(prs, api_err)
+    api.search_user_prs(entry.key, entry.token, function(prs, api_err)
       pending = pending - 1
 
       if api_err then

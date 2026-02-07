@@ -108,13 +108,13 @@ local function fetch_all_pages(url, token)
   return all_items, nil
 end
 
---- Search for all open PRs involving a user across all accessible repos
----@param username string GitHub username
+--- Search for all open PRs owned by a user or org
+---@param owner string GitHub user or org name (token key)
 ---@param token string GitHub token
 ---@param callback fun(prs: table[]|nil, err: string|nil)
-function M.search_user_prs(username, token, callback)
+function M.search_user_prs(owner, token, callback)
   vim.schedule(function()
-    local query = string.format("type:pr state:open involves:%s", username)
+    local query = string.format("type:pr state:open user:%s", owner)
     local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
       M.base_url, vim.uri_encode(query))
 
