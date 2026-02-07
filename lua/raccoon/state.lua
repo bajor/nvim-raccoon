@@ -220,25 +220,27 @@ function M.get_statusline_component()
     return ""
   end
 
-  local parts = {}
   local sync = M.session.sync_status
 
   if not sync.checked then
     return ""
   end
 
-  -- Show behind count
-  if sync.behind > 0 then
-    table.insert(parts, string.format("⚠ %d behind", sync.behind))
+  local parts = {}
+
+  -- File count indicator
+  local files = M.session.files
+  if #files > 0 then
+    table.insert(parts, string.format("[%d/%d]", M.session.current_file, #files))
   end
 
-  -- Show conflict warning
+  -- Show sync status
   if sync.has_conflicts then
     table.insert(parts, "⛔ CONFLICTS")
-  end
-
-  if #parts == 0 then
-    return "✓ In sync"
+  elseif sync.behind > 0 then
+    table.insert(parts, string.format("⚠ %d behind", sync.behind))
+  else
+    table.insert(parts, "✓ In sync")
   end
 
   return table.concat(parts, " │ ")

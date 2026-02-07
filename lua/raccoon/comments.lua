@@ -6,6 +6,20 @@ local api = require("raccoon.api")
 local config = require("raccoon.config")
 local state = require("raccoon.state")
 
+--- Get a valid line number from a comment, handling vim.NIL from JSON null
+---@param comment table
+---@return number|nil
+local function get_comment_line(comment)
+  -- Check each field, ensuring it's a real number (not vim.NIL or other types)
+  for _, field in ipairs({ "line", "original_line", "position" }) do
+    local val = comment[field]
+    if type(val) == "number" and val > 0 then
+      return val
+    end
+  end
+  return nil
+end
+
 --- Namespace for comment highlights and extmarks
 local ns_id = vim.api.nvim_create_namespace("raccoon_comments")
 
@@ -79,8 +93,8 @@ function M.show_comments(buf, comments)
   local line_count = vim.api.nvim_buf_line_count(buf)
 
   for _, comment in ipairs(comments or {}) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line > 0 and line <= line_count then
+    local line = get_comment_line(comment)
+    if line and line <= line_count then
       -- Place sign with high priority
       local sign_name = "RaccoonComment"
       if comment.resolved then
@@ -137,8 +151,8 @@ function M.find_next_comment()
   local next_line = math.huge
 
   for _, comment in ipairs(comments) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line > current_line and line < next_line then
+    local line = get_comment_line(comment)
+    if line and line > current_line and line < next_line then
       next_comment = comment
       next_line = line
     end
@@ -161,8 +175,8 @@ function M.find_prev_comment()
   local prev_line = 0
 
   for _, comment in ipairs(comments) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line < current_line and line > prev_line then
+    local line = get_comment_line(comment)
+    if line and line < current_line and line > prev_line then
       prev_comment = comment
       prev_line = line
     end
@@ -258,6 +272,72 @@ end
 local COMMENT_DIVIDER = "────────────────────────────────────────────────"
 local NEW_COMMENT_HEADER = "── New Comment ──────────────────────────────────"
 
+--- Show a read-only thread view in a floating window
+--- Displays all comments for a given thread, or a single review body
+---@param opts table {comments: table[], title: string}
+function M.show_readonly_thread(opts)
+  local thread_comments = opts.comments
+  if not thread_comments or #thread_comments == 0 then
+    return
+  end
+
+  local lines = {}
+  for i, comment in ipairs(thread_comments) do
+    local author = comment.user and comment.user.login or "unknown"
+    local status = ""
+    if comment.is_review and comment.state then
+      status = " [" .. comment.state:lower() .. "]"
+    elseif comment.resolved then
+      status = " [resolved]"
+    elseif comment.pending then
+      status = " [pending]"
+    end
+
+    table.insert(lines, "@ " .. author .. status)
+    table.insert(lines, "")
+
+    for body_line in (comment.body or ""):gmatch("[^\n]*") do
+      table.insert(lines, body_line)
+    end
+
+    if i < #thread_comments then
+      table.insert(lines, "")
+      table.insert(lines, COMMENT_DIVIDER)
+      table.insert(lines, "")
+    end
+  end
+
+  local width = math.min(140, vim.o.columns - 4)
+  local height = math.min(#lines + 2, 50)
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(buf, "modifiable", false)
+  vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = math.floor((vim.o.lines - height) / 2),
+    col = math.floor((vim.o.columns - width) / 2),
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = opts.title or " Thread ",
+    title_pos = "center",
+  })
+
+  vim.wo[win].wrap = true
+
+  local keymap_opts = { buffer = buf, noremap = true, silent = true }
+  vim.keymap.set("n", "q", function()
+    vim.api.nvim_win_close(win, true)
+  end, keymap_opts)
+  vim.keymap.set("n", "<Esc>", function()
+    vim.api.nvim_win_close(win, true)
+  end, keymap_opts)
+end
+
 --- Show threaded comment view for the current line
 --- Allows viewing, editing existing comments, and adding new ones
 function M.show_comment_thread()
@@ -278,8 +358,8 @@ function M.show_comment_thread()
   -- Find comments for this line
   local line_comments = {}
   for _, comment in ipairs(file_comments) do
-    local comment_line = comment.line or comment.original_line or comment.position
-    if comment_line and type(comment_line) == "number" and comment_line == current_line then
+    local comment_line = get_comment_line(comment)
+    if comment_line and comment_line == current_line then
       table.insert(line_comments, comment)
     end
   end
@@ -519,12 +599,11 @@ function M.show_comment_thread()
     end
 
     local owner = state.get_owner()
-    local repo = state.get_repo()
     local token = config.get_token_for_owner(cfg, owner)
 
     vim.notify("Resolving thread...", vim.log.levels.INFO)
 
-    api.resolve_review_thread(owner, repo, thread_id, token, function(err)
+    api.resolve_review_thread(thread_id, token, function(err)
       vim.schedule(function()
         if err then
           vim.notify("Failed to resolve thread: " .. err, vim.log.levels.ERROR)
@@ -561,7 +640,7 @@ function M.show_comment_thread()
 
         local msg = new_status and "Thread resolved" or "Thread unresolved"
         vim.notify(msg, vim.log.levels.INFO)
-        vim.api.nvim_win_close(win, true)
+        pcall(vim.api.nvim_win_close, win, true)
       end)
     end)
   end
@@ -586,12 +665,11 @@ function M.show_comment_thread()
     end
 
     local owner = state.get_owner()
-    local repo = state.get_repo()
     local token = config.get_token_for_owner(cfg, owner)
 
     vim.notify("Unresolving thread...", vim.log.levels.INFO)
 
-    api.unresolve_review_thread(owner, repo, thread_id, token, function(err)
+    api.unresolve_review_thread(thread_id, token, function(err)
       vim.schedule(function()
         if err then
           vim.notify("Failed to unresolve thread: " .. err, vim.log.levels.ERROR)
@@ -632,7 +710,7 @@ function M.show_comment_thread()
         end
 
         vim.notify("Thread unresolved", vim.log.levels.INFO)
-        vim.api.nvim_win_close(win, true)
+        pcall(vim.api.nvim_win_close, win, true)
       end)
     end)
   end
@@ -843,9 +921,9 @@ function M.list_comments()
   local all_comments = {}
   local total_count = 0
 
-  -- Iterate through all file paths with comments
+  -- Iterate through all file paths with comments (skip _reviews, handled separately)
   for file_path, file_comments in pairs(state.session.comments) do
-    if #file_comments > 0 then
+    if file_path ~= "_reviews" and #file_comments > 0 then
       for _, comment in ipairs(file_comments) do
         table.insert(all_comments, {
           file = file_path,
@@ -855,6 +933,10 @@ function M.list_comments()
       end
     end
   end
+
+  -- Collect review bodies (general review comments from bots, etc.)
+  local reviews = state.session.comments["_reviews"] or {}
+  total_count = total_count + #reviews
 
   if total_count == 0 then
     vim.notify("No comments in this PR", vim.log.levels.INFO)
@@ -866,10 +948,8 @@ function M.list_comments()
     if a.file ~= b.file then
       return a.file < b.file
     end
-    local line_a_val = a.comment.line or a.comment.original_line or a.comment.position
-    local line_b_val = b.comment.line or b.comment.original_line or b.comment.position
-    local line_a = type(line_a_val) == "number" and line_a_val or 0
-    local line_b = type(line_b_val) == "number" and line_b_val or 0
+    local line_a = get_comment_line(a.comment) or 0
+    local line_b = get_comment_line(b.comment) or 0
     return line_a < line_b
   end)
 
@@ -889,13 +969,28 @@ function M.list_comments()
     end
 
     local comment = entry.comment
-    local line_num = comment.line or comment.original_line or comment.position or 0
+    local line_num = get_comment_line(comment) or 0
     local author = comment.user and comment.user.login or "unknown"
     local preview = (comment.body or ""):gsub("\n", " "):sub(1, 60)
     local status = comment.pending and " [pending]" or (comment.resolved and " [resolved]" or "")
 
     table.insert(lines, string.format("  L%-4d %s: %s%s", line_num, author, preview, status))
     line_to_entry[#lines] = entry
+  end
+
+  -- Add review bodies section if any exist
+  if #reviews > 0 then
+    if #lines > 0 then
+      table.insert(lines, "")
+    end
+    table.insert(lines, "── Reviews ──")
+    for _, review in ipairs(reviews) do
+      local author = review.user and review.user.login or "unknown"
+      local state_str = review.state and string.format(" [%s]", review.state:lower()) or ""
+      local preview = (review.body or ""):gsub("\n", " "):sub(1, 60)
+      table.insert(lines, string.format("  %s%s: %s", author, state_str, preview))
+      line_to_entry[#lines] = { review = review }
+    end
   end
 
   -- Create buffer
@@ -937,31 +1032,34 @@ function M.list_comments()
     comment_list_win = nil
   end
 
-  -- Jump to comment on Enter
+  -- View thread on Enter
   vim.keymap.set("n", "<CR>", function()
     local cursor_line = vim.fn.line(".")
     local entry = line_to_entry[cursor_line]
-    if entry then
-      close_list()
+    if not entry then
+      return
+    end
 
-      -- Open the file
-      local clone_path = state.get_clone_path()
-      if clone_path then
-        local full_path = clone_path .. "/" .. entry.file
-        local ok, open_err = pcall(vim.cmd, "edit " .. vim.fn.fnameescape(full_path))
-        if not ok then
-          local short_err = tostring(open_err):match("^[^\n]+") or "unknown error"
-          vim.notify("Failed to open file: " .. entry.file .. " (" .. short_err .. ")", vim.log.levels.WARN)
-          return
-        end
-
-        -- Jump to line
-        local target_line = entry.comment.line or entry.comment.original_line or entry.comment.position
-        if target_line then
-          vim.api.nvim_win_set_cursor(0, { target_line, 0 })
-          M.show_comment_popup(entry.comment)
+    if entry.review then
+      M.show_readonly_thread({
+        comments = { entry.review },
+        title = " Review ",
+      })
+    elseif entry.file and entry.comment then
+      local target_line = get_comment_line(entry.comment)
+      local thread = {}
+      for _, e in ipairs(all_comments) do
+        if e.file == entry.file and get_comment_line(e.comment) == target_line then
+          table.insert(thread, e.comment)
         end
       end
+      if #thread == 0 then
+        thread = { entry.comment }
+      end
+      M.show_readonly_thread({
+        comments = thread,
+        title = string.format(" %s L%d (%d comments, q=close) ", entry.file, target_line or 0, #thread),
+      })
     end
   end, { buffer = buf, noremap = true, silent = true })
 
@@ -976,8 +1074,8 @@ function M.toggle_resolved()
   local current_line = vim.fn.line(".")
 
   for _, comment in ipairs(comments) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line == current_line then
+    local line = get_comment_line(comment)
+    if line and line == current_line then
       comment.resolved = not comment.resolved
       vim.notify(
         comment.resolved and "Comment marked resolved" or "Comment marked unresolved",

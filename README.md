@@ -43,7 +43,7 @@ When you click a PR in the menu bar app, it launches Neovim with raccoon.nvim an
 - Show PR description and metadata
 - Merge PRs (merge, squash, or rebase)
 - Auto-sync to detect new commits
-- Statusline integration for sync status
+- Statusline integration showing file position and sync status
 
 ## Requirements
 
@@ -109,6 +109,14 @@ Or run `:Raccoon config` to create a default config file.
 | `<leader>rr` | Merge PR (pick method) |
 
 ### Statusline Integration
+
+The statusline shows your current position and sync status:
+- `[1/3] ✓ In sync` — reviewing file 1 of 3, branch is up to date
+- `[2/3] ⚠ 2 commits behind main` — file 2 of 3, needs sync
+- `[1/5] ⛔ CONFLICTS` — merge conflicts detected
+
+When navigating with `nn`/`pp`, notifications show position within the current file:
+- `[2/5] src/main.lua:42 (change)` — point 2 of 5 in this file, at line 42
 
 For lualine:
 

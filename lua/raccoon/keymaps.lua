@@ -12,6 +12,19 @@ local state = require("raccoon.state")
 --- Default keymap options
 local default_opts = { noremap = true, silent = true }
 
+--- Get a valid line number from a comment, handling vim.NIL from JSON null
+---@param comment table
+---@return number|nil
+local function get_comment_line(comment)
+  for _, field in ipairs({ "line", "original_line", "position" }) do
+    local val = comment[field]
+    if type(val) == "number" and val > 0 then
+      return val
+    end
+  end
+  return nil
+end
+
 --- Get all points of interest (diffs and comments) for a file
 ---@param file table File data with filename and patch
 ---@return table[] points Sorted list of {line, type} where type is "diff" or "comment"
@@ -53,8 +66,8 @@ local function get_file_points(file)
   -- Get comments
   local file_comments = state.get_comments(file.filename)
   for _, comment in ipairs(file_comments) do
-    local line = comment.line or comment.original_line or comment.position
-    if line and type(line) == "number" and line > 0 and not seen[line] then
+    local line = get_comment_line(comment)
+    if line and not seen[line] then
       table.insert(points, { line = line, type = "comment" })
       seen[line] = true
     end
@@ -111,11 +124,18 @@ local function goto_point(point)
   vim.api.nvim_win_set_cursor(0, { target_line, 0 })
   vim.cmd("normal! zz")
 
-  -- Show what we landed on
-  local files = state.get_files()
+  -- Show what we landed on with position in file
+  local file_points = get_file_points(point.file)
+  local point_idx = 1
+  for i, p in ipairs(file_points) do
+    if p.line == point.line then
+      point_idx = i
+      break
+    end
+  end
   local type_str = point.type == "comment" and "comment" or "change"
   vim.notify(string.format("[%d/%d] %s:%d (%s)",
-    point.file_index, #files, point.file.filename, point.line, type_str))
+    point_idx, #file_points, point.file.filename, point.line, type_str))
 end
 
 --- Go to next point of interest (diff or comment, across files)
@@ -190,8 +210,8 @@ local function get_all_comment_points()
     local seen = {}
 
     for _, comment in ipairs(file_comments) do
-      local line = comment.line or comment.original_line or comment.position
-      if line and type(line) == "number" and line > 0 and not seen[line] then
+      local line = get_comment_line(comment)
+      if line and not seen[line] then
         table.insert(comment_points, {
           file_index = file_idx,
           file = file,
