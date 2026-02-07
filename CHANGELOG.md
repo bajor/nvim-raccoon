@@ -8,15 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Commit viewer mode (`<leader>cm` or `:Raccoon commits`) — browse individual commits from the PR branch in a configurable grid of diff hunks
-- Fetch base branch before loading commits in viewer mode to support shallow single-branch clones
+- Fetch base branch with explicit refspec to support shallow single-branch clones
 - Sidebar on the right listing PR branch commits and recent base branch commits
+- Seamless navigation between PR branch and base branch commits (j/k crosses the boundary)
 - Configurable grid layout via `commit_viewer.grid` in config.json (default 2x2)
 - j/k navigation in sidebar auto-loads the selected commit's diffs into the grid
 - `<leader>j`/`<leader>k` to page through diff hunks when there are more than the grid can show
 - `<leader>l` as alias for next page
+- `<leader>m1`..`m9` to maximize a grid cell into a floating full-file diff view
+- Grid cell numbers (`#1`, `#2`, ...) and filename shown in winbar at top of each cell
+- Full-width header bar at top of screen showing commit message (right) and page indicator (left)
+- Syntax highlighting and gutter signs (`+`/`-`) for diffs in grid cells
+- Focus lock: sidebar stays focused, window-switching keys blocked in commit mode
+- Line wrapping enabled in grid cells and maximize view
 - Git sync pauses while in commit viewer mode and resumes on exit
-- New git operations: `unshallow_if_needed`, `log_commits`, `log_base_commits`, `show_commit`
+- `diff-tree` used for commit diffs to correctly handle merge commits
+- New git operations: `unshallow_if_needed`, `log_commits`, `log_base_commits`, `show_commit`, `fetch_branch`
 - `commit_viewer.base_commits_count` config option (default 20)
+- `commit_viewer` defaults in config template
 
 ## [0.3] - 2026-02-07
 
