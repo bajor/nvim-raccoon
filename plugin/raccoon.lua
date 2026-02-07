@@ -133,6 +133,10 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     "new_commits": true,
     "new_comments": true,
     "sound": true
+  },
+  "commit_viewer": {
+    "grid": { "rows": 2, "cols": 2 },
+    "base_commits_count": 20
   }
 }]]
       local file = io.open(config_path, "w")

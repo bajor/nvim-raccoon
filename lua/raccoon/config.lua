@@ -149,6 +149,10 @@ function M.create_default()
       new_comments = true,
       sound = true,
     },
+    commit_viewer = {
+      grid = { rows = 2, cols = 2 },
+      base_commits_count = 20,
+    },
   }
 
   local json = vim.json.encode(default)
