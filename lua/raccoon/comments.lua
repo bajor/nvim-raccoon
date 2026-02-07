@@ -975,10 +975,12 @@ function M.list_comments()
         end
 
         -- Jump to line
-        local target_line = entry.comment.line or entry.comment.original_line or entry.comment.position
-        if target_line then
-          vim.api.nvim_win_set_cursor(0, { target_line, 0 })
+        local line_val = entry.comment.line or entry.comment.original_line or entry.comment.position
+        if type(line_val) == "number" and line_val > 0 then
+          vim.api.nvim_win_set_cursor(0, { line_val, 0 })
           M.show_comment_popup(entry.comment)
+        else
+          vim.notify("Comment has no valid line number", vim.log.levels.WARN)
         end
       end
     end
