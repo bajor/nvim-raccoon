@@ -475,7 +475,10 @@ end
 ---@param branch string Branch name to fetch
 ---@param callback fun(success: boolean, err: string|nil)
 function M.fetch_branch(path, branch, callback)
-  run_git({ "fetch", "origin", branch }, {
+  -- Use explicit refspec to create origin/<branch> tracking ref
+  -- (plain "git fetch origin <branch>" only updates FETCH_HEAD in single-branch clones)
+  local refspec = "+refs/heads/" .. branch .. ":refs/remotes/origin/" .. branch
+  run_git({ "fetch", "origin", refspec }, {
     cwd = path,
     on_exit = function(code, _, stderr)
       if code == 0 then
