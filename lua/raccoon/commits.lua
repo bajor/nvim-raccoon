@@ -76,13 +76,7 @@ end
 local function render_hunk_to_buffer(buf, hunk, filename)
   local lines = {}
   for _, line_data in ipairs(hunk.lines) do
-    if line_data.type == "add" then
-      table.insert(lines, "+" .. line_data.content)
-    elseif line_data.type == "del" then
-      table.insert(lines, "-" .. line_data.content)
-    else
-      table.insert(lines, " " .. line_data.content)
-    end
+    table.insert(lines, line_data.content or "")
   end
 
   -- Add blank line and filename at bottom
@@ -93,14 +87,28 @@ local function render_hunk_to_buffer(buf, hunk, filename)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  -- Apply highlights
+  -- Set filetype for syntax highlighting
+  local ft = vim.filetype.match({ filename = filename })
+  if ft then
+    vim.bo[buf].filetype = ft
+  end
+
+  -- Apply diff highlights and gutter signs
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
   local line_idx = 0
   for _, line_data in ipairs(hunk.lines) do
     if line_data.type == "add" then
       pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonAdd", line_idx, 0, -1)
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+        sign_text = "+",
+        sign_hl_group = "RaccoonAddSign",
+      })
     elseif line_data.type == "del" then
       pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonDelete", line_idx, 0, -1)
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+        sign_text = "-",
+        sign_hl_group = "RaccoonDeleteSign",
+      })
     end
     line_idx = line_idx + 1
   end
@@ -232,13 +240,7 @@ local function maximize_cell(cell_num)
       table.insert(hl_lines, { type = "ctx" })
     end
     for _, line_data in ipairs(fh.hunk.lines) do
-      if line_data.type == "add" then
-        table.insert(lines, "+" .. line_data.content)
-      elseif line_data.type == "del" then
-        table.insert(lines, "-" .. line_data.content)
-      else
-        table.insert(lines, " " .. line_data.content)
-      end
+      table.insert(lines, line_data.content or "")
       table.insert(hl_lines, { type = line_data.type })
     end
   end
@@ -254,6 +256,12 @@ local function maximize_cell(cell_num)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
+  -- Set filetype for syntax highlighting
+  local ft = vim.filetype.match({ filename = filename })
+  if ft then
+    vim.bo[buf].filetype = ft
+  end
+
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     width = width,
@@ -264,19 +272,28 @@ local function maximize_cell(cell_num)
     border = "rounded",
   })
 
-  -- Apply diff highlights
+  -- Apply diff highlights and gutter signs
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
   for idx, hl in ipairs(hl_lines) do
     if hl.type == "add" then
       pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonAdd", idx - 1, 0, -1)
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
+        sign_text = "+",
+        sign_hl_group = "RaccoonAddSign",
+      })
     elseif hl.type == "del" then
       pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonDelete", idx - 1, 0, -1)
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
+        sign_text = "-",
+        sign_hl_group = "RaccoonDeleteSign",
+      })
     elseif hl.type == "sep" then
       pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "Comment", idx - 1, 0, -1)
     end
   end
 
   vim.wo[win].winbar = " " .. filename .. "%=%#Comment# <leader>q to exit %*"
+  vim.wo[win].signcolumn = "yes:1"
   vim.wo[win].wrap = false
 
   -- Buffer-local keymaps to close
@@ -495,7 +512,7 @@ local function create_grid_layout(rows, cols)
       vim.wo[win].wrap = false
       vim.wo[win].number = false
       vim.wo[win].relativenumber = false
-      vim.wo[win].signcolumn = "no"
+      vim.wo[win].signcolumn = "yes:1"
       table.insert(grid_wins, win)
       table.insert(grid_bufs, buf)
     end
