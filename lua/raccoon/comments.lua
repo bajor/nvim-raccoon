@@ -599,7 +599,6 @@ function M.show_comment_thread()
     end
 
     local owner = state.get_owner()
-    local repo = state.get_repo()
     local token = config.get_token_for_owner(cfg, owner)
 
     vim.notify("Resolving thread...", vim.log.levels.INFO)
@@ -666,7 +665,6 @@ function M.show_comment_thread()
     end
 
     local owner = state.get_owner()
-    local repo = state.get_repo()
     local token = config.get_token_for_owner(cfg, owner)
 
     vim.notify("Unresolving thread...", vim.log.levels.INFO)
