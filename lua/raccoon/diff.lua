@@ -154,7 +154,8 @@ function M.apply_highlights(buf, patch)
         if #display_content > 120 then
           display_content = display_content:sub(1, 117) .. "..."
         end
-        table.insert(virt_lines, { { display_content, "RaccoonDelete" } })
+        local pad = string.rep(" ", 300)
+        table.insert(virt_lines, { { display_content .. pad, "RaccoonDelete" } })
       end
 
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target_line, 0, {
