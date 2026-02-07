@@ -97,7 +97,9 @@ local function relative_time(iso_date)
     sec = tonumber(sec),
   })
 
-  local now = os.time()
+  -- os.time({...}) interprets fields as local time, so use the same
+  -- interpretation for "now" to get a correct UTC-vs-UTC diff
+  local now = os.time(os.date("!*t"))
   local diff = now - pr_time
 
   if diff < 60 then
