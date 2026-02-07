@@ -52,6 +52,40 @@ describe("raccoon.git", function()
     end)
   end)
 
+  describe("parse_repo_from_remote_url", function()
+    it("parses SSH remote URL", function()
+      assert.equals("bajor/nvim-raccoon", git.parse_repo_from_remote_url("git@github.com:bajor/nvim-raccoon.git"))
+    end)
+
+    it("parses HTTPS remote URL", function()
+      assert.equals("bajor/nvim-raccoon", git.parse_repo_from_remote_url("https://github.com/bajor/nvim-raccoon.git"))
+    end)
+
+    it("handles URL without .git suffix", function()
+      assert.equals("bajor/nvim-raccoon", git.parse_repo_from_remote_url("https://github.com/bajor/nvim-raccoon"))
+    end)
+
+    it("handles SSH URL without .git suffix", function()
+      assert.equals("bajor/nvim-raccoon", git.parse_repo_from_remote_url("git@github.com:bajor/nvim-raccoon"))
+    end)
+
+    it("returns nil for empty string", function()
+      assert.is_nil(git.parse_repo_from_remote_url(""))
+    end)
+
+    it("returns nil for nil", function()
+      assert.is_nil(git.parse_repo_from_remote_url(nil))
+    end)
+
+    it("returns nil for non-GitHub URL", function()
+      assert.is_nil(git.parse_repo_from_remote_url("git@gitlab.com:owner/repo.git"))
+    end)
+
+    it("handles orgs with hyphens and dots", function()
+      assert.equals("my-org/my.repo", git.parse_repo_from_remote_url("git@github.com:my-org/my.repo.git"))
+    end)
+  end)
+
   describe("is_git_repo", function()
     it("returns true for git repository", function()
       -- The project root should be a git repo

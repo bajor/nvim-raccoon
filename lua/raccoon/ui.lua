@@ -382,7 +382,32 @@ function M.fetch_all_prs(callback)
   local had_error = nil
 
   if pending == 0 then
-    callback({}, nil)
+    -- Auto-detect from current git repo
+    local git = require("raccoon.git")
+    git.get_remote_url(vim.fn.getcwd(), function(url, git_err)
+      if git_err or not url then
+        callback({}, nil)
+        return
+      end
+      local repo_str = git.parse_repo_from_remote_url(url)
+      if not repo_str then
+        callback({}, nil)
+        return
+      end
+      local owner, repo = repo_str:match("^([^/]+)/(.+)$")
+      if not owner or not repo then
+        callback({}, nil)
+        return
+      end
+      local token = config.get_token_for_repo(cfg, repo_str)
+      api.list_prs(owner, repo, token, function(prs, api_err)
+        if api_err then
+          callback(nil, api_err)
+        else
+          callback(prs or {}, nil)
+        end
+      end)
+    end)
     return
   end
 
