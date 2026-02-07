@@ -234,18 +234,13 @@ function M.get_statusline_component()
     table.insert(parts, string.format("[%d/%d]", M.session.current_file, #files))
   end
 
-  -- Show behind count
-  if sync.behind > 0 then
-    table.insert(parts, string.format("⚠ %d behind", sync.behind))
-  end
-
-  -- Show conflict warning
+  -- Show sync status
   if sync.has_conflicts then
     table.insert(parts, "⛔ CONFLICTS")
-  end
-
-  if #parts == 0 then
-    return "✓ In sync"
+  elseif sync.behind > 0 then
+    table.insert(parts, string.format("⚠ %d behind", sync.behind))
+  else
+    table.insert(parts, "✓ In sync")
   end
 
   return table.concat(parts, " │ ")
