@@ -41,6 +41,7 @@ The [prs-and-issues-preview-osx](https://github.com/bajor/prs-and-issues-preview
 - Navigate through changed files with diff highlighting
 - View and create inline comments
 - Jump between diff hunks and comments
+- **Commit viewer mode** — browse individual commits in a configurable grid of diff hunks
 - Show PR description and metadata
 - Merge PRs (merge, squash, or rebase)
 - Auto-sync to detect new commits
@@ -74,9 +75,19 @@ Create a config file at `~/.config/raccoon/config.json`:
   "github_token": "ghp_xxxxxxxxxxxxxxxxxxxx",
   "github_username": "your-username",
   "repos": ["owner/repo1", "owner/repo2"],
-  "clone_root": "~/.local/share/raccoon/repos"
+  "clone_root": "~/.local/share/raccoon/repos",
+  "commit_viewer": {
+    "grid": { "rows": 2, "cols": 2 },
+    "base_commits_count": 20
+  }
 }
 ```
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `commit_viewer.grid.rows` | Number of rows in the diff grid | `2` |
+| `commit_viewer.grid.cols` | Number of columns in the diff grid | `2` |
+| `commit_viewer.base_commits_count` | Recent base branch commits shown in sidebar | `20` |
 
 Or run `:Raccoon config` to create a default config file.
 
@@ -93,6 +104,7 @@ Or run `:Raccoon config` to create a default config file.
 - `:Raccoon rebase` - Rebase and merge
 - `:Raccoon close` - Close the review session
 - `:Raccoon prs` - Open the PR list picker
+- `:Raccoon commits` - Toggle commit viewer mode
 - `:Raccoon config` - Open the config file
 
 ### Keymaps (active during PR review)
@@ -110,6 +122,31 @@ Or run `:Raccoon config` to create a default config file.
 | `<leader>ll` | List all comments |
 | `<leader>pr` | Open PR list picker |
 | `<leader>rr` | Merge PR (pick method) |
+| `<leader>cm` | Toggle commit viewer mode |
+
+### Commit Viewer Mode
+
+Inspired by chess game review, where you step back and forth through moves to understand the sequence that led to the final position. Instead of seeing the PR as a flat diff, commit viewer lets you replay the author's thought process one commit at a time — understanding *how* the code got to where it is, not just *what* changed.
+
+Press `<leader>cm` during a PR review to enter commit viewer mode. A sidebar on the right lists all commits from the PR branch and recent base branch commits. The main area displays a configurable grid of diff hunks.
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Navigate commits in sidebar (auto-loads diffs) |
+| `<leader>j` | Next page of diff hunks |
+| `<leader>k` | Previous page of diff hunks |
+| `<leader>l` | Next page of diff hunks (alias) |
+| `<leader>m1`..`m9` | Maximize grid cell (full file diff in floating window) |
+| `<leader>q` / `q` | Exit maximized view |
+| `<leader>cm` | Exit commit viewer mode |
+
+Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number (`#1`, `#2`, ...) are shown in the winbar at the top of each cell. A full-width header bar at the top of the screen displays the current commit message and page indicator. Navigation seamlessly crosses from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
+
+**Keybinding lockdown:** In commit mode, most vim keybindings are disabled to prevent accidentally breaking the layout. Only the keys listed above work — `:q`, insert mode, editing, and other commands are blocked. Exit with `<leader>cm`.
+
+**Maximize view:** Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff (all hunks). The maximize window is fully isolated: page navigation and cell switching are blocked, but normal vim navigation works (scrolling, search, `:` commands). Close with `q` or `<leader>q`.
+
+Focus is locked to the sidebar; window-switching keys are blocked. Git sync is paused while in commit mode and resumes on exit.
 
 ### Statusline Integration
 

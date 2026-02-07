@@ -105,6 +105,9 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
         pr_open.close_pr()
       end)
     end)
+  elseif subcommand == "commits" then
+    local commits_mod = require("raccoon.commits")
+    commits_mod.toggle()
   elseif subcommand == "config" then
     -- Open config file in current buffer
     local config_path = vim.fn.expand("~/.config/raccoon/config.json")
@@ -130,6 +133,10 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     "new_commits": true,
     "new_comments": true,
     "sound": true
+  },
+  "commit_viewer": {
+    "grid": { "rows": 2, "cols": 2 },
+    "base_commits_count": 20
   }
 }]]
       local file = io.open(config_path, "w")
@@ -148,7 +155,7 @@ end, {
     local args = vim.split(cmdline, "%s+")
     if #args == 2 then
       -- Complete subcommands
-      return { "prs", "list", "description", "sync", "merge", "squash", "rebase", "close", "config" }
+      return { "prs", "list", "description", "sync", "merge", "squash", "rebase", "commits", "close", "config" }
     end
     return {}
   end,

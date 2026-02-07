@@ -120,10 +120,8 @@ function M.apply_highlights(buf, patch)
   for _, line_num in ipairs(changes.added) do
     local line_idx = line_num - 1
     if line_idx >= 0 and line_idx < line_count then
-      -- Full line highlight with green background
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "RaccoonAdd", line_idx, 0, -1)
-      -- Green "+" sign in gutter
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+        line_hl_group = "RaccoonAdd",
         sign_text = "+",
         sign_hl_group = "RaccoonAddSign",
       })
@@ -156,7 +154,8 @@ function M.apply_highlights(buf, patch)
         if #display_content > 120 then
           display_content = display_content:sub(1, 117) .. "..."
         end
-        table.insert(virt_lines, { { display_content, "RaccoonDelete" } })
+        local pad = string.rep(" ", 300)
+        table.insert(virt_lines, { { display_content .. pad, "RaccoonDelete" } })
       end
 
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target_line, 0, {
@@ -216,6 +215,7 @@ function M.open_file(file)
 
   -- Track buffer in session
   state.add_buffer(buf)
+  vim.bo[buf].modifiable = false
 
   -- Apply diff highlights
   if file.patch then
