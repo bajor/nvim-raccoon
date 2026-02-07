@@ -17,7 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `<leader>l` as alias for next page
 - `<leader>m1`..`m9` to maximize a grid cell into a floating full-file diff view
 - Grid cell numbers (`#1`, `#2`, ...) and filename shown in winbar at top of each cell
-- Full-width header bar at top of screen showing commit message (right) and page indicator (left)
+- Full-width header bar at top of screen showing page indicator (left) and commit message (right)
 - Syntax highlighting and gutter signs (`+`/`-`) for diffs in grid cells
 - Focus lock: sidebar stays focused, window-switching keys blocked in commit mode
 - Keybinding lockdown in commit mode — only `j`/`k`, `<leader>j`/`<leader>k`, `<leader>cm`, and `<leader>m<N>` work; `:q`, insert mode, editing keys, and other vim commands are blocked
@@ -25,10 +25,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Line wrapping enabled in grid cells and maximize view
 - Git sync pauses while in commit viewer mode and resumes on exit
 - `diff-tree` used for commit diffs to correctly handle merge commits
-- New git operations: `unshallow_if_needed`, `log_commits`, `log_base_commits`, `show_commit`, `fetch_branch`
+- New git operations: `unshallow_if_needed`, `log_commits`, `log_base_commits`, `show_commit`, `show_commit_file`, `fetch_branch`
 - `commit_viewer.base_commits_count` config option (default 20)
 - `commit_viewer` defaults in config template
 - Diff highlights extend to full window width
+- Increased diff highlight contrast for colorblind accessibility
+
+### Fixed
+- Prefer a-path over `/dev/null` b-path for deleted files in commit viewer
+- Pad deleted-line virtual text so red highlight extends to end of line
 
 ## [0.3] - 2026-02-07
 
