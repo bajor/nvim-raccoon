@@ -903,4 +903,8 @@ function M.toggle()
   end
 end
 
+-- Exposed for testing
+M._lock_buf = lock_buf
+M._lock_maximize_buf = lock_maximize_buf
+
 return M

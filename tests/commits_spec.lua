@@ -180,6 +180,140 @@ describe("raccoon.state commit mode", function()
   end)
 end)
 
+describe("raccoon.commits keybinding lockdown", function()
+  local function create_scratch_buf()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    return buf
+  end
+
+  local function has_buf_keymap(buf, mode, lhs)
+    local maps = vim.api.nvim_buf_get_keymap(buf, mode)
+    for _, map in ipairs(maps) do
+      if map.lhs == lhs then
+        return true
+      end
+    end
+    return false
+  end
+
+  describe("_lock_buf", function()
+    it("is exposed for testing", function()
+      assert.is_function(commits._lock_buf)
+    end)
+
+    it("blocks colon on buffer", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+      assert.is_true(has_buf_keymap(buf, "n", ":"))
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks insert mode keys", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+      for _, key in ipairs({ "i", "I", "a", "A", "o", "O" }) do
+        assert.is_true(has_buf_keymap(buf, "n", key), "expected " .. key .. " to be blocked")
+      end
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks editing keys", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+      for _, key in ipairs({ "d", "x", "p", "P" }) do
+        assert.is_true(has_buf_keymap(buf, "n", key), "expected " .. key .. " to be blocked")
+      end
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks quit shortcuts", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+      assert.is_true(has_buf_keymap(buf, "n", "ZZ"))
+      assert.is_true(has_buf_keymap(buf, "n", "ZQ"))
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks macro recording", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+      assert.is_true(has_buf_keymap(buf, "n", "q"))
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("does not block j or k", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+      assert.is_false(has_buf_keymap(buf, "n", "j"))
+      assert.is_false(has_buf_keymap(buf, "n", "k"))
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("handles invalid buffer gracefully", function()
+      -- Should not error
+      commits._lock_buf(nil)
+      commits._lock_buf(99999)
+    end)
+  end)
+
+  describe("_lock_maximize_buf", function()
+    it("is exposed for testing", function()
+      assert.is_function(commits._lock_maximize_buf)
+    end)
+
+    it("does not block colon (allows ex commands)", function()
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+      assert.is_false(has_buf_keymap(buf, "n", ":"))
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("does not block q (used for close)", function()
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+      assert.is_false(has_buf_keymap(buf, "n", "q"))
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks insert mode keys", function()
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+      for _, key in ipairs({ "i", "I", "a", "A", "o", "O" }) do
+        assert.is_true(has_buf_keymap(buf, "n", key), "expected " .. key .. " to be blocked")
+      end
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks page navigation keys", function()
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+      assert.is_true(has_buf_keymap(buf, "n", " j"))
+      assert.is_true(has_buf_keymap(buf, "n", " k"))
+      assert.is_true(has_buf_keymap(buf, "n", " l"))
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks cell maximize keys", function()
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+      -- Default 2x2 grid = 4 cells
+      for i = 1, 4 do
+        assert.is_true(has_buf_keymap(buf, "n", " m" .. i), "expected <leader>m" .. i .. " to be blocked")
+      end
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("handles invalid buffer gracefully", function()
+      -- Should not error
+      commits._lock_maximize_buf(nil)
+      commits._lock_maximize_buf(99999)
+    end)
+  end)
+end)
+
 describe("raccoon.config commit_viewer defaults", function()
   it("has commit_viewer in defaults", function()
     assert.is_table(config.defaults.commit_viewer)
