@@ -1,6 +1,6 @@
 ---@class RaccoonKeymaps
 ---Keymap management for PR review sessions
----Only 3 shortcuts: nn (next), pp (previous), cc (comment)
+---All keymaps use <leader> prefix to avoid conflicts with Vim builtins
 local M = {}
 
 local api = require("raccoon.api")
@@ -45,7 +45,7 @@ local function get_file_points(file)
     end
     for _, del in ipairs(changes.deleted) do
       if del.line_num then
-        table.insert(all_lines, del.line_num)
+        table.insert(all_lines, math.max(1, del.line_num))
       end
     end
     table.sort(all_lines)
@@ -147,7 +147,7 @@ function M.next_point()
 
   local all_points = get_all_points()
   if #all_points == 0 then
-    vim.notify("No changes or comments in this PR", vim.log.levels.INFO)
+    diff.next_file()
     return
   end
 
@@ -163,9 +163,8 @@ function M.next_point()
     end
   end
 
-  -- Wrap around to first point
-  vim.notify("Wrapped to first point", vim.log.levels.INFO)
-  goto_point(all_points[1])
+  -- No next point found - go to next file
+  diff.next_file()
 end
 
 --- Go to previous point of interest (diff or comment, across files)
@@ -177,7 +176,7 @@ function M.prev_point()
 
   local all_points = get_all_points()
   if #all_points == 0 then
-    vim.notify("No changes or comments in this PR", vim.log.levels.INFO)
+    diff.prev_file()
     return
   end
 
@@ -194,9 +193,8 @@ function M.prev_point()
     end
   end
 
-  -- Wrap around to last point
-  vim.notify("Wrapped to last point", vim.log.levels.INFO)
-  goto_point(all_points[#all_points])
+  -- No previous point found - go to previous file
+  diff.prev_file()
 end
 
 --- Get all comment threads across all files (comments only, no diffs)
@@ -453,7 +451,7 @@ function M.merge_picker()
           vim.api.nvim_win_close(win, true)
         end
       end
-      vim.keymap.set("n", "q", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
+      vim.keymap.set("n", "<leader>q", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
       vim.keymap.set("n", "<Esc>", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
     end)
   end)
@@ -461,13 +459,13 @@ end
 
 --- All PR review keymaps (simplified)
 M.keymaps = {
-  { mode = "n", lhs = "nn", rhs = function() M.next_point() end, desc = "Next diff/comment" },
-  { mode = "n", lhs = "pp", rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
-  { mode = "n", lhs = "nf", rhs = function() diff.next_file() end, desc = "Next file" },
-  { mode = "n", lhs = "pf", rhs = function() diff.prev_file() end, desc = "Previous file" },
-  { mode = "n", lhs = "nt", rhs = function() M.next_thread() end, desc = "Next comment thread" },
-  { mode = "n", lhs = "pt", rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
-  { mode = "n", lhs = "cc", rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
+  { mode = "n", lhs = "<leader>j", rhs = function() M.next_point() end, desc = "Next diff/comment" },
+  { mode = "n", lhs = "<leader>k", rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
+  { mode = "n", lhs = "<leader>nf", rhs = function() diff.next_file() end, desc = "Next file" },
+  { mode = "n", lhs = "<leader>pf", rhs = function() diff.prev_file() end, desc = "Previous file" },
+  { mode = "n", lhs = "<leader>nt", rhs = function() M.next_thread() end, desc = "Next comment thread" },
+  { mode = "n", lhs = "<leader>pt", rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
+  { mode = "n", lhs = "<leader>c", rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
   { mode = "n", lhs = "<leader>dd", rhs = function() M.show_description() end, desc = "Show PR description" },
   { mode = "n", lhs = "<leader>ll", rhs = function() M.list_comments() end, desc = "List all PR comments" },
   { mode = "n", lhs = "<leader>rr", rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },

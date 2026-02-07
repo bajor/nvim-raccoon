@@ -11,6 +11,7 @@ M.state = {
   buf = nil,
   prs = {},
   selected = 1,
+  error_line_count = 0,
   description_win = nil,
 }
 
@@ -60,6 +61,7 @@ function M.create_floating_window(opts)
   -- Set window options
   vim.wo[win].cursorline = true
   vim.wo[win].wrap = false
+  vim.wo[win].scrolloff = 3
 
   return win, buf
 end
@@ -124,7 +126,7 @@ local function render_pr_list(prs, buf_width)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    table.insert(lines, "  Press 'r' to refresh, 'q' to close")
+    table.insert(lines, "  Press 'r' to refresh, '<leader>q' to close")
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -180,7 +182,7 @@ local function render_pr_list(prs, buf_width)
 
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
-  table.insert(lines, " Enter: open │ q: close │ r: refresh │ j/k: navigate")
+  table.insert(lines, " Enter: open │ <leader>q: close │ r: refresh │ j/k: navigate")
 
   return lines, highlights
 end
@@ -230,9 +232,10 @@ local function update_selection()
     end
   end
 
-  -- Set cursor to selected line (the title line of the PR)
+  -- Set cursor to selected line (offset by error lines at top)
   if selected_line and M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
-    vim.api.nvim_win_set_cursor(M.state.win, { selected_line + 1, 0 })
+    local offset = M.state.error_line_count or 0
+    vim.api.nvim_win_set_cursor(M.state.win, { selected_line + 1 + offset, 0 })
   end
 end
 
@@ -248,6 +251,81 @@ local function apply_highlights(buf, highlights)
   end
 end
 
+--- Show the PR list picker
+--- Opens a floating window with all open PRs from configured repos
+function M.show_pr_list()
+  -- Toggle: if already open, close it
+  if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
+    M.close_pr_list()
+    return
+  end
+
+  -- Create floating window
+  local win, buf = M.create_floating_window({
+    width_pct = 0.7,
+    height_pct = 0.8,
+    title = "Pull Requests",
+    border = "rounded",
+  })
+
+  -- Store state
+  M.state.win = win
+  M.state.buf = buf
+  M.state.prs = {}
+  M.state.selected = 1
+
+  -- Show loading state
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  Loading..." })
+  vim.bo[buf].modifiable = false
+
+  -- Setup buffer-local keymaps
+  local opts = { buffer = buf, noremap = true, silent = true }
+
+  local function move_down()
+    if M.state.selected < #M.state.prs then
+      M.state.selected = M.state.selected + 1
+      update_selection()
+    end
+  end
+
+  local function move_up()
+    if M.state.selected > 1 then
+      M.state.selected = M.state.selected - 1
+      update_selection()
+    end
+  end
+
+  vim.keymap.set("n", "j", move_down, opts)
+  vim.keymap.set("n", "<Down>", move_down, opts)
+  vim.keymap.set("n", "k", move_up, opts)
+  vim.keymap.set("n", "<Up>", move_up, opts)
+
+  -- Open selected PR on Enter
+  vim.keymap.set("n", "<CR>", function()
+    local pr = M.state.prs[M.state.selected]
+    if not pr then return end
+
+    local url = pr.html_url
+    if not url then return end
+
+    M.close_pr_list()
+
+    local open = require("raccoon.open")
+    open.open_pr(url)
+  end, opts)
+
+  -- Close on <leader>q or Esc
+  vim.keymap.set("n", "<leader>q", function() M.close_pr_list() end, opts)
+  vim.keymap.set("n", "<Esc>", function() M.close_pr_list() end, opts)
+
+  -- Refresh on r
+  vim.keymap.set("n", "r", function() M.refresh_pr_list() end, opts)
+
+  -- Fetch and display PRs
+  M.refresh_pr_list()
+end
+
 --- Refresh the PR list
 function M.refresh_pr_list()
   if not M.state.buf or not vim.api.nvim_buf_is_valid(M.state.buf) then
@@ -259,21 +337,14 @@ function M.refresh_pr_list()
   vim.api.nvim_buf_set_lines(M.state.buf, 0, -1, false, { "  Loading..." })
   vim.bo[M.state.buf].modifiable = false
 
-  M.fetch_all_prs(function(prs, err)
-    if err then
-      vim.bo[M.state.buf].modifiable = true
-      vim.api.nvim_buf_set_lines(M.state.buf, 0, -1, false, {
-        "  Error loading PRs:",
-        "  " .. err,
-        "",
-        "  Press 'r' to retry, 'q' to close",
-      })
-      vim.bo[M.state.buf].modifiable = false
+  M.fetch_all_prs(function(prs, errors)
+    if not M.state.buf or not vim.api.nvim_buf_is_valid(M.state.buf) then
       return
     end
 
-    M.state.prs = prs
+    M.state.prs = prs or {}
     M.state.selected = 1
+    M.state.error_line_count = 0
 
     -- Get window width for formatting
     local win_width = 60
@@ -281,64 +352,119 @@ function M.refresh_pr_list()
       win_width = vim.api.nvim_win_get_width(M.state.win)
     end
 
+    -- Build error lines if any tokens failed
+    local error_lines = {}
+    local error_highlights = {}
+    if errors and #errors > 0 then
+      for _, e in ipairs(errors) do
+        local line = string.format("  [%s] %s", e.key, e.err)
+        table.insert(error_lines, line)
+        table.insert(error_highlights, {
+          line = #error_lines - 1,
+          col = 0,
+          end_col = #line,
+          hl = "WarningMsg",
+        })
+      end
+      table.insert(error_lines, "")
+      M.state.error_line_count = #error_lines
+    end
+
     local lines, highlights = render_pr_list(prs, win_width)
+
+    -- Offset PR highlights by error lines count
+    if #error_lines > 0 then
+      for _, hl in ipairs(highlights) do
+        hl.line = hl.line + #error_lines
+      end
+    end
+
+    -- Combine error lines + PR lines
+    local all_lines = {}
+    for _, line in ipairs(error_lines) do
+      table.insert(all_lines, line)
+    end
+    for _, line in ipairs(lines) do
+      table.insert(all_lines, line)
+    end
+
+    -- Combine highlights
+    local all_highlights = {}
+    for _, hl in ipairs(error_highlights) do
+      table.insert(all_highlights, hl)
+    end
+    for _, hl in ipairs(highlights) do
+      table.insert(all_highlights, hl)
+    end
+
     vim.bo[M.state.buf].modifiable = true
-    vim.api.nvim_buf_set_lines(M.state.buf, 0, -1, false, lines)
+    vim.api.nvim_buf_set_lines(M.state.buf, 0, -1, false, all_lines)
     vim.bo[M.state.buf].modifiable = false
 
-    -- Apply highlights
-    apply_highlights(M.state.buf, highlights)
-
+    apply_highlights(M.state.buf, all_highlights)
     update_selection()
   end)
 end
 
---- Fetch all PRs from configured repos
----@param callback fun(prs: table[]|nil, err: string|nil)
+--- Fetch all open PRs involving the user, trying each configured token
+---@param callback fun(prs: table[], errors: table[])
 function M.fetch_all_prs(callback)
   local cfg, err = config.load()
   if err then
-    callback(nil, err)
+    callback({}, { { key = "config", err = err } })
+    return
+  end
+
+  -- Collect unique tokens: {key, token} pairs
+  local token_entries = {}
+  local seen = {}
+
+  if cfg.tokens and type(cfg.tokens) == "table" then
+    for key, token in pairs(cfg.tokens) do
+      if not seen[token] then
+        table.insert(token_entries, { key = key, token = token })
+        seen[token] = true
+      end
+    end
+  end
+
+  if cfg.github_token and cfg.github_token ~= "" and not seen[cfg.github_token] then
+    table.insert(token_entries, {
+      key = cfg.github_username or "github_token",
+      token = cfg.github_token,
+    })
+  end
+
+  if #token_entries == 0 then
+    callback({}, { { key = "config", err = "No tokens configured" } })
     return
   end
 
   local all_prs = {}
-  local pending = #cfg.repos
-  local had_error = nil
+  local all_errors = {}
+  local pending = #token_entries
+  local seen_pr = {}
 
-  if pending == 0 then
-    callback({}, nil)
-    return
-  end
+  for _, entry in ipairs(token_entries) do
+    api.search_user_prs(entry.key, entry.token, function(prs, api_err)
+      pending = pending - 1
 
-  for _, repo_str in ipairs(cfg.repos) do
-    local owner, repo = repo_str:match("^([^/]+)/(.+)$")
-    if owner and repo then
-      api.list_prs(owner, repo, cfg.github_token, function(prs, api_err)
-        pending = pending - 1
-
-        if api_err then
-          had_error = api_err
-        elseif prs then
-          for _, pr in ipairs(prs) do
+      if api_err then
+        table.insert(all_errors, { key = entry.key, err = api_err })
+      elseif prs then
+        for _, pr in ipairs(prs) do
+          -- Deduplicate by html_url
+          if pr.html_url and not seen_pr[pr.html_url] then
+            seen_pr[pr.html_url] = true
             table.insert(all_prs, pr)
           end
         end
-
-        if pending == 0 then
-          if had_error and #all_prs == 0 then
-            callback(nil, had_error)
-          else
-            callback(all_prs, nil)
-          end
-        end
-      end)
-    else
-      pending = pending - 1
-      if pending == 0 then
-        callback(all_prs, nil)
       end
-    end
+
+      if pending == 0 then
+        callback(all_prs, all_errors)
+      end
+    end)
   end
 end
 
@@ -407,7 +533,7 @@ function M.show_description()
 
   -- Close keymaps (also clear state)
   local opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "q", function()
+  vim.keymap.set("n", "<leader>q", function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
   end, opts)

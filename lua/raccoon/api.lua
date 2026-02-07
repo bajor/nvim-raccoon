@@ -108,6 +108,40 @@ local function fetch_all_pages(url, token)
   return all_items, nil
 end
 
+--- Search for all open PRs owned by a user or org
+---@param owner string GitHub user or org name (token key)
+---@param token string GitHub token
+---@param callback fun(prs: table[]|nil, err: string|nil)
+function M.search_user_prs(owner, token, callback)
+  vim.schedule(function()
+    local query = string.format("type:pr state:open user:%s", owner)
+    local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
+      M.base_url, vim.uri_encode(query))
+
+    local response, err = request({
+      url = url,
+      method = "GET",
+      token = token,
+    })
+
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    -- Transform search results to match list_prs format
+    local prs = {}
+    for _, item in ipairs(response.data.items or {}) do
+      -- Extract "owner/repo" from repository_url
+      local repo_name = item.repository_url and item.repository_url:match("/repos/(.+)$") or "unknown"
+      item.base = { repo = { full_name = repo_name } }
+      table.insert(prs, item)
+    end
+
+    callback(prs, nil)
+  end)
+end
+
 --- List open pull requests for a repository
 ---@param owner string Repository owner
 ---@param repo string Repository name

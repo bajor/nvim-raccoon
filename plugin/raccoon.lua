@@ -10,7 +10,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   local subcommand = args[1]
 
   if not subcommand then
-    vim.notify("Usage: :Raccoon <list|description|sync|merge|close>", vim.log.levels.WARN)
+    vim.notify("Usage: :Raccoon <prs|list|description|sync|merge|close>", vim.log.levels.WARN)
     return
   end
 
@@ -32,6 +32,9 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     end
     local pr_open = require("raccoon.open")
     pr_open.open_pr(url)
+  elseif subcommand == "prs" then
+    local ui = require("raccoon.ui")
+    ui.show_pr_list()
   elseif subcommand == "list" then
     local pr_comments = require("raccoon.comments")
     pr_comments.list_comments()
@@ -145,7 +148,7 @@ end, {
     local args = vim.split(cmdline, "%s+")
     if #args == 2 then
       -- Complete subcommands
-      return { "list", "description", "sync", "merge", "squash", "rebase", "close", "config" }
+      return { "prs", "list", "description", "sync", "merge", "squash", "rebase", "close", "config" }
     end
     return {}
   end,

@@ -264,4 +264,75 @@ describe("raccoon.ui", function()
       assert.is_nil(ui.state.description_win)
     end)
   end)
+
+  describe("show_pr_list", function()
+    after_each(function()
+      ui.close_pr_list()
+    end)
+
+    it("has show_pr_list function", function()
+      assert.is_function(ui.show_pr_list)
+    end)
+
+    it("opens a floating window", function()
+      local original_fetch = ui.fetch_all_prs
+      ui.fetch_all_prs = function(callback) callback({}, nil) end
+
+      ui.show_pr_list()
+
+      assert.is_not_nil(ui.state.win)
+      assert.is_true(vim.api.nvim_win_is_valid(ui.state.win))
+
+      ui.fetch_all_prs = original_fetch
+    end)
+
+    it("toggles window off when called twice", function()
+      local original_fetch = ui.fetch_all_prs
+      ui.fetch_all_prs = function(callback) callback({}, nil) end
+
+      ui.show_pr_list()
+      assert.is_not_nil(ui.state.win)
+
+      ui.show_pr_list()
+      assert.is_nil(ui.state.win)
+
+      ui.fetch_all_prs = original_fetch
+    end)
+
+    it("stores PRs in state after fetch", function()
+      local mock_prs = {
+        {
+          number = 42,
+          title = "Test PR",
+          html_url = "https://github.com/owner/repo/pull/42",
+          user = { login = "testuser" },
+          updated_at = "2026-01-01T00:00:00Z",
+          base = { repo = { full_name = "owner/repo" } },
+        },
+      }
+
+      local original_fetch = ui.fetch_all_prs
+      ui.fetch_all_prs = function(callback) callback(mock_prs, nil) end
+
+      ui.show_pr_list()
+
+      assert.equals(1, #ui.state.prs)
+      assert.equals(42, ui.state.prs[1].number)
+
+      ui.fetch_all_prs = original_fetch
+    end)
+
+    it("resets selected to 1 on open", function()
+      ui.state.selected = 5
+
+      local original_fetch = ui.fetch_all_prs
+      ui.fetch_all_prs = function(callback) callback({}, nil) end
+
+      ui.show_pr_list()
+
+      assert.equals(1, ui.state.selected)
+
+      ui.fetch_all_prs = original_fetch
+    end)
+  end)
 end)
