@@ -61,6 +61,7 @@ function M.create_floating_window(opts)
   -- Set window options
   vim.wo[win].cursorline = true
   vim.wo[win].wrap = false
+  vim.wo[win].scrolloff = 3
 
   return win, buf
 end
@@ -261,8 +262,8 @@ function M.show_pr_list()
 
   -- Create floating window
   local win, buf = M.create_floating_window({
-    width_pct = 0.6,
-    height_pct = 0.6,
+    width_pct = 0.7,
+    height_pct = 0.8,
     title = "Pull Requests",
     border = "rounded",
   })
