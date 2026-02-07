@@ -30,6 +30,8 @@ describe("raccoon.git commit operations", function()
   -- Detect whether origin/main is reachable (may be absent in CI shallow clones,
   -- repos with master default branch, or repos without an origin remote)
   local has_origin_main = vim.fn.system("git rev-parse --verify origin/main 2>/dev/null"):match("^%x+") ~= nil
+  local is_shallow = vim.fn.system("git rev-parse --is-shallow-repository"):match("true") ~= nil
+  local can_diff = has_origin_main and not is_shallow
 
   describe("new functions exist", function()
     it("has unshallow_if_needed function", function()
@@ -124,7 +126,7 @@ describe("raccoon.git commit operations", function()
 
   describe("show_commit on current repo", function()
     it("returns file diffs for a commit", function()
-      if not has_origin_main then return end
+      if not can_diff then return end
 
       local done = false
       local sha = nil
@@ -158,7 +160,7 @@ describe("raccoon.git commit operations", function()
     end)
 
     it("never returns dev/null as filename", function()
-      if not has_origin_main then return end
+      if not can_diff then return end
 
       local done = false
       local sha = nil
@@ -193,7 +195,7 @@ describe("raccoon.git commit operations", function()
 
   describe("show_commit_file on current repo", function()
     it("returns full-context patch for a file", function()
-      if not has_origin_main then return end
+      if not can_diff then return end
 
       local done = false
       local sha = nil
