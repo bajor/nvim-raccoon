@@ -14,7 +14,7 @@ M.defaults = {
   github_username = "",
   repos = {},
   tokens = {},
-  clone_root = "~/.local/share/raccoon/repos",
+  clone_root = vim.fn.stdpath("data") .. "/raccoon/repos",
   poll_interval_seconds = 300,
   commit_viewer = {
     grid = { rows = 2, cols = 2 },
@@ -123,7 +123,7 @@ function M.create_default()
   local default = {
     github_username = "your-username",
     repos = { "owner/repo1", "owner/repo2" },
-    clone_root = "~/.local/share/raccoon/repos",
+    clone_root = vim.fn.stdpath("data") .. "/raccoon/repos",
     poll_interval_seconds = 300,
     commit_viewer = {
       grid = { rows = 2, cols = 2 },

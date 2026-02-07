@@ -118,20 +118,21 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     end
     -- Create default config if file doesn't exist
     if vim.fn.filereadable(config_path) == 0 then
-      local default_config = [[{
+      local data_dir = vim.fn.stdpath("data")
+      local default_config = string.format([[{
   "github_token": "ghp_xxxxxxxxxxxxxxxxxxxx",
   "github_username": "your-username",
   "repos": [
     "owner/repo1",
     "owner/repo2"
   ],
-  "clone_root": "~/.local/share/raccoon/repos",
+  "clone_root": "%s/raccoon/repos",
   "poll_interval_seconds": 300,
   "commit_viewer": {
     "grid": { "rows": 2, "cols": 2 },
     "base_commits_count": 20
   }
-}]]
+}]], data_dir)
       local file = io.open(config_path, "w")
       if file then
         file:write(default_config)

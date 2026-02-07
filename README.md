@@ -75,7 +75,7 @@ Create a config file at `~/.config/raccoon/config.json`:
   "github_token": "ghp_xxxxxxxxxxxxxxxxxxxx",
   "github_username": "your-username",
   "repos": ["owner/repo1", "owner/repo2"],
-  "clone_root": "~/.local/share/raccoon/repos",
+  "clone_root": "~/.local/share/nvim/raccoon/repos",
   "commit_viewer": {
     "grid": { "rows": 2, "cols": 2 },
     "base_commits_count": 20
