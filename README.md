@@ -101,10 +101,10 @@ Or run `:Raccoon config` to create a default config file.
 |-----|--------|
 | `<leader>j` | Next diff/comment |
 | `<leader>k` | Previous diff/comment |
-| `<leader>J` | Next file |
-| `<leader>K` | Previous file |
-| `<leader>n` | Next comment thread |
-| `<leader>p` | Previous comment thread |
+| `<leader>nf` | Next file |
+| `<leader>pf` | Previous file |
+| `<leader>nt` | Next comment thread |
+| `<leader>pt` | Previous comment thread |
 | `<leader>c` | Comment at cursor |
 | `<leader>dd` | Show PR description |
 | `<leader>ll` | List all comments |
