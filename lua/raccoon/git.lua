@@ -445,4 +445,122 @@ function M.get_sync_status(path, base_branch, callback)
   })
 end
 
+--- Unshallow the repository if it is a shallow clone
+---@param path string Repository path
+---@param callback fun(success: boolean, err: string|nil)
+function M.unshallow_if_needed(path, callback)
+  run_git({ "rev-parse", "--is-shallow-repository" }, {
+    cwd = path,
+    on_exit = function(code, stdout, _)
+      if code == 0 and stdout[1] == "true" then
+        run_git({ "fetch", "--unshallow" }, {
+          cwd = path,
+          on_exit = function(unshallow_code, _, stderr)
+            if unshallow_code == 0 then
+              callback(true, nil)
+            else
+              callback(false, table.concat(stderr, "\n"))
+            end
+          end,
+        })
+      else
+        callback(true, nil)
+      end
+    end,
+  })
+end
+
+--- Get commit log for PR branch (commits not on base)
+---@param path string Repository path
+---@param base_branch string Base branch (e.g., "main")
+---@param callback fun(commits: table[]|nil, err: string|nil)
+function M.log_commits(path, base_branch, callback)
+  run_git({ "log", "--format=%H %s", "--reverse", "origin/" .. base_branch .. "..HEAD" }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      local commits = {}
+      for _, line in ipairs(stdout) do
+        local sha = line:sub(1, 40)
+        local message = line:sub(42)
+        if #sha == 40 then
+          table.insert(commits, { sha = sha, message = message })
+        end
+      end
+      callback(commits, nil)
+    end,
+  })
+end
+
+--- Get recent commits from the base branch
+---@param path string Repository path
+---@param base_branch string Base branch
+---@param count number Number of commits to fetch
+---@param callback fun(commits: table[]|nil, err: string|nil)
+function M.log_base_commits(path, base_branch, count, callback)
+  run_git({ "log", "--format=%H %s", "-n", tostring(count), "origin/" .. base_branch }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      local commits = {}
+      for _, line in ipairs(stdout) do
+        local sha = line:sub(1, 40)
+        local message = line:sub(42)
+        if #sha == 40 then
+          table.insert(commits, { sha = sha, message = message })
+        end
+      end
+      callback(commits, nil)
+    end,
+  })
+end
+
+--- Get diff for a single commit, split into per-file patches
+---@param path string Repository path
+---@param sha string Commit SHA
+---@param callback fun(files: table[]|nil, err: string|nil)
+function M.show_commit(path, sha, callback)
+  run_git({ "show", "--format=", "--patch", sha }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      local files = {}
+      local current_file = nil
+      local current_lines = {}
+
+      for _, line in ipairs(stdout) do
+        if line:match("^diff %-%-git ") then
+          -- Save previous file
+          if current_file then
+            table.insert(files, { filename = current_file, patch = table.concat(current_lines, "\n") })
+          end
+          -- Extract filename from "diff --git a/path b/path"
+          current_file = line:match("^diff %-%-git a/.+ b/(.+)$")
+          current_lines = {}
+        elseif current_file and line:match("^@@") then
+          table.insert(current_lines, line)
+        elseif current_file and #current_lines > 0 then
+          table.insert(current_lines, line)
+        end
+      end
+
+      -- Save last file
+      if current_file then
+        table.insert(files, { filename = current_file, patch = table.concat(current_lines, "\n") })
+      end
+
+      callback(files, nil)
+    end,
+  })
+end
+
 return M

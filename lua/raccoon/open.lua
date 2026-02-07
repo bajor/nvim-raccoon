@@ -489,6 +489,18 @@ function M.sync()
   sync_pr(false, true)
 end
 
+--- Pause the sync timer (e.g., when entering commit viewer mode)
+function M.pause_sync()
+  stop_sync_timer()
+end
+
+--- Resume the sync timer (e.g., when exiting commit viewer mode)
+function M.resume_sync()
+  if state.is_active() then
+    start_sync_timer()
+  end
+end
+
 --- Clone or update the repository
 ---@param clone_path string
 ---@param repo_url string

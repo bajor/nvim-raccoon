@@ -33,6 +33,7 @@ M.session = {
     conflict_files = {},
     checked = false,
   },
+  commit_mode = false,
 }
 
 --- Reset the session state
@@ -55,6 +56,7 @@ function M.reset()
       conflict_files = {},
       checked = false,
     },
+    commit_mode = false,
   }
 end
 
@@ -244,6 +246,18 @@ function M.get_statusline_component()
   end
 
   return table.concat(parts, " │ ")
+end
+
+--- Check if commit viewer mode is active
+---@return boolean
+function M.is_commit_mode()
+  return M.session.commit_mode
+end
+
+--- Set commit viewer mode state
+---@param active boolean
+function M.set_commit_mode(active)
+  M.session.commit_mode = active
 end
 
 return M
