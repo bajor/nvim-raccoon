@@ -81,10 +81,6 @@ local function render_hunk_to_buffer(buf, hunk, filename)
     table.insert(lines, line_data.content or "")
   end
 
-  -- Add blank line and filename at bottom
-  table.insert(lines, "")
-  table.insert(lines, "── " .. filename)
-
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -114,9 +110,6 @@ local function render_hunk_to_buffer(buf, hunk, filename)
     end
     line_idx = line_idx + 1
   end
-
-  -- Highlight filename line
-  pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, "Comment", #lines - 1, 0, -1)
 end
 
 --- Calculate total pages
@@ -170,14 +163,22 @@ local function render_grid_page()
     local hunk_idx = start_idx + i - 1
     local hunk_data = commit_state.all_hunks[hunk_idx]
 
+    local win = commit_state.grid_wins[i]
     if hunk_data then
       render_hunk_to_buffer(buf, hunk_data.hunk, hunk_data.filename)
+      -- Show filename and cell number in winbar
+      if win and vim.api.nvim_win_is_valid(win) then
+        vim.wo[win].winbar = " " .. hunk_data.filename .. "%=#" .. i
+      end
     else
       -- Empty cell
       vim.bo[buf].modifiable = true
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
       vim.bo[buf].modifiable = false
       vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+      if win and vim.api.nvim_win_is_valid(win) then
+        vim.wo[win].winbar = "%=#" .. i
+      end
     end
 
     ::continue::
@@ -337,12 +338,16 @@ local function select_commit(index)
     end
 
     if #commit_state.all_hunks == 0 then
-      -- No diff hunks — clear grid
-      for _, buf in ipairs(commit_state.grid_bufs) do
+      -- No diff hunks — clear grid and reset winbars
+      for i, buf in ipairs(commit_state.grid_bufs) do
         if vim.api.nvim_buf_is_valid(buf) then
           vim.bo[buf].modifiable = true
           vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", "  No changes in this commit" })
           vim.bo[buf].modifiable = false
+        end
+        local win = commit_state.grid_wins[i]
+        if win and vim.api.nvim_win_is_valid(win) then
+          vim.wo[win].winbar = "%=#" .. i
         end
       end
       return
@@ -569,7 +574,7 @@ local function create_grid_layout(rows, cols)
   -- Set cell number labels in winbar (no background highlight)
   for i, win in ipairs(grid_wins) do
     if vim.api.nvim_win_is_valid(win) then
-      vim.wo[win].winbar = "%=" .. i
+      vim.wo[win].winbar = "%=#" .. i
       vim.wo[win].winhl = "WinBar:Normal,WinBarNC:Normal"
     end
   end
