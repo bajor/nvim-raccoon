@@ -641,7 +641,7 @@ function M.show_comment_thread()
 
         local msg = new_status and "Thread resolved" or "Thread unresolved"
         vim.notify(msg, vim.log.levels.INFO)
-        vim.api.nvim_win_close(win, true)
+        pcall(vim.api.nvim_win_close, win, true)
       end)
     end)
   end
@@ -712,7 +712,7 @@ function M.show_comment_thread()
         end
 
         vim.notify("Thread unresolved", vim.log.levels.INFO)
-        vim.api.nvim_win_close(win, true)
+        pcall(vim.api.nvim_win_close, win, true)
       end)
     end)
   end
