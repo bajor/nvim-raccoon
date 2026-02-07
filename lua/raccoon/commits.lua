@@ -111,17 +111,15 @@ local function total_pages()
   return math.max(1, math.ceil(#commit_state.all_hunks / cells))
 end
 
---- Update the winbar page indicator on all grid windows
+--- Update the winbar page indicator on the sidebar
 local function update_page_indicator()
+  local win = commit_state.sidebar_win
+  if not win or not vim.api.nvim_win_is_valid(win) then return end
   local pages = total_pages()
-  local winbar = ""
   if pages > 1 then
-    winbar = string.format(" %d/%d ", commit_state.current_page, pages)
-  end
-  for _, win in ipairs(commit_state.grid_wins) do
-    if vim.api.nvim_win_is_valid(win) then
-      vim.wo[win].winbar = winbar
-    end
+    vim.wo[win].winbar = string.format(" %d/%d ", commit_state.current_page, pages)
+  else
+    vim.wo[win].winbar = ""
   end
 end
 
