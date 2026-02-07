@@ -215,6 +215,7 @@ function M.open_file(file)
 
   -- Track buffer in session
   state.add_buffer(buf)
+  vim.bo[buf].modifiable = false
 
   -- Apply diff highlights
   if file.patch then
