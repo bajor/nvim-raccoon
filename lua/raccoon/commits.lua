@@ -31,6 +31,8 @@ local commit_state = {
   maximize_win = nil,
   maximize_buf = nil,
   focus_augroup = nil,
+  header_win = nil,
+  header_buf = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -58,6 +60,8 @@ local function reset_state()
     maximize_win = nil,
     maximize_buf = nil,
     focus_augroup = nil,
+    header_win = nil,
+    header_buf = nil,
   }
 end
 
@@ -138,16 +142,56 @@ local function get_commit(index)
   end
 end
 
---- Update the winbar page indicator on the sidebar
-local function update_page_indicator()
-  local win = commit_state.sidebar_win
+--- Update the header bar with commit message and page indicator
+local function update_header()
+  local buf = commit_state.header_buf
+  local win = commit_state.header_win
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   if not win or not vim.api.nvim_win_is_valid(win) then return end
+
+  local commit = get_commit(commit_state.selected_index)
   local pages = total_pages()
-  if pages > 1 then
-    vim.wo[win].winbar = string.format(" %d/%d ", commit_state.current_page, pages)
-  else
-    vim.wo[win].winbar = ""
+  local page_str = " " .. commit_state.current_page .. "/" .. pages
+
+  if not commit then
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { page_str })
+    vim.bo[buf].modifiable = false
+    vim.api.nvim_win_set_height(win, 1)
+    return
   end
+
+  local msg = commit.message or ""
+  local width = vim.api.nvim_win_get_width(win)
+
+  -- Split message into lines
+  local msg_lines = vim.split(msg, "\n", { trimempty = true })
+  if #msg_lines == 0 then msg_lines = { "" } end
+
+  -- Build display: page indicator left, commit message right
+  local lines = {}
+  local right = msg_lines[1] .. " "
+  local gap = width - #page_str - #right
+  if gap < 1 then gap = 1 end
+  table.insert(lines, page_str .. string.rep(" ", gap) .. right)
+
+  for i = 2, #msg_lines do
+    local ml = msg_lines[i] .. " "
+    local pad = width - #ml
+    if pad < 0 then pad = 0 end
+    table.insert(lines, string.rep(" ", pad) .. ml)
+  end
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  -- Highlight page indicator
+  local hl_ns = vim.api.nvim_create_namespace("raccoon_header_hl")
+  vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
+  pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #page_str)
+
+  vim.api.nvim_win_set_height(win, math.max(1, #lines))
 end
 
 --- Render the current page of hunks into the grid
@@ -184,7 +228,7 @@ local function render_grid_page()
     ::continue::
   end
 
-  update_page_indicator()
+  update_header()
 end
 
 --- Go to next page of hunks
@@ -350,6 +394,7 @@ local function select_commit(index)
           vim.wo[win].winbar = "%=#" .. i
         end
       end
+      update_header()
       return
     end
 
@@ -357,7 +402,7 @@ local function select_commit(index)
   end)
 end
 
---- Update sidebar selection highlight and show full commit message
+--- Update sidebar selection highlight
 local function update_sidebar_selection()
   local buf = commit_state.sidebar_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
@@ -371,47 +416,11 @@ local function update_sidebar_selection()
   -- Sidebar layout: header at 0, PR commits at 1..N,
   -- blank at N+1, base header at N+2, base commits at N+3..
   local pr_count = #commit_state.pr_commits
-  local base_count = #commit_state.base_commits
   local line_idx = idx
   if idx > pr_count then
     line_idx = idx + 2 -- skip blank separator + base header
   end
   pcall(vim.api.nvim_buf_add_highlight, buf, sel_ns, "Visual", line_idx, 0, -1)
-
-  -- Update detail section at bottom with full commit message
-  -- Detail starts after: header + pr commits + blank + header + base commits
-  local detail_start = 1 + pr_count + 2 + base_count -- 0-based line index
-  local commit = get_commit(idx)
-  local detail_lines = { "", "──────────────────────────────────────" }
-  if commit then
-    -- Word-wrap the full message to sidebar width
-    local msg = commit.message or ""
-    local sha = commit.sha and commit.sha:sub(1, 7) or ""
-    table.insert(detail_lines, sha)
-    for line in (msg .. "\n"):gmatch("([^\n]*)\n") do
-      if #line <= SIDEBAR_WIDTH - 2 then
-        table.insert(detail_lines, line)
-      else
-        -- Wrap long lines
-        local pos = 1
-        while pos <= #line do
-          table.insert(detail_lines, line:sub(pos, pos + SIDEBAR_WIDTH - 3))
-          pos = pos + SIDEBAR_WIDTH - 2
-        end
-      end
-    end
-  end
-
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, detail_start, -1, false, detail_lines)
-  vim.bo[buf].modifiable = false
-
-  -- Highlight detail separator and sha
-  local hl_ns = vim.api.nvim_create_namespace("raccoon_commit_hl")
-  pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", detail_start + 1, 0, -1)
-  if commit then
-    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Title", detail_start + 2, 0, -1)
-  end
 
   if commit_state.sidebar_win and vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
     pcall(vim.api.nvim_win_set_cursor, commit_state.sidebar_win, { line_idx + 1, 0 })
@@ -584,12 +593,26 @@ local function create_grid_layout(rows, cols)
     vim.wo[commit_state.sidebar_win].winhl = "WinBar:Normal,WinBarNC:Normal"
   end
 
-  -- Equalize grid windows, then restore sidebar width and even row heights
+  -- Create header window at the top (full width)
+  vim.api.nvim_set_current_win(grid_wins[1])
+  vim.cmd("split")
+  commit_state.header_win = vim.api.nvim_get_current_win()
+  vim.cmd("wincmd K")
+  commit_state.header_buf = create_scratch_buf()
+  vim.api.nvim_win_set_buf(commit_state.header_win, commit_state.header_buf)
+  vim.wo[commit_state.header_win].number = false
+  vim.wo[commit_state.header_win].relativenumber = false
+  vim.wo[commit_state.header_win].signcolumn = "no"
+  vim.wo[commit_state.header_win].wrap = false
+  vim.wo[commit_state.header_win].winhl = "Normal:Normal"
+
+  -- Equalize grid windows, then fix dimensions
   vim.cmd("wincmd =")
   if vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
     vim.api.nvim_win_set_width(commit_state.sidebar_win, SIDEBAR_WIDTH)
   end
-  local total_height = vim.o.lines - vim.o.cmdheight - 1
+  vim.api.nvim_win_set_height(commit_state.header_win, 1)
+  local total_height = vim.o.lines - vim.o.cmdheight - 2
   local row_height = math.floor(total_height / rows)
   for _, win in ipairs(grid_wins) do
     if vim.api.nvim_win_is_valid(win) then
