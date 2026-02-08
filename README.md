@@ -109,8 +109,8 @@ You need either `github_token` (used for all repos) or `tokens` (per-org tokens)
     "base_commits_count": 30
   },
   "shortcuts": {
-    "pr_list": "<leader>pp",
-    "close": "<leader>x"
+    "next_file_alt": "]n",
+    "prev_file_alt": "[n"
   }
 }
 ```
