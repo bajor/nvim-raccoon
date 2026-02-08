@@ -409,4 +409,110 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
   end)
+
+  describe("shortcuts defaults", function()
+    it("has shortcuts in defaults", function()
+      assert.is_table(config.defaults.shortcuts)
+    end)
+
+    it("has all expected shortcut keys", function()
+      local expected = {
+        "pr_list", "show_shortcuts",
+        "next_point", "prev_point", "next_file", "prev_file",
+        "next_thread", "prev_thread", "next_file_alt", "prev_file_alt",
+        "comment", "description", "list_comments", "merge", "commit_viewer",
+        "comment_save", "comment_resolve", "comment_unresolve",
+        "commit_next_page", "commit_prev_page", "commit_next_page_alt",
+        "commit_exit", "commit_maximize_prefix",
+        "close",
+      }
+      for _, key in ipairs(expected) do
+        assert.is_string(config.defaults.shortcuts[key],
+          "Missing shortcut default: " .. key)
+      end
+    end)
+
+    it("default shortcuts are non-empty strings", function()
+      for key, val in pairs(config.defaults.shortcuts) do
+        assert.is_string(val, "Shortcut " .. key .. " should be a string")
+        assert.is_true(#val > 0, "Shortcut " .. key .. " should not be empty")
+      end
+    end)
+  end)
+
+  describe("load_shortcuts", function()
+    it("returns defaults when config file does not exist", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local shortcuts = config.load_shortcuts()
+      assert.is_table(shortcuts)
+      assert.equals(config.defaults.shortcuts.pr_list, shortcuts.pr_list)
+      assert.equals(config.defaults.shortcuts.close, shortcuts.close)
+    end)
+
+    it("returns defaults for invalid JSON", function()
+      local tmpfile = test_tmp_dir .. "/invalid_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write("{ invalid json }")
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.is_table(shortcuts)
+      assert.equals(config.defaults.shortcuts.pr_list, shortcuts.pr_list)
+
+      os.remove(tmpfile)
+    end)
+
+    it("merges user shortcut overrides with defaults", function()
+      local tmpfile = test_tmp_dir .. "/custom_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_token": "ghp_xxx",
+        "github_username": "user",
+        "shortcuts": {
+          "pr_list": "<leader>pp",
+          "close": "<leader>x"
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      -- Overridden values
+      assert.equals("<leader>pp", shortcuts.pr_list)
+      assert.equals("<leader>x", shortcuts.close)
+      -- Non-overridden values get defaults
+      assert.equals(config.defaults.shortcuts.next_point, shortcuts.next_point)
+      assert.equals(config.defaults.shortcuts.description, shortcuts.description)
+
+      os.remove(tmpfile)
+    end)
+
+    it("works when config has no shortcuts key", function()
+      local tmpfile = test_tmp_dir .. "/no_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_token": "ghp_xxx",
+        "github_username": "user"
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.is_table(shortcuts)
+      -- All defaults should be present
+      assert.equals(config.defaults.shortcuts.pr_list, shortcuts.pr_list)
+      assert.equals(config.defaults.shortcuts.close, shortcuts.close)
+
+      os.remove(tmpfile)
+    end)
+
+    it("returns independent copies (no mutation)", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local s1 = config.load_shortcuts()
+      local s2 = config.load_shortcuts()
+      s1.pr_list = "MUTATED"
+      assert.is_not_equal("MUTATED", s2.pr_list)
+    end)
+  end)
 end)
