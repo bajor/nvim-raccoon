@@ -614,18 +614,86 @@ local function close_filetree()
   commit_state.filetree_buf = nil
 end
 
---- Render the file tree panel with three-tier highlighting
+--- Build a nested tree structure from a sorted list of file paths.
+---@param paths string[] Sorted file paths
+---@return table root Tree root with .children array
+local function build_file_tree(paths)
+  local root = { children = {} }
+  for _, path in ipairs(paths) do
+    local parts = vim.split(path, "/", { plain = true })
+    local node = root
+    for i, part in ipairs(parts) do
+      if i == #parts then
+        table.insert(node.children, { name = part, path = path })
+      else
+        local found
+        for _, child in ipairs(node.children) do
+          if child.children and child.name == part then
+            found = child
+            break
+          end
+        end
+        if not found then
+          found = { name = part, children = {} }
+          table.insert(node.children, found)
+        end
+        node = found
+      end
+    end
+  end
+  return root
+end
+
+--- Render a tree node into lines with tree-drawing characters.
+--- Populates line_paths: maps 0-based line index to file path (for highlights).
+---@param node table Tree node with .children
+---@param prefix string Indentation prefix for current depth
+---@param lines string[] Output lines array (mutated)
+---@param line_paths table<number, string> Output map: line index -> file path (mutated)
+local function render_tree_node(node, prefix, lines, line_paths)
+  local dirs = {}
+  local files = {}
+  for _, child in ipairs(node.children) do
+    if child.children then
+      table.insert(dirs, child)
+    else
+      table.insert(files, child)
+    end
+  end
+  table.sort(dirs, function(a, b) return a.name < b.name end)
+  table.sort(files, function(a, b) return a.name < b.name end)
+
+  local sorted = {}
+  for _, d in ipairs(dirs) do table.insert(sorted, d) end
+  for _, f in ipairs(files) do table.insert(sorted, f) end
+
+  for i, child in ipairs(sorted) do
+    local is_last = (i == #sorted)
+    local connector = is_last and "└── " or "├── "
+    local display = child.children and (child.name .. "/") or child.name
+    table.insert(lines, prefix .. connector .. display)
+    if child.path then
+      line_paths[#lines - 1] = child.path
+    end
+    if child.children then
+      local next_prefix = prefix .. (is_last and "    " or "│   ")
+      render_tree_node(child, next_prefix, lines, line_paths)
+    end
+  end
+end
+
+--- Render the file tree panel with three-tier highlighting.
+--- Shows all repo files (git ls-files) as a tree, highlighting commit and visible files.
 render_filetree = function()
   local buf = commit_state.filetree_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
-  -- Collect all PR file paths
-  local pr_files = state.get_files()
-  local all_paths = {}
-  for _, file in ipairs(pr_files) do
-    table.insert(all_paths, file.filename)
-  end
-  table.sort(all_paths)
+  -- Get all repo files via git ls-files (fast, reads index only)
+  local clone_path = state.get_clone_path()
+  if not clone_path then return end
+  local raw = vim.fn.systemlist("git -C " .. vim.fn.shellescape(clone_path) .. " ls-files")
+  if vim.v.shell_error ~= 0 then raw = {} end
+  table.sort(raw)
 
   -- Build lookup: files in current commit (all hunks)
   local commit_files = {}
@@ -644,42 +712,40 @@ render_filetree = function()
     end
   end
 
-  -- Render lines and determine highlights
+  -- Build tree and render
+  local tree = build_file_tree(raw)
   local lines = {}
-  local highlights = {}
-  for _, path in ipairs(all_paths) do
-    table.insert(lines, "  " .. path)
-    local hl_group
-    if visible_files[path] then
-      hl_group = "RaccoonFileVisible"
-    elseif commit_files[path] then
-      hl_group = "RaccoonFileInCommit"
-    else
-      hl_group = "RaccoonFileNormal"
-    end
-    table.insert(highlights, { line = #lines - 1, hl = hl_group })
-  end
+  local line_paths = {} -- 0-based line index -> file path
+  render_tree_node(tree, "", lines, line_paths)
 
   if #lines == 0 then
     lines = { "  No files" }
-    highlights = { { line = 0, hl = "Comment" } }
   end
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  -- Apply highlights
+  -- Apply three-tier highlights
   local hl_ns = vim.api.nvim_create_namespace("raccoon_filetree_hl")
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
-  for _, hl in ipairs(highlights) do
-    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl.hl, hl.line, 0, -1)
+  for line_idx = 0, #lines - 1 do
+    local path = line_paths[line_idx]
+    local hl_group
+    if path and visible_files[path] then
+      hl_group = "RaccoonFileVisible"
+    elseif path and commit_files[path] then
+      hl_group = "RaccoonFileInCommit"
+    else
+      hl_group = "RaccoonFileNormal"
+    end
+    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl_group, line_idx, 0, -1)
   end
 
   -- Update winbar with file count
   local win = commit_state.filetree_win
   if win and vim.api.nvim_win_is_valid(win) then
-    vim.wo[win].winbar = " Files (" .. #all_paths .. ")"
+    vim.wo[win].winbar = " Files (" .. #raw .. ")"
   end
 end
 
@@ -1112,5 +1178,7 @@ M._get_state = function() return commit_state end
 M._select_commit = select_commit
 M._setup_keymaps = setup_keymaps
 M._render_filetree = render_filetree
+M._build_file_tree = build_file_tree
+M._render_tree_node = render_tree_node
 
 return M

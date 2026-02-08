@@ -753,4 +753,59 @@ describe("raccoon.commits file tree panel", function()
     -- Should not error
     commits._render_filetree()
   end)
+
+  describe("_build_file_tree", function()
+    it("builds tree from flat paths", function()
+      local tree = commits._build_file_tree({ "a/b.lua", "a/c.lua", "d.lua" })
+      assert.equals(2, #tree.children) -- "a/" dir + "d.lua" file
+    end)
+
+    it("handles empty input", function()
+      local tree = commits._build_file_tree({})
+      assert.equals(0, #tree.children)
+    end)
+
+    it("nests deeply", function()
+      local tree = commits._build_file_tree({ "a/b/c/d.lua" })
+      assert.equals("a", tree.children[1].name)
+      assert.equals("b", tree.children[1].children[1].name)
+      assert.equals("c", tree.children[1].children[1].children[1].name)
+      assert.equals("d.lua", tree.children[1].children[1].children[1].children[1].name)
+    end)
+  end)
+
+  describe("_render_tree_node", function()
+    it("renders with tree characters", function()
+      local tree = commits._build_file_tree({ "a/b.lua", "c.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.is_true(#lines > 0)
+      -- Should contain tree drawing characters
+      local joined = table.concat(lines, "\n")
+      assert.is_truthy(joined:match("[├└│]"))
+    end)
+
+    it("maps file lines to paths", function()
+      local tree = commits._build_file_tree({ "x.lua", "y.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      -- Both files should have path mappings
+      local mapped = 0
+      for _ in pairs(line_paths) do mapped = mapped + 1 end
+      assert.equals(2, mapped)
+    end)
+
+    it("does not map directory lines to paths", function()
+      local tree = commits._build_file_tree({ "dir/file.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      -- 2 lines: dir/ and file.lua, only file.lua has path
+      assert.equals(2, #lines)
+      assert.is_nil(line_paths[0]) -- dir line
+      assert.equals("dir/file.lua", line_paths[1]) -- file line
+    end)
+  end)
 end)
