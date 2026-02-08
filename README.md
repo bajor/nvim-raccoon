@@ -145,7 +145,7 @@ When you open a PR, raccoon clones the branch locally and displays each changed 
 
 ## Keymaps
 
-All keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Run `:Raccoon shortcuts` (or press `<leader>?`) to see your active bindings.
+All keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Run `:Raccoon shortcuts` to see your active bindings.
 
 | Key | Config key | Action |
 |-----|------------|--------|
@@ -161,7 +161,6 @@ All keymaps are configurable via the `shortcuts` field in `config.json`. The val
 | `<leader>dd` | `description` | Show PR description |
 | `<leader>ll` | `list_comments` | List all comments |
 | `<leader>pr` | `pr_list` | Open PR list picker |
-| `<leader>?` | `show_shortcuts` | Show shortcuts help |
 | `<leader>rr` | `merge` | Merge PR (pick method) |
 | `<leader>cm` | `commit_viewer` | Toggle commit viewer mode |
 | `<leader>q` | `close` | Close window / exit session |

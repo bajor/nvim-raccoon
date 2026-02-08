@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Configurable keyboard shortcuts — all keymaps are now defined in `config.json` under the `shortcuts` field, with sensible defaults
-- `:Raccoon shortcuts` command and `<leader>?` keymap to display all active shortcuts in a floating help window (closes on any keystroke)
+- `:Raccoon shortcuts` command to display all active shortcuts in a floating help window (closes on any keystroke)
 - Default shortcut values written to config file on creation via `:Raccoon config`
 - `shortcuts` field documented in README with config key names for each binding
 

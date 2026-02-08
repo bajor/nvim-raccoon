@@ -417,7 +417,7 @@ describe("raccoon.config", function()
 
     it("has all expected shortcut keys", function()
       local expected = {
-        "pr_list", "show_shortcuts",
+        "pr_list",
         "next_point", "prev_point", "next_file", "prev_file",
         "next_thread", "prev_thread", "next_file_alt", "prev_file_alt",
         "comment", "description", "list_comments", "merge", "commit_viewer",

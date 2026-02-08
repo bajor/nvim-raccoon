@@ -138,7 +138,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   },
   "shortcuts": {
     "pr_list": "<leader>pr",
-    "show_shortcuts": "<leader>?",
+
     "next_point": "<leader>j",
     "prev_point": "<leader>k",
     "next_file": "<leader>nf",

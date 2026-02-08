@@ -23,7 +23,6 @@ M.defaults = {
   shortcuts = {
     -- Global
     pr_list = "<leader>pr",
-    show_shortcuts = "<leader>?",
     -- Review navigation
     next_point = "<leader>j",
     prev_point = "<leader>k",

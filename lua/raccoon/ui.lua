@@ -569,7 +569,6 @@ end
 --- Shortcut descriptions keyed by config shortcut name
 local shortcut_descriptions = {
   pr_list = "Open PR list",
-  show_shortcuts = "Show this help",
   next_point = "Next diff/comment",
   prev_point = "Previous diff/comment",
   next_file = "Next file",
@@ -596,7 +595,7 @@ local shortcut_descriptions = {
 
 --- Display groups for the shortcuts help window
 local shortcut_groups = {
-  { title = "Global", keys = { "pr_list", "show_shortcuts" } },
+  { title = "Global", keys = { "pr_list" } },
   { title = "Review Navigation", keys = { "next_point", "prev_point", "next_file", "prev_file", "next_file_alt", "prev_file_alt", "next_thread", "prev_thread" } },
   { title = "Review Actions", keys = { "comment", "description", "list_comments", "merge", "commit_viewer" } },
   { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
