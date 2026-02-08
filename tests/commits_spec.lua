@@ -724,3 +724,33 @@ describe("raccoon.commits input validation", function()
     end)
   end)
 end)
+
+describe("raccoon.commits file tree panel", function()
+  before_each(function()
+    state.reset()
+  end)
+
+  it("exposes _render_filetree for testing", function()
+    assert.is_function(commits._render_filetree)
+  end)
+
+  it("has filetree_win and filetree_buf in state", function()
+    local cs = commits._get_state()
+    assert.is_nil(cs.filetree_win)
+    assert.is_nil(cs.filetree_buf)
+  end)
+
+  it("render_filetree handles nil buffer gracefully", function()
+    local cs = commits._get_state()
+    cs.filetree_buf = nil
+    -- Should not error
+    commits._render_filetree()
+  end)
+
+  it("render_filetree handles invalid buffer gracefully", function()
+    local cs = commits._get_state()
+    cs.filetree_buf = 99999
+    -- Should not error
+    commits._render_filetree()
+  end)
+end)
