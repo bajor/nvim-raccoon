@@ -20,6 +20,38 @@ M.defaults = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
   },
+  shortcuts = {
+    -- Global
+    pr_list = "<leader>pr",
+    show_shortcuts = "<leader>?",
+    -- Review navigation
+    next_point = "<leader>j",
+    prev_point = "<leader>k",
+    next_file = "<leader>nf",
+    prev_file = "<leader>pf",
+    next_thread = "<leader>nt",
+    prev_thread = "<leader>pt",
+    next_file_alt = "]f",
+    prev_file_alt = "[f",
+    -- Review actions
+    comment = "<leader>c",
+    description = "<leader>dd",
+    list_comments = "<leader>ll",
+    merge = "<leader>rr",
+    commit_viewer = "<leader>cm",
+    -- Comment editor
+    comment_save = "<leader>s",
+    comment_resolve = "<leader>r",
+    comment_unresolve = "<leader>u",
+    -- Commit viewer
+    commit_next_page = "<leader>j",
+    commit_prev_page = "<leader>k",
+    commit_next_page_alt = "<leader>l",
+    commit_exit = "<leader>cm",
+    commit_maximize_prefix = "<leader>m",
+    -- Common
+    close = "<leader>q",
+  },
 }
 
 --- Config file path
@@ -144,6 +176,32 @@ function M.create_default()
   file:close()
 
   return true, nil
+end
+
+--- Load shortcuts from config, falling back to defaults gracefully.
+--- Unlike load(), this does not require valid github_token/username.
+---@return table shortcuts
+function M.load_shortcuts()
+  local path = M.config_path
+  local stat = vim.uv.fs_stat(path)
+  if not stat then
+    return vim.deepcopy(M.defaults.shortcuts)
+  end
+
+  local file = io.open(path, "r")
+  if not file then
+    return vim.deepcopy(M.defaults.shortcuts)
+  end
+
+  local content = file:read("*a")
+  file:close()
+
+  local ok, parsed = pcall(vim.json.decode, content)
+  if not ok or type(parsed) ~= "table" then
+    return vim.deepcopy(M.defaults.shortcuts)
+  end
+
+  return vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
 end
 
 --- Get the appropriate token for a given owner/org

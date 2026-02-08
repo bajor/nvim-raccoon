@@ -132,6 +132,32 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   "commit_viewer": {
     "grid": { "rows": 2, "cols": 2 },
     "base_commits_count": 20
+  },
+  "shortcuts": {
+    "pr_list": "<leader>pr",
+    "show_shortcuts": "<leader>?",
+    "next_point": "<leader>j",
+    "prev_point": "<leader>k",
+    "next_file": "<leader>nf",
+    "prev_file": "<leader>pf",
+    "next_thread": "<leader>nt",
+    "prev_thread": "<leader>pt",
+    "next_file_alt": "]f",
+    "prev_file_alt": "[f",
+    "comment": "<leader>c",
+    "description": "<leader>dd",
+    "list_comments": "<leader>ll",
+    "merge": "<leader>rr",
+    "commit_viewer": "<leader>cm",
+    "comment_save": "<leader>s",
+    "comment_resolve": "<leader>r",
+    "comment_unresolve": "<leader>u",
+    "commit_next_page": "<leader>j",
+    "commit_prev_page": "<leader>k",
+    "commit_next_page_alt": "<leader>l",
+    "commit_exit": "<leader>cm",
+    "commit_maximize_prefix": "<leader>m",
+    "close": "<leader>q"
   }
 }]], clone_root)
       local file = io.open(config_path, "w")
