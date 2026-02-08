@@ -1004,3 +1004,48 @@ describe("raccoon.commits commit_files tracking", function()
     assert.equals(0, #cs.all_hunks)
   end)
 end)
+
+describe("raccoon file tree highlight groups", function()
+  it("defines RaccoonFileNormal highlight group", function()
+    require("raccoon").setup()
+    local hl = vim.api.nvim_get_hl(0, { name = "RaccoonFileNormal" })
+    assert.is_not_nil(hl.fg)
+  end)
+
+  it("defines RaccoonFileInCommit highlight group", function()
+    require("raccoon").setup()
+    local hl = vim.api.nvim_get_hl(0, { name = "RaccoonFileInCommit" })
+    assert.is_not_nil(hl.fg)
+  end)
+
+  it("defines RaccoonFileVisible highlight group", function()
+    require("raccoon").setup()
+    local hl = vim.api.nvim_get_hl(0, { name = "RaccoonFileVisible" })
+    assert.is_not_nil(hl.fg)
+  end)
+end)
+
+describe("raccoon.commits close_filetree", function()
+  it("is exposed for testing", function()
+    assert.is_function(commits._close_filetree)
+  end)
+
+  it("clears filetree_win and filetree_buf to nil", function()
+    local cs = commits._get_state()
+    cs.filetree_win = 99999
+    cs.filetree_buf = 99998
+    commits._close_filetree()
+    assert.is_nil(cs.filetree_win)
+    assert.is_nil(cs.filetree_buf)
+  end)
+
+  it("handles nil filetree state gracefully", function()
+    local cs = commits._get_state()
+    cs.filetree_win = nil
+    cs.filetree_buf = nil
+    -- Should not error
+    commits._close_filetree()
+    assert.is_nil(cs.filetree_win)
+    assert.is_nil(cs.filetree_buf)
+  end)
+end)
