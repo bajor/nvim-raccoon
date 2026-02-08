@@ -47,8 +47,7 @@ local function setup_highlights()
   })
 
   vim.api.nvim_set_hl(0, "RaccoonFileVisible", {
-    fg = "#dddddd",
-    bold = true,
+    fg = "#ffffff",
     default = true,
   })
 end
