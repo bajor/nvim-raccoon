@@ -192,6 +192,30 @@ function M.create_default()
   return true, nil
 end
 
+--- Sanitize merged shortcuts against the defaults structure.
+--- Each leaf must be a non-empty string (valid binding) or false (disabled).
+--- Anything else (vim.NIL, numbers, empty strings, tables at leaf positions) falls back to the default.
+--- Unknown keys not present in defaults are dropped.
+---@param merged table Merged shortcuts (user overrides + defaults)
+---@param defaults table Default shortcuts (used as schema)
+---@return table sanitized
+local function sanitize_shortcuts(merged, defaults)
+  local result = {}
+  for key, default_val in pairs(defaults) do
+    local val = merged[key]
+    if type(default_val) == "table" then
+      result[key] = sanitize_shortcuts(type(val) == "table" and val or {}, default_val)
+    elseif val == false then
+      result[key] = false
+    elseif type(val) == "string" and val ~= "" then
+      result[key] = val
+    else
+      result[key] = default_val
+    end
+  end
+  return result
+end
+
 --- Load shortcuts from config, falling back to defaults gracefully.
 --- Unlike load(), this does not require valid tokens/username.
 ---@return table shortcuts
@@ -215,7 +239,8 @@ function M.load_shortcuts()
     return vim.deepcopy(M.defaults.shortcuts)
   end
 
-  return vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
+  local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
+  return sanitize_shortcuts(merged, M.defaults.shortcuts)
 end
 
 --- Get the token for a given owner/org from the tokens table

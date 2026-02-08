@@ -597,5 +597,116 @@ describe("raccoon.config", function()
 
       os.remove(tmpfile)
     end)
+
+    it("sanitizes null values to defaults", function()
+      local tmpfile = test_tmp_dir .. "/null_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_username": "user",
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "pr_list": null,
+          "close": null,
+          "commit_mode": {
+            "exit": null
+          }
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      -- null should fall back to defaults, not vim.NIL
+      assert.equals(config.defaults.shortcuts.pr_list, shortcuts.pr_list)
+      assert.equals(config.defaults.shortcuts.close, shortcuts.close)
+      assert.equals(config.defaults.shortcuts.commit_mode.exit, shortcuts.commit_mode.exit)
+
+      os.remove(tmpfile)
+    end)
+
+    it("sanitizes numeric values to defaults", function()
+      local tmpfile = test_tmp_dir .. "/numeric_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_username": "user",
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "pr_list": 42,
+          "commit_mode": {
+            "next_page": 99
+          }
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.equals(config.defaults.shortcuts.pr_list, shortcuts.pr_list)
+      assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
+
+      os.remove(tmpfile)
+    end)
+
+    it("sanitizes empty string values to defaults", function()
+      local tmpfile = test_tmp_dir .. "/empty_str_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_username": "user",
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "close": ""
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.equals(config.defaults.shortcuts.close, shortcuts.close)
+
+      os.remove(tmpfile)
+    end)
+
+    it("recovers when commit_mode is replaced with a scalar", function()
+      local tmpfile = test_tmp_dir .. "/scalar_commit_mode.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_username": "user",
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "commit_mode": "oops"
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      -- commit_mode should be restored to defaults
+      assert.is_table(shortcuts.commit_mode)
+      assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
+      assert.equals(config.defaults.shortcuts.commit_mode.exit, shortcuts.commit_mode.exit)
+
+      os.remove(tmpfile)
+    end)
+
+    it("drops unknown shortcut keys", function()
+      local tmpfile = test_tmp_dir .. "/unknown_keys.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_username": "user",
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "nonexistent_key": "<leader>z",
+          "pr_list": "<leader>pp"
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.is_nil(shortcuts.nonexistent_key)
+      assert.equals("<leader>pp", shortcuts.pr_list)
+
+      os.remove(tmpfile)
+    end)
   end)
 end)
