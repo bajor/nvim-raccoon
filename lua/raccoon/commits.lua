@@ -693,25 +693,9 @@ local function create_grid_layout(rows, cols)
   -- Start with single window
   vim.cmd("only")
 
-  -- Create commit sidebar on the LEFT
+  -- Create file tree panel on the LEFT
   vim.cmd("vsplit")
   vim.cmd("wincmd H")
-  commit_state.sidebar_win = vim.api.nvim_get_current_win()
-  commit_state.sidebar_buf = create_scratch_buf()
-  vim.api.nvim_win_set_buf(commit_state.sidebar_win, commit_state.sidebar_buf)
-  vim.api.nvim_win_set_width(commit_state.sidebar_win, SIDEBAR_WIDTH)
-  vim.wo[commit_state.sidebar_win].cursorline = true
-  vim.wo[commit_state.sidebar_win].wrap = false
-  vim.wo[commit_state.sidebar_win].number = false
-  vim.wo[commit_state.sidebar_win].relativenumber = false
-  vim.wo[commit_state.sidebar_win].signcolumn = "no"
-
-  -- Go to main area (right of sidebar)
-  vim.cmd("wincmd l")
-
-  -- Create file tree panel on the RIGHT
-  vim.cmd("vsplit")
-  vim.cmd("wincmd L")
   commit_state.filetree_win = vim.api.nvim_get_current_win()
   commit_state.filetree_buf = create_scratch_buf()
   vim.api.nvim_win_set_buf(commit_state.filetree_win, commit_state.filetree_buf)
@@ -721,6 +705,22 @@ local function create_grid_layout(rows, cols)
   vim.wo[commit_state.filetree_win].relativenumber = false
   vim.wo[commit_state.filetree_win].signcolumn = "no"
   lock_buf(commit_state.filetree_buf)
+
+  -- Go to main area (right of file tree)
+  vim.cmd("wincmd l")
+
+  -- Create commit sidebar on the RIGHT
+  vim.cmd("vsplit")
+  vim.cmd("wincmd L")
+  commit_state.sidebar_win = vim.api.nvim_get_current_win()
+  commit_state.sidebar_buf = create_scratch_buf()
+  vim.api.nvim_win_set_buf(commit_state.sidebar_win, commit_state.sidebar_buf)
+  vim.api.nvim_win_set_width(commit_state.sidebar_win, SIDEBAR_WIDTH)
+  vim.wo[commit_state.sidebar_win].cursorline = true
+  vim.wo[commit_state.sidebar_win].wrap = false
+  vim.wo[commit_state.sidebar_win].number = false
+  vim.wo[commit_state.sidebar_win].relativenumber = false
+  vim.wo[commit_state.sidebar_win].signcolumn = "no"
 
   -- Go to main area (between both panels)
   vim.cmd("wincmd h")

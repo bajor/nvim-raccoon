@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Three new highlight groups: `RaccoonFileNormal`, `RaccoonFileInCommit`, `RaccoonFileVisible` (overridable via colorscheme)
 
 ### Changed
-- Commit sidebar moved from right to left in commit viewer mode to make room for the file tree panel
+- Commit sidebar stays on the right in commit viewer mode; file tree panel takes the left side
 
 ## [0.5] - 2026-02-08
 
