@@ -441,9 +441,10 @@ function M.merge_picker()
       end
 
       -- Keymaps for selection (adjusted line numbers for CI status line)
-      vim.keymap.set(NORMAL_MODE, "1", function() do_merge("merge") end, { buffer = buf, noremap = true, silent = true })
-      vim.keymap.set(NORMAL_MODE, "2", function() do_merge("squash") end, { buffer = buf, noremap = true, silent = true })
-      vim.keymap.set(NORMAL_MODE, "3", function() do_merge("rebase") end, { buffer = buf, noremap = true, silent = true })
+      local km_opts = { buffer = buf, noremap = true, silent = true }
+      vim.keymap.set(NORMAL_MODE, "1", function() do_merge("merge") end, km_opts)
+      vim.keymap.set(NORMAL_MODE, "2", function() do_merge("squash") end, km_opts)
+      vim.keymap.set(NORMAL_MODE, "3", function() do_merge("rebase") end, km_opts)
       vim.keymap.set(NORMAL_MODE, "<CR>", function()
         local cursor_line = vim.fn.line(".")
         if cursor_line == 5 then do_merge("merge")
@@ -457,10 +458,11 @@ function M.merge_picker()
           vim.api.nvim_win_close(win, true)
         end
       end
+      local close_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
       if config.is_enabled(shortcuts.close) then
-        vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
+        vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, close_opts)
       end
-      vim.keymap.set(NORMAL_MODE, "<Esc>", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
+      vim.keymap.set(NORMAL_MODE, "<Esc>", close_win, close_opts)
     end)
   end)
 end
@@ -469,18 +471,19 @@ end
 ---@param shortcuts table Shortcut bindings from config
 ---@return table[] keymaps
 function M.build_keymaps(shortcuts)
+  local n = NORMAL_MODE
   local all = {
-    { mode = NORMAL_MODE, lhs = shortcuts.next_point, rhs = function() M.next_point() end, desc = "Next diff/comment" },
-    { mode = NORMAL_MODE, lhs = shortcuts.prev_point, rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
-    { mode = NORMAL_MODE, lhs = shortcuts.next_file, rhs = function() diff.next_file() end, desc = "Next file" },
-    { mode = NORMAL_MODE, lhs = shortcuts.prev_file, rhs = function() diff.prev_file() end, desc = "Previous file" },
-    { mode = NORMAL_MODE, lhs = shortcuts.next_thread, rhs = function() M.next_thread() end, desc = "Next comment thread" },
-    { mode = NORMAL_MODE, lhs = shortcuts.prev_thread, rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
-    { mode = NORMAL_MODE, lhs = shortcuts.comment, rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
-    { mode = NORMAL_MODE, lhs = shortcuts.description, rhs = function() M.show_description() end, desc = "Show PR description" },
-    { mode = NORMAL_MODE, lhs = shortcuts.list_comments, rhs = function() M.list_comments() end, desc = "List all PR comments" },
-    { mode = NORMAL_MODE, lhs = shortcuts.merge, rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
-    { mode = NORMAL_MODE, lhs = shortcuts.commit_viewer, rhs = function()
+    { mode = n, lhs = shortcuts.next_point, rhs = function() M.next_point() end, desc = "Next diff/comment" },
+    { mode = n, lhs = shortcuts.prev_point, rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
+    { mode = n, lhs = shortcuts.next_file, rhs = function() diff.next_file() end, desc = "Next file" },
+    { mode = n, lhs = shortcuts.prev_file, rhs = function() diff.prev_file() end, desc = "Previous file" },
+    { mode = n, lhs = shortcuts.next_thread, rhs = function() M.next_thread() end, desc = "Next comment thread" },
+    { mode = n, lhs = shortcuts.prev_thread, rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
+    { mode = n, lhs = shortcuts.comment, rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
+    { mode = n, lhs = shortcuts.description, rhs = function() M.show_description() end, desc = "Show PR description" },
+    { mode = n, lhs = shortcuts.list_comments, rhs = function() M.list_comments() end, desc = "List all PR comments" },
+    { mode = n, lhs = shortcuts.merge, rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
+    { mode = n, lhs = shortcuts.commit_viewer, rhs = function()
       require("raccoon.commits").toggle()
     end, desc = "Toggle commit viewer" },
   }

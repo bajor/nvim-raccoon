@@ -726,7 +726,10 @@ local function setup_keymaps()
   local nop = function() end
 
   local all = {
-    { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.exit, rhs = function() M.toggle() end, desc = "Exit commit viewer" },
+    {
+      mode = NORMAL_MODE, lhs = shortcuts.commit_mode.exit,
+      rhs = function() M.toggle() end, desc = "Exit commit viewer",
+    },
     { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.next_page, rhs = next_page, desc = "Next page of hunks" },
     { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.prev_page, rhs = prev_page, desc = "Previous page of hunks" },
     { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.next_page_alt, rhs = next_page, desc = "Next page of hunks" },

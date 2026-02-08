@@ -599,10 +599,19 @@ local commit_mode_descriptions = {
 --- Display groups for the shortcuts help window
 local shortcut_groups = {
   { title = "Global", keys = { "pr_list", "show_shortcuts" } },
-  { title = "Review Navigation", keys = { "next_point", "prev_point", "next_file", "prev_file", "next_thread", "prev_thread" } },
-  { title = "Review Actions", keys = { "comment", "description", "list_comments", "merge", "commit_viewer" } },
+  {
+    title = "Review Navigation",
+    keys = { "next_point", "prev_point", "next_file", "prev_file", "next_thread", "prev_thread" },
+  },
+  {
+    title = "Review Actions",
+    keys = { "comment", "description", "list_comments", "merge", "commit_viewer" },
+  },
   { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
-  { title = "Commit Viewer", nested = "commit_mode", keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" } },
+  {
+    title = "Commit Viewer", nested = "commit_mode",
+    keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" },
+  },
   { title = "Common", keys = { "close" } },
 }
 

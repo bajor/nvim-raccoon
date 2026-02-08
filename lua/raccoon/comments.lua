@@ -529,7 +529,10 @@ function M.show_comment_thread()
     local pr = state.get_pr()
     local token = config.get_token_for_owner(cfg, owner)
     if not token then
-      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
       return
     end
 
@@ -655,7 +658,10 @@ function M.show_comment_thread()
     local owner = state.get_owner()
     local token = config.get_token_for_owner(cfg, owner)
     if not token then
-      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
       return
     end
 
@@ -725,7 +731,10 @@ function M.show_comment_thread()
     local owner = state.get_owner()
     local token = config.get_token_for_owner(cfg, owner)
     if not token then
-      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
       return
     end
 
@@ -778,14 +787,15 @@ function M.show_comment_thread()
   end
 
   -- Keymaps
+  local km_opts = { buffer = buf, noremap = true, silent = true }
   if config.is_enabled(shortcuts.comment_save) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, save_comment, { buffer = buf, noremap = true, silent = true })
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, save_comment, km_opts)
   end
   if config.is_enabled(shortcuts.comment_resolve) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.comment_resolve, resolve_thread, { buffer = buf, noremap = true, silent = true })
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_resolve, resolve_thread, km_opts)
   end
   if config.is_enabled(shortcuts.comment_unresolve) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.comment_unresolve, unresolve_thread, { buffer = buf, noremap = true, silent = true })
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_unresolve, unresolve_thread, km_opts)
   end
   if config.is_enabled(shortcuts.close) then
     vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
@@ -869,7 +879,10 @@ function M.create_comment()
     local pr = state.get_pr()
     local token = config.get_token_for_owner(cfg, owner)
     if not token then
-      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
       return
     end
 

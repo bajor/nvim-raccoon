@@ -78,7 +78,10 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
 
     local token = config.get_token_for_owner(cfg, owner)
     if not token then
-      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
       return
     end
 
@@ -183,7 +186,10 @@ end, {
     local args = vim.split(cmdline, "%s+")
     if #args == 2 then
       -- Complete subcommands
-      return { "prs", "list", "description", "sync", "merge", "squash", "rebase", "commits", "shortcuts", "close", "config" }
+      return {
+        "prs", "list", "description", "sync", "merge", "squash",
+        "rebase", "commits", "shortcuts", "close", "config",
+      }
     end
     return {}
   end,
