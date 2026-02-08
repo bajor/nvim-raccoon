@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1] - 2026-02-08
+
+### Fixed
+- Use `vim.fs.joinpath` for all filesystem path construction instead of hardcoded `/` concatenation, improving cross-platform portability
+- Replace DST-sensitive `os.time(os.date("!*t"))` in `relative_time` with pure-arithmetic UTC-to-epoch conversion, eliminating off-by-one-hour errors near DST transitions
+- Strip both `/` and `\` trailing separators in `build_pr_path` for Windows compatibility
+- Remove dead config fields (`ghostty_path`, `nvim_path`, `notifications`) that were no longer referenced
+- Remove personal vim-plug migration artifact from Makefile
+- Restore `stdpath("data")` for temp URL file path (revert of `/tmp` change)
+
+### Changed
+- Expose `relative_time` on module table for testability with injectable `now_utc` parameter
+- Use portable `clone_root` in `:Raccoon config` default template
+
 ## [0.4] - 2026-02-07
 
 ### Added
