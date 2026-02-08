@@ -684,7 +684,7 @@ function M.show_shortcuts()
   end
   -- Map special keys
   for _, key in ipairs({ "<CR>", "<Esc>", "<Space>", "<BS>", "<Tab>", "<leader>" }) do
-    vim.keymap.set(NORMAL_MODE, key, close_win, key_opts)
+    pcall(vim.keymap.set, NORMAL_MODE, key, close_win, key_opts)
   end
 end
 
