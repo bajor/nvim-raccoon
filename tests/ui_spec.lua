@@ -335,4 +335,59 @@ describe("raccoon.ui", function()
       ui.fetch_all_prs = original_fetch
     end)
   end)
+
+  describe("relative_time", function()
+    -- Fixed "now" = 2026-03-08T12:00:00Z (epoch 1772971200)
+    -- This date is during US DST transition weekend, verifying no DST sensitivity.
+    local now = 1772971200
+
+    it("returns empty for nil input", function()
+      assert.equals("", ui.relative_time(nil, now))
+    end)
+
+    it("returns empty for unparseable input", function()
+      assert.equals("", ui.relative_time("not-a-date", now))
+    end)
+
+    it("returns just now for <60s ago", function()
+      assert.equals("just now", ui.relative_time("2026-03-08T11:59:30Z", now))
+    end)
+
+    it("returns minutes ago", function()
+      assert.equals("5 mins ago", ui.relative_time("2026-03-08T11:55:00Z", now))
+    end)
+
+    it("returns 1 min ago (singular)", function()
+      assert.equals("1 min ago", ui.relative_time("2026-03-08T11:59:00Z", now))
+    end)
+
+    it("returns hours ago", function()
+      assert.equals("3 hours ago", ui.relative_time("2026-03-08T09:00:00Z", now))
+    end)
+
+    it("returns 1 hour ago (singular)", function()
+      assert.equals("1 hour ago", ui.relative_time("2026-03-08T11:00:00Z", now))
+    end)
+
+    it("returns days ago", function()
+      assert.equals("2 days ago", ui.relative_time("2026-03-06T12:00:00Z", now))
+    end)
+
+    it("returns 1 day ago (singular)", function()
+      assert.equals("1 day ago", ui.relative_time("2026-03-07T12:00:00Z", now))
+    end)
+
+    it("handles timestamps across US DST spring-forward boundary", function()
+      -- now is 2026-03-08T12:00:00Z (Sunday, after US spring-forward at 2AM local)
+      -- PR was created 2026-03-07T06:00:00Z (Saturday, before spring-forward)
+      -- Exactly 30 hours apart, regardless of any local DST change
+      assert.equals("1 day ago", ui.relative_time("2026-03-07T06:00:00Z", now))
+    end)
+
+    it("produces correct diff for known epoch values", function()
+      -- 2026-01-01T00:00:00Z = epoch 1767225600
+      -- now_utc = 1767225600 + 7200 = 1767232800 (exactly 2 hours later)
+      assert.equals("2 hours ago", ui.relative_time("2026-01-01T00:00:00Z", 1767232800))
+    end)
+  end)
 end)

@@ -75,31 +75,46 @@ function M.close_pr_list()
   M.state.buf = nil
 end
 
+--- Convert UTC date components to Unix epoch via pure arithmetic.
+--- Avoids os.time() which interprets tables as local time (DST-sensitive).
+---@param y number Year
+---@param m number Month (1-12)
+---@param d number Day (1-31)
+---@param h number Hour (0-23)
+---@param mi number Minute (0-59)
+---@param s number Second (0-59)
+---@return number epoch
+local function utc_to_epoch(y, m, d, h, mi, s)
+  -- Shift year so March is month 0 (puts leap day at end of "year")
+  if m <= 2 then
+    y = y - 1
+    m = m + 9
+  else
+    m = m - 3
+  end
+  local days = 365 * y + math.floor(y / 4) - math.floor(y / 100) + math.floor(y / 400)
+    + math.floor((m * 153 + 2) / 5) + d - 1 - 719468
+  return days * 86400 + h * 3600 + mi * 60 + s
+end
+
 --- Calculate relative time string
 ---@param iso_date string ISO 8601 date string
+---@param now_utc number|nil Current UTC epoch (defaults to os.time())
 ---@return string
-local function relative_time(iso_date)
+function M.relative_time(iso_date, now_utc)
   if not iso_date then
     return ""
   end
-  -- Parse ISO date (e.g., "2026-01-03T12:34:56Z")
   local year, month, day, hour, min, sec = iso_date:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
   if not year then
     return ""
   end
 
-  local pr_time = os.time({
-    year = tonumber(year),
-    month = tonumber(month),
-    day = tonumber(day),
-    hour = tonumber(hour),
-    min = tonumber(min),
-    sec = tonumber(sec),
-  })
-
-  -- os.time({...}) interprets fields as local time, so use the same
-  -- interpretation for "now" to get a correct UTC-vs-UTC diff
-  local now = os.time(os.date("!*t"))
+  local pr_time = utc_to_epoch(
+    tonumber(year), tonumber(month), tonumber(day),
+    tonumber(hour), tonumber(min), tonumber(sec)
+  )
+  local now = now_utc or os.time()
   local diff = now - pr_time
 
   if diff < 60 then
@@ -170,7 +185,7 @@ local function render_pr_list(prs, buf_width)
 
         -- Info line: author and relative time (not bold)
         local author = pr.user and pr.user.login or "unknown"
-        local updated = relative_time(pr.updated_at)
+        local updated = M.relative_time(pr.updated_at)
         local info_line = string.format("       by %s • %s", author, updated)
         table.insert(lines, info_line)
         line_idx = line_idx + 1
