@@ -65,6 +65,30 @@ describe("raccoon.keymaps", function()
       assert.is_true(found_prev)
     end)
 
+    it("excludes disabled shortcuts", function()
+      local shortcuts = vim.tbl_deep_extend("force",
+        vim.deepcopy(config.defaults.shortcuts),
+        { next_point = false, comment = false })
+      local built = keymaps.build_keymaps(shortcuts)
+      for _, km in ipairs(built) do
+        assert.is_not_equal(false, km.lhs)
+      end
+      -- Should have 2 fewer keymaps than default
+      local default_built = keymaps.build_keymaps(config.defaults.shortcuts)
+      assert.equals(#default_built - 2, #built)
+    end)
+
+    it("returns empty list when all shortcuts disabled", function()
+      local shortcuts = vim.deepcopy(config.defaults.shortcuts)
+      for k, v in pairs(shortcuts) do
+        if k ~= "commit_mode" and type(v) == "string" then
+          shortcuts[k] = false
+        end
+      end
+      local built = keymaps.build_keymaps(shortcuts)
+      assert.equals(0, #built)
+    end)
+
     it("respects custom shortcut overrides", function()
       local shortcuts = vim.tbl_extend("force", config.defaults.shortcuts, {
         next_point = "<leader>x",
