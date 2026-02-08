@@ -20,8 +20,10 @@ describe("raccoon.commits", function()
 
   describe("toggle without active session", function()
     it("does nothing when no PR session", function()
-      -- Should not error
+      local original_notify = vim.notify
+      vim.notify = function() end
       commits.toggle()
+      vim.notify = original_notify
     end)
   end)
 end)

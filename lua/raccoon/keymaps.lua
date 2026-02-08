@@ -6,6 +6,7 @@ local M = {}
 local api = require("raccoon.api")
 local comments = require("raccoon.comments")
 local config = require("raccoon.config")
+local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 local state = require("raccoon.state")
 
@@ -371,6 +372,10 @@ function M.merge_picker()
     return
   end
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+    return
+  end
 
   -- Fetch check runs first, then show picker
   vim.notify("Fetching CI status...", vim.log.levels.INFO)
@@ -436,46 +441,68 @@ function M.merge_picker()
       end
 
       -- Keymaps for selection (adjusted line numbers for CI status line)
-      vim.keymap.set("n", "1", function() do_merge("merge") end, { buffer = buf, noremap = true, silent = true })
-      vim.keymap.set("n", "2", function() do_merge("squash") end, { buffer = buf, noremap = true, silent = true })
-      vim.keymap.set("n", "3", function() do_merge("rebase") end, { buffer = buf, noremap = true, silent = true })
-      vim.keymap.set("n", "<CR>", function()
+      local km_opts = { buffer = buf, noremap = true, silent = true }
+      vim.keymap.set(NORMAL_MODE, "1", function() do_merge("merge") end, km_opts)
+      vim.keymap.set(NORMAL_MODE, "2", function() do_merge("squash") end, km_opts)
+      vim.keymap.set(NORMAL_MODE, "3", function() do_merge("rebase") end, km_opts)
+      vim.keymap.set(NORMAL_MODE, "<CR>", function()
         local cursor_line = vim.fn.line(".")
         if cursor_line == 5 then do_merge("merge")
         elseif cursor_line == 6 then do_merge("squash")
         elseif cursor_line == 7 then do_merge("rebase")
         end
       end, { buffer = buf, noremap = true, silent = true })
+      local shortcuts = config.load_shortcuts()
       local close_win = function()
         if vim.api.nvim_win_is_valid(win) then
           vim.api.nvim_win_close(win, true)
         end
       end
-      vim.keymap.set("n", "<leader>q", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
-      vim.keymap.set("n", "<Esc>", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
+      local close_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
+      if config.is_enabled(shortcuts.close) then
+        vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, close_opts)
+      end
+      vim.keymap.set(NORMAL_MODE, "<Esc>", close_win, close_opts)
     end)
   end)
 end
 
---- All PR review keymaps (simplified)
-M.keymaps = {
-  { mode = "n", lhs = "<leader>j", rhs = function() M.next_point() end, desc = "Next diff/comment" },
-  { mode = "n", lhs = "<leader>k", rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
-  { mode = "n", lhs = "<leader>nf", rhs = function() diff.next_file() end, desc = "Next file" },
-  { mode = "n", lhs = "<leader>pf", rhs = function() diff.prev_file() end, desc = "Previous file" },
-  { mode = "n", lhs = "<leader>nt", rhs = function() M.next_thread() end, desc = "Next comment thread" },
-  { mode = "n", lhs = "<leader>pt", rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
-  { mode = "n", lhs = "<leader>c", rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
-  { mode = "n", lhs = "<leader>dd", rhs = function() M.show_description() end, desc = "Show PR description" },
-  { mode = "n", lhs = "<leader>ll", rhs = function() M.list_comments() end, desc = "List all PR comments" },
-  { mode = "n", lhs = "<leader>rr", rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
-  { mode = "n", lhs = "<leader>cm", rhs = function()
-    require("raccoon.commits").toggle()
-  end, desc = "Toggle commit viewer" },
-}
+--- Build PR review keymaps from config shortcuts
+---@param shortcuts table Shortcut bindings from config
+---@return table[] keymaps
+function M.build_keymaps(shortcuts)
+  local n = NORMAL_MODE
+  local all = {
+    { mode = n, lhs = shortcuts.next_point, rhs = function() M.next_point() end, desc = "Next diff/comment" },
+    { mode = n, lhs = shortcuts.prev_point, rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
+    { mode = n, lhs = shortcuts.next_file, rhs = function() diff.next_file() end, desc = "Next file" },
+    { mode = n, lhs = shortcuts.prev_file, rhs = function() diff.prev_file() end, desc = "Previous file" },
+    { mode = n, lhs = shortcuts.next_thread, rhs = function() M.next_thread() end, desc = "Next comment thread" },
+    { mode = n, lhs = shortcuts.prev_thread, rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
+    { mode = n, lhs = shortcuts.comment, rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
+    { mode = n, lhs = shortcuts.description, rhs = function() M.show_description() end, desc = "Show PR description" },
+    { mode = n, lhs = shortcuts.list_comments, rhs = function() M.list_comments() end, desc = "List all PR comments" },
+    { mode = n, lhs = shortcuts.merge, rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
+    { mode = n, lhs = shortcuts.commit_viewer, rhs = function()
+      require("raccoon.commits").toggle()
+    end, desc = "Toggle commit viewer" },
+  }
+  local result = {}
+  for _, km in ipairs(all) do
+    if config.is_enabled(km.lhs) then
+      table.insert(result, km)
+    end
+  end
+  return result
+end
+
+--- Current active keymaps (built from config at setup time)
+M.keymaps = {}
 
 --- Setup all keymaps for PR review mode
 function M.setup()
+  local shortcuts = config.load_shortcuts()
+  M.keymaps = M.build_keymaps(shortcuts)
   for _, km in ipairs(M.keymaps) do
     local opts = vim.tbl_extend("force", default_opts, { desc = km.desc })
     vim.keymap.set(km.mode, km.lhs, km.rhs, opts)

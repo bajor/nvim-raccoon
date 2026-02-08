@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5] - 2026-02-08
+
+### Added
+- Configurable keyboard shortcuts — all keymaps defined in `config.json` under `shortcuts`, with commit viewer shortcuts nested under `shortcuts.commit_mode`
+- Optional shortcuts — set any shortcut to `false` in config to disable it; the keymap won't be registered but `:Raccoon` commands still work
+- `:Raccoon shortcuts` command and `<leader>?` keymap to display all active shortcuts in a floating help window (closes on any keystroke)
+- Disabled shortcuts shown as `(disabled)` in the shortcuts help window
+- Default shortcut values written to config file on creation via `:Raccoon config`
+
+### Changed
+- All hardcoded keymaps across the plugin now load dynamically from config
+- All shortcut hints in floating window titles update to reflect user-configured bindings and omit disabled shortcuts
+- `keymaps.lua` refactored from static table to dynamic `build_keymaps()` driven by config
+
+### Removed
+- `github_token` config field — use the `tokens` table instead (maps owner/org to token)
+
 ## [0.4.1] - 2026-02-08
 
 ### Fixed

@@ -77,6 +77,13 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     end
 
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
+      return
+    end
 
     -- Determine merge method
     local merge_method = "merge"
@@ -106,6 +113,9 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
         pr_open.close_pr()
       end)
     end)
+  elseif subcommand == "shortcuts" then
+    local ui = require("raccoon.ui")
+    ui.show_shortcuts()
   elseif subcommand == "commits" then
     local commits_mod = require("raccoon.commits")
     commits_mod.toggle()
@@ -132,6 +142,32 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   "commit_viewer": {
     "grid": { "rows": 2, "cols": 2 },
     "base_commits_count": 20
+  },
+  "shortcuts": {
+    "pr_list": "<leader>pr",
+    "show_shortcuts": "<leader>?",
+    "next_point": "<leader>j",
+    "prev_point": "<leader>k",
+    "next_file": "<leader>nf",
+    "prev_file": "<leader>pf",
+    "next_thread": "<leader>nt",
+    "prev_thread": "<leader>pt",
+    "comment": "<leader>c",
+    "description": "<leader>dd",
+    "list_comments": "<leader>ll",
+    "merge": "<leader>rr",
+    "commit_viewer": "<leader>cm",
+    "comment_save": "<leader>s",
+    "comment_resolve": "<leader>r",
+    "comment_unresolve": "<leader>u",
+    "close": "<leader>q",
+    "commit_mode": {
+      "next_page": "<leader>j",
+      "prev_page": "<leader>k",
+      "next_page_alt": "<leader>l",
+      "exit": "<leader>cm",
+      "maximize_prefix": "<leader>m"
+    }
   }
 }]], clone_root)
       local file = io.open(config_path, "w")
@@ -150,7 +186,10 @@ end, {
     local args = vim.split(cmdline, "%s+")
     if #args == 2 then
       -- Complete subcommands
-      return { "prs", "list", "description", "sync", "merge", "squash", "rebase", "commits", "close", "config" }
+      return {
+        "prs", "list", "description", "sync", "merge", "squash",
+        "rebase", "commits", "shortcuts", "close", "config",
+      }
     end
     return {}
   end,

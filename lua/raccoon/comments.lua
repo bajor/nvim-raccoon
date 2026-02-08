@@ -4,6 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local NORMAL_MODE = config.NORMAL
 local state = require("raccoon.state")
 
 --- Get a valid line number from a comment, handling vim.NIL from JSON null
@@ -18,6 +19,48 @@ local function get_comment_line(comment)
     end
   end
   return nil
+end
+
+--- Build a floating window title for comment editors, skipping disabled shortcuts
+---@param label string The window label (e.g. "New Comment", "Thread")
+---@param shortcuts table Shortcut bindings from config
+---@return string
+function M._build_comment_title(label, shortcuts)
+  local hints = {}
+  if config.is_enabled(shortcuts.comment_save) then
+    table.insert(hints, shortcuts.comment_save .. "=save")
+  end
+  if config.is_enabled(shortcuts.close) then
+    table.insert(hints, shortcuts.close .. "=cancel")
+  end
+  if #hints > 0 then
+    return string.format(" %s (%s) ", label, table.concat(hints, ", "))
+  end
+  return string.format(" %s ", label)
+end
+
+--- Build a floating window title for comment threads, skipping disabled shortcuts
+---@param line number The line number
+---@param shortcuts table Shortcut bindings from config
+---@return string
+function M._build_thread_title(line, shortcuts)
+  local hints = {}
+  if config.is_enabled(shortcuts.comment_save) then
+    table.insert(hints, shortcuts.comment_save .. "=save")
+  end
+  if config.is_enabled(shortcuts.comment_resolve) then
+    table.insert(hints, shortcuts.comment_resolve .. "=resolve")
+  end
+  if config.is_enabled(shortcuts.comment_unresolve) then
+    table.insert(hints, shortcuts.comment_unresolve .. "=unresolve")
+  end
+  if config.is_enabled(shortcuts.close) then
+    table.insert(hints, shortcuts.close .. "=close")
+  end
+  if #hints > 0 then
+    return string.format(" Comments on L%d (%s) ", line, table.concat(hints, ", "))
+  end
+  return string.format(" Comments on L%d ", line)
 end
 
 --- Namespace for comment highlights and extmarks
@@ -258,12 +301,15 @@ function M.show_comment_popup(comment)
     title_pos = "center",
   })
 
-  -- Close on <leader>q or Esc
-  vim.keymap.set("n", "<leader>q", function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, noremap = true, silent = true })
+  -- Close keymaps
+  local shortcuts = config.load_shortcuts()
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 end
@@ -329,11 +375,14 @@ function M.show_readonly_thread(opts)
 
   vim.wo[win].wrap = true
 
+  local shortcuts = config.load_shortcuts()
   local keymap_opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "<leader>q", function()
-    vim.api.nvim_win_close(win, true)
-  end, keymap_opts)
-  vim.keymap.set("n", "<Esc>", function()
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+    end, keymap_opts)
+  end
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, keymap_opts)
 end
@@ -353,6 +402,7 @@ function M.show_comment_thread()
   end
 
   local current_line = vim.fn.line(".")
+  local shortcuts = config.load_shortcuts()
   local file_comments = state.get_comments(path)
 
   -- Find comments for this line
@@ -430,10 +480,7 @@ function M.show_comment_thread()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = string.format(
-      " Comments on L%d (<leader>s=save, <leader>r=resolve, <leader>u=unresolve, <leader>q=close) ",
-      current_line
-    ),
+    title = M._build_thread_title(current_line, shortcuts),
     title_pos = "center",
   })
 
@@ -481,6 +528,13 @@ function M.show_comment_thread()
     local number = state.get_number()
     local pr = state.get_pr()
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
+      return
+    end
 
     if section.type == "new" then
       -- Get all lines from new_comment_start to end
@@ -603,6 +657,13 @@ function M.show_comment_thread()
 
     local owner = state.get_owner()
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
+      return
+    end
 
     vim.notify("Resolving thread...", vim.log.levels.INFO)
 
@@ -669,6 +730,13 @@ function M.show_comment_thread()
 
     local owner = state.get_owner()
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
+      return
+    end
 
     vim.notify("Unresolving thread...", vim.log.levels.INFO)
 
@@ -719,13 +787,22 @@ function M.show_comment_thread()
   end
 
   -- Keymaps
-  vim.keymap.set("n", "<leader>s", save_comment, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<leader>r", resolve_thread, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<leader>u", unresolve_thread, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<leader>q", function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<Esc>", function()
+  local km_opts = { buffer = buf, noremap = true, silent = true }
+  if config.is_enabled(shortcuts.comment_save) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, save_comment, km_opts)
+  end
+  if config.is_enabled(shortcuts.comment_resolve) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_resolve, resolve_thread, km_opts)
+  end
+  if config.is_enabled(shortcuts.comment_unresolve) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_unresolve, unresolve_thread, km_opts)
+  end
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 
@@ -750,6 +827,7 @@ function M.create_comment()
   end
 
   local line = vim.fn.line(".")
+  local shortcuts = config.load_shortcuts()
 
   -- Create input buffer
   local buf = vim.api.nvim_create_buf(false, true)
@@ -767,7 +845,7 @@ function M.create_comment()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = " New Comment (<leader>s=save, <leader>q=cancel) ",
+    title = M._build_comment_title("New Comment", shortcuts),
     title_pos = "center",
   })
 
@@ -800,6 +878,13 @@ function M.create_comment()
     local number = state.get_number()
     local pr = state.get_pr()
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(
+        string.format("No token configured for '%s'. Add it to tokens in config.", owner),
+        vim.log.levels.ERROR
+      )
+      return
+    end
 
     if not pr or not pr.head or not pr.head.sha then
       vim.notify("Missing PR data (commit_id)", vim.log.levels.ERROR)
@@ -881,21 +966,25 @@ function M.create_comment()
     end)
   end
 
-  -- Keymap: <leader>s to save and submit (works in normal mode)
-  vim.keymap.set("n", "<leader>s", function()
-    save_and_submit()
-  end, { buffer = buf, noremap = true, silent = true })
+  -- Keymap: save and submit (works in normal mode)
+  if config.is_enabled(shortcuts.comment_save) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, function()
+      save_and_submit()
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 
-  -- Keymap: <leader>q to cancel
-  vim.keymap.set("n", "<leader>q", function()
-    if not submitted then
-      vim.notify("Comment cancelled", vim.log.levels.INFO)
-    end
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, noremap = true, silent = true })
+  -- Keymap: close/cancel
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      if not submitted then
+        vim.notify("Comment cancelled", vim.log.levels.INFO)
+      end
+      vim.api.nvim_win_close(win, true)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 
   -- Also allow Escape to cancel
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     if not submitted then
       vim.notify("Comment cancelled", vim.log.levels.INFO)
     end
@@ -945,6 +1034,8 @@ function M.list_comments()
     vim.notify("No comments in this PR", vim.log.levels.INFO)
     return
   end
+
+  local shortcuts = config.load_shortcuts()
 
   -- Sort by file path, then by line number
   table.sort(all_comments, function(a, b)
@@ -1036,7 +1127,7 @@ function M.list_comments()
   end
 
   -- View thread on Enter
-  vim.keymap.set("n", "<CR>", function()
+  vim.keymap.set(NORMAL_MODE, "<CR>", function()
     local cursor_line = vim.fn.line(".")
     local entry = line_to_entry[cursor_line]
     if not entry then
@@ -1061,14 +1152,18 @@ function M.list_comments()
       end
       M.show_readonly_thread({
         comments = thread,
-        title = string.format(" %s L%d (%d comments, <leader>q=close) ", entry.file, target_line or 0, #thread),
+        title = config.is_enabled(shortcuts.close)
+          and string.format(" %s L%d (%d comments, %s=close) ", entry.file, target_line or 0, #thread, shortcuts.close)
+          or string.format(" %s L%d (%d comments) ", entry.file, target_line or 0, #thread),
       })
     end
   end, { buffer = buf, noremap = true, silent = true })
 
-  -- Close on <leader>q or Esc
-  vim.keymap.set("n", "<leader>q", close_list, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<Esc>", close_list, { buffer = buf, noremap = true, silent = true })
+  -- Close keymaps
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_list, { buffer = buf, noremap = true, silent = true })
+  end
+  vim.keymap.set(NORMAL_MODE, "<Esc>", close_list, { buffer = buf, noremap = true, silent = true })
 end
 
 --- Toggle resolved status of comment at current line
@@ -1135,6 +1230,10 @@ function M.submit_comments(callback)
   local number = state.get_number()
   local pr = state.get_pr()
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    callback(string.format("No token configured for '%s'", owner))
+    return
+  end
 
   if not pr or not pr.head or not pr.head.sha then
     callback("Missing PR data (commit_id)")

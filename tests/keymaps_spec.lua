@@ -1,4 +1,5 @@
 local keymaps = require("raccoon.keymaps")
+local config = require("raccoon.config")
 
 describe("raccoon.keymaps", function()
   after_each(function()
@@ -44,51 +45,74 @@ describe("raccoon.keymaps", function()
     end)
   end)
 
-  describe("keymaps table", function()
-    it("has leader-j keymap for next point", function()
-      local found = false
-      for _, km in ipairs(keymaps.keymaps) do
-        if km.lhs == "<leader>j" then found = true end
-      end
-      assert.is_true(found)
+  describe("build_keymaps", function()
+    it("builds keymaps from default shortcuts", function()
+      local shortcuts = config.defaults.shortcuts
+      local built = keymaps.build_keymaps(shortcuts)
+      assert.is_true(#built >= 4)
     end)
 
-    it("has leader-k keymap for prev point", function()
-      local found = false
-      for _, km in ipairs(keymaps.keymaps) do
-        if km.lhs == "<leader>k" then found = true end
+    it("uses shortcut values for lhs", function()
+      local shortcuts = config.defaults.shortcuts
+      local built = keymaps.build_keymaps(shortcuts)
+      local found_next = false
+      local found_prev = false
+      for _, km in ipairs(built) do
+        if km.lhs == shortcuts.next_point then found_next = true end
+        if km.lhs == shortcuts.prev_point then found_prev = true end
       end
-      assert.is_true(found)
+      assert.is_true(found_next)
+      assert.is_true(found_prev)
     end)
 
-    it("has leader-c keymap for comment", function()
-      local found = false
-      for _, km in ipairs(keymaps.keymaps) do
-        if km.lhs == "<leader>c" then found = true end
+    it("excludes disabled shortcuts", function()
+      local shortcuts = vim.tbl_deep_extend("force",
+        vim.deepcopy(config.defaults.shortcuts),
+        { next_point = false, comment = false })
+      local built = keymaps.build_keymaps(shortcuts)
+      for _, km in ipairs(built) do
+        assert.is_not_equal(false, km.lhs)
       end
-      assert.is_true(found)
+      -- Should have 2 fewer keymaps than default
+      local default_built = keymaps.build_keymaps(config.defaults.shortcuts)
+      assert.equals(#default_built - 2, #built)
     end)
 
-    it("has leader-dd keymap for description", function()
-      local found = false
-      for _, km in ipairs(keymaps.keymaps) do
-        if km.lhs == "<leader>dd" then found = true end
+    it("returns empty list when all shortcuts disabled", function()
+      local shortcuts = vim.deepcopy(config.defaults.shortcuts)
+      for k, v in pairs(shortcuts) do
+        if k ~= "commit_mode" and type(v) == "string" then
+          shortcuts[k] = false
+        end
       end
-      assert.is_true(found)
+      local built = keymaps.build_keymaps(shortcuts)
+      assert.equals(0, #built)
+    end)
+
+    it("respects custom shortcut overrides", function()
+      local shortcuts = vim.tbl_extend("force", config.defaults.shortcuts, {
+        next_point = "<leader>x",
+        comment = "<leader>y",
+      })
+      local built = keymaps.build_keymaps(shortcuts)
+      local found_x = false
+      local found_y = false
+      for _, km in ipairs(built) do
+        if km.lhs == "<leader>x" then found_x = true end
+        if km.lhs == "<leader>y" then found_y = true end
+      end
+      assert.is_true(found_x)
+      assert.is_true(found_y)
     end)
 
     it("all keymaps have mode, lhs, rhs, and desc", function()
-      for _, km in ipairs(keymaps.keymaps) do
+      local built = keymaps.build_keymaps(config.defaults.shortcuts)
+      for _, km in ipairs(built) do
         assert.is_string(km.mode)
         assert.is_string(km.lhs)
         assert.is_not_nil(km.rhs)
         assert.is_string(km.desc)
       end
-    end)
-
-    it("has at least 4 keymaps", function()
-      -- Keymaps count may grow as features are added
-      assert.is_true(#keymaps.keymaps >= 4)
     end)
   end)
 
@@ -145,9 +169,16 @@ describe("raccoon.keymaps", function()
 
   describe("navigation functions", function()
     local state = require("raccoon.state")
+    local original_notify
 
     before_each(function()
       state.reset()
+      original_notify = vim.notify
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
     end)
 
     it("next_point returns false when no session", function()
@@ -172,21 +203,27 @@ describe("raccoon.keymaps", function()
   end)
 
   describe("keymap modes", function()
+    local built
+
+    before_each(function()
+      built = keymaps.build_keymaps(config.defaults.shortcuts)
+    end)
+
     it("all keymaps use valid modes", function()
       local valid_modes = { n = true, i = true, v = true, x = true, s = true, o = true, c = true, t = true }
-      for _, km in ipairs(keymaps.keymaps) do
+      for _, km in ipairs(built) do
         assert.is_true(valid_modes[km.mode], "Invalid mode: " .. km.mode)
       end
     end)
 
     it("keymaps have non-empty lhs", function()
-      for _, km in ipairs(keymaps.keymaps) do
+      for _, km in ipairs(built) do
         assert.is_true(#km.lhs > 0, "Empty lhs found")
       end
     end)
 
     it("keymaps have non-empty desc", function()
-      for _, km in ipairs(keymaps.keymaps) do
+      for _, km in ipairs(built) do
         assert.is_true(#km.desc > 0, "Empty desc found")
       end
     end)

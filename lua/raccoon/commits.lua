@@ -3,6 +3,7 @@
 local M = {}
 
 local config = require("raccoon.config")
+local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 local git = require("raccoon.git")
 local keymaps = require("raccoon.keymaps")
@@ -107,7 +108,7 @@ local function lock_buf(buf)
     ":",
   }
   for _, key in ipairs(blocked) do
-    vim.keymap.set("n", key, nop, opts)
+    vim.keymap.set(NORMAL_MODE, key, nop, opts)
   end
 end
 
@@ -117,6 +118,7 @@ end
 ---@param buf number Buffer ID
 local function lock_maximize_buf(buf)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
   local nop = function() end
   local blocked = {
@@ -126,17 +128,25 @@ local function lock_maximize_buf(buf)
     "Q", "gQ",
     "ZZ", "ZQ",
     "<C-z>",
-    -- Block commit-mode navigation (override globals so maximize is isolated)
-    "<leader>j", "<leader>k", "<leader>l",
-    "<leader>cm",
   }
-  for _, key in ipairs(blocked) do
-    vim.keymap.set("n", key, nop, opts)
+  -- Only block commit-mode navigation keys that are enabled
+  for _, key in ipairs({
+    shortcuts.commit_mode.next_page, shortcuts.commit_mode.prev_page,
+    shortcuts.commit_mode.next_page_alt, shortcuts.commit_mode.exit,
+  }) do
+    if config.is_enabled(key) then
+      table.insert(blocked, key)
+    end
   end
-  -- Block all cell maximize keys
-  local cells = commit_state.grid_rows * commit_state.grid_cols
-  for i = 1, cells do
-    vim.keymap.set("n", "<leader>m" .. i, nop, opts)
+  for _, key in ipairs(blocked) do
+    vim.keymap.set(NORMAL_MODE, key, nop, opts)
+  end
+  -- Block all cell maximize keys (only if maximize_prefix is enabled)
+  if config.is_enabled(shortcuts.commit_mode.maximize_prefix) then
+    local cells = commit_state.grid_rows * commit_state.grid_cols
+    for i = 1, cells do
+      vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.maximize_prefix .. i, nop, opts)
+    end
   end
 end
 
@@ -404,7 +414,9 @@ local function maximize_cell(cell_num)
       end
     end
 
-    vim.wo[win].winbar = " " .. filename .. "%=%#Comment# <leader>q to exit %*"
+    local shortcuts = config.load_shortcuts()
+    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+    vim.wo[win].winbar = " " .. filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
 
@@ -412,8 +424,10 @@ local function maximize_cell(cell_num)
 
     -- Buffer-local keymaps to close (set after lock so these override nop)
     local buf_opts = { buffer = buf, noremap = true, silent = true }
-    vim.keymap.set("n", "<leader>q", close_maximize, buf_opts)
-    vim.keymap.set("n", "q", close_maximize, buf_opts)
+    if config.is_enabled(shortcuts.close) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_maximize, buf_opts)
+    end
+    vim.keymap.set(NORMAL_MODE, "q", close_maximize, buf_opts)
   end)
 end
 
@@ -708,35 +722,55 @@ end
 
 --- Setup commit mode keymaps (buffer-local to all commit-mode buffers)
 local function setup_keymaps()
+  local shortcuts = config.load_shortcuts()
   local nop = function() end
 
-  commit_mode_keymaps = {
-    { mode = "n", lhs = "<leader>cm", rhs = function() M.toggle() end, desc = "Exit commit viewer" },
-    { mode = "n", lhs = "<leader>j", rhs = next_page, desc = "Next page of hunks" },
-    { mode = "n", lhs = "<leader>k", rhs = prev_page, desc = "Previous page of hunks" },
-    { mode = "n", lhs = "<leader>l", rhs = next_page, desc = "Next page of hunks" },
-    -- Block window-switching keys
-    { mode = "n", lhs = "<C-w>h", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w>j", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w>k", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w>l", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w>w", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w><C-w>", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w>H", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w>J", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w>K", rhs = nop, desc = "Blocked in commit mode" },
-    { mode = "n", lhs = "<C-w>L", rhs = nop, desc = "Blocked in commit mode" },
+  local all = {
+    {
+      mode = NORMAL_MODE, lhs = shortcuts.commit_mode.exit,
+      rhs = function() M.toggle() end, desc = "Exit commit viewer",
+    },
+    { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.next_page, rhs = next_page, desc = "Next page of hunks" },
+    { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.prev_page, rhs = prev_page, desc = "Previous page of hunks" },
+    { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.next_page_alt, rhs = next_page, desc = "Next page of hunks" },
   }
 
-  -- Add <leader>m<N> keymaps for each grid cell
-  local cells = commit_state.grid_rows * commit_state.grid_cols
-  for i = 1, cells do
-    table.insert(commit_mode_keymaps, {
-      mode = "n",
-      lhs = "<leader>m" .. i,
-      rhs = function() maximize_cell(i) end,
-      desc = "Maximize grid cell " .. i,
-    })
+  -- Filter out disabled commit-mode shortcuts, keep hardcoded blocks unconditional
+  commit_mode_keymaps = {}
+  for _, km in ipairs(all) do
+    if config.is_enabled(km.lhs) then
+      table.insert(commit_mode_keymaps, km)
+    end
+  end
+
+  -- Block window-switching keys (always, not user-configurable)
+  local window_blocks = {
+    { mode = NORMAL_MODE, lhs = "<C-w>h", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w>j", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w>k", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w>l", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w>w", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w><C-w>", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w>H", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w>J", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w>K", rhs = nop, desc = "Blocked in commit mode" },
+    { mode = NORMAL_MODE, lhs = "<C-w>L", rhs = nop, desc = "Blocked in commit mode" },
+  }
+  for _, km in ipairs(window_blocks) do
+    table.insert(commit_mode_keymaps, km)
+  end
+
+  -- Add maximize keymaps for each grid cell (only if maximize_prefix is enabled)
+  if config.is_enabled(shortcuts.commit_mode.maximize_prefix) then
+    local cells = commit_state.grid_rows * commit_state.grid_cols
+    for i = 1, cells do
+      table.insert(commit_mode_keymaps, {
+        mode = NORMAL_MODE,
+        lhs = shortcuts.commit_mode.maximize_prefix .. i,
+        rhs = function() maximize_cell(i) end,
+        desc = "Maximize grid cell " .. i,
+      })
+    end
   end
 
   -- Collect all commit-mode buffers
@@ -764,11 +798,11 @@ local function setup_keymaps()
   -- Sidebar-local keymaps
   if commit_state.sidebar_buf and vim.api.nvim_buf_is_valid(commit_state.sidebar_buf) then
     local buf_opts = { buffer = commit_state.sidebar_buf, noremap = true, silent = true }
-    vim.keymap.set("n", "j", move_down, buf_opts)
-    vim.keymap.set("n", "k", move_up, buf_opts)
-    vim.keymap.set("n", "<Down>", move_down, buf_opts)
-    vim.keymap.set("n", "<Up>", move_up, buf_opts)
-    vim.keymap.set("n", "<CR>", function() select_commit(commit_state.selected_index) end, buf_opts)
+    vim.keymap.set(NORMAL_MODE, "j", move_down, buf_opts)
+    vim.keymap.set(NORMAL_MODE, "k", move_up, buf_opts)
+    vim.keymap.set(NORMAL_MODE, "<Down>", move_down, buf_opts)
+    vim.keymap.set(NORMAL_MODE, "<Up>", move_up, buf_opts)
+    vim.keymap.set(NORMAL_MODE, "<CR>", function() select_commit(commit_state.selected_index) end, buf_opts)
     lock_buf(commit_state.sidebar_buf)
   end
 

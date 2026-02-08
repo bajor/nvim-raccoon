@@ -1,16 +1,26 @@
 ---@class RaccoonConfig
----@field github_token string GitHub personal access token (default/fallback)
 ---@field github_username string GitHub username
 ---@field repos string[] List of repos to watch (format: "owner/repo")
----@field tokens? table<string, string> Per-owner/org tokens (owner -> token)
+---@field tokens table<string, string> Per-owner/org tokens (owner -> token)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field poll_interval_seconds number Polling interval in seconds
 
 local M = {}
 
+--- Vim mode constants for vim.keymap.set / vim.keymap.del
+M.NORMAL = "n"
+M.INSERT = "i"
+
+--- Check whether a shortcut binding is enabled (not disabled by user).
+--- Users can set a shortcut to false (JSON false) or null (JSON null -> vim.NIL) to disable it.
+---@param value any The shortcut value from config
+---@return boolean
+function M.is_enabled(value)
+  return type(value) == "string" and value ~= ""
+end
+
 --- Default configuration values
 M.defaults = {
-  github_token = "",
   github_username = "",
   repos = {},
   tokens = {},
@@ -19,6 +29,38 @@ M.defaults = {
   commit_viewer = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
+  },
+  shortcuts = {
+    -- Global
+    pr_list = "<leader>pr",
+    show_shortcuts = "<leader>?",
+    -- Review navigation
+    next_point = "<leader>j",
+    prev_point = "<leader>k",
+    next_file = "<leader>nf",
+    prev_file = "<leader>pf",
+    next_thread = "<leader>nt",
+    prev_thread = "<leader>pt",
+    -- Review actions
+    comment = "<leader>c",
+    description = "<leader>dd",
+    list_comments = "<leader>ll",
+    merge = "<leader>rr",
+    commit_viewer = "<leader>cm",
+    -- Comment editor
+    comment_save = "<leader>s",
+    comment_resolve = "<leader>r",
+    comment_unresolve = "<leader>u",
+    -- Common
+    close = "<leader>q",
+    -- Commit viewer mode
+    commit_mode = {
+      next_page = "<leader>j",
+      prev_page = "<leader>k",
+      next_page_alt = "<leader>l",
+      exit = "<leader>cm",
+      maximize_prefix = "<leader>m",
+    },
   },
 }
 
@@ -39,11 +81,15 @@ end
 ---@param config table
 ---@return boolean, string?
 local function validate_config(config)
-  -- Require either github_token or tokens map
-  local has_token = config.github_token and config.github_token ~= ""
+  -- Require tokens map
   local has_tokens = config.tokens and type(config.tokens) == "table" and next(config.tokens) ~= nil
-  if not has_token and not has_tokens then
-    return false, "github_token or tokens is required"
+  if not has_tokens then
+    if config.github_token and config.github_token ~= "" then
+      return false,
+        "github_token was removed. Move your token to the tokens table: "
+          .. '"tokens": {"your-username": "your-token"}'
+    end
+    return false, "tokens is required (maps owner/org name to GitHub token)"
   end
 
   if not config.github_username or config.github_username == "" then
@@ -119,9 +165,9 @@ function M.create_default()
     return false, "Config file already exists"
   end
 
-  -- Create default config (token comes from GITHUB_TOKEN env var)
   local default = {
     github_username = "your-username",
+    tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
     repos = { "owner/repo1", "owner/repo2" },
     clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
     poll_interval_seconds = 300,
@@ -146,27 +192,77 @@ function M.create_default()
   return true, nil
 end
 
---- Get the appropriate token for a given owner/org
---- Returns the owner-specific token if available, otherwise the default github_token
+--- Sanitize merged shortcuts against the defaults structure.
+--- Each leaf must be a non-empty string (valid binding) or false (disabled).
+--- Anything else (vim.NIL, numbers, empty strings, tables at leaf positions) falls back to the default.
+--- Unknown keys not present in defaults are dropped.
+---@param merged table Merged shortcuts (user overrides + defaults)
+---@param defaults table Default shortcuts (used as schema)
+---@return table sanitized
+local function sanitize_shortcuts(merged, defaults)
+  local result = {}
+  for key, default_val in pairs(defaults) do
+    local val = merged[key]
+    if type(default_val) == "table" then
+      result[key] = sanitize_shortcuts(type(val) == "table" and val or {}, default_val)
+    elseif val == false then
+      result[key] = false
+    elseif type(val) == "string" and val ~= "" then
+      result[key] = val
+    else
+      result[key] = default_val
+    end
+  end
+  return result
+end
+
+--- Load shortcuts from config, falling back to defaults gracefully.
+--- Unlike load(), this does not require valid tokens/username.
+---@return table shortcuts
+function M.load_shortcuts()
+  local path = M.config_path
+  local stat = vim.uv.fs_stat(path)
+  if not stat then
+    return vim.deepcopy(M.defaults.shortcuts)
+  end
+
+  local file = io.open(path, "r")
+  if not file then
+    return vim.deepcopy(M.defaults.shortcuts)
+  end
+
+  local content = file:read("*a")
+  file:close()
+
+  local ok, parsed = pcall(vim.json.decode, content)
+  if not ok or type(parsed) ~= "table" then
+    return vim.deepcopy(M.defaults.shortcuts)
+  end
+
+  local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
+  return sanitize_shortcuts(merged, M.defaults.shortcuts)
+end
+
+--- Get the token for a given owner/org from the tokens table
 ---@param config RaccoonConfig
 ---@param owner string
----@return string
+---@return string?
 function M.get_token_for_owner(config, owner)
   if config.tokens and config.tokens[owner] then
     return config.tokens[owner]
   end
-  return config.github_token
+  return nil
 end
 
---- Get the appropriate token for a repo string ("owner/repo")
+--- Get the token for a repo string ("owner/repo")
 --- Extracts owner from the repo string and resolves the token
 ---@param config RaccoonConfig
 ---@param repo string Repository in "owner/repo" format
----@return string
+---@return string?
 function M.get_token_for_repo(config, repo)
   local owner = repo:match("^([^/]+)/")
   if not owner then
-    return config.github_token
+    return nil
   end
   return M.get_token_for_owner(config, owner)
 end

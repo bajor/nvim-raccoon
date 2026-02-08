@@ -47,14 +47,6 @@ describe("raccoon.diff", function()
       assert.is_function(diff.goto_file)
     end)
 
-    it("has setup_keymaps function", function()
-      assert.is_function(diff.setup_keymaps)
-    end)
-
-    it("has clear_keymaps function", function()
-      assert.is_function(diff.clear_keymaps)
-    end)
-
     it("has get_namespace function", function()
       assert.is_function(diff.get_namespace)
     end)
@@ -222,6 +214,17 @@ describe("raccoon.diff", function()
   end)
 
   describe("navigation", function()
+    local original_notify
+
+    before_each(function()
+      original_notify = vim.notify
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
     it("next_file returns false when no session", function()
       assert.is_false(diff.next_file())
     end)
@@ -267,6 +270,17 @@ describe("raccoon.diff", function()
   end)
 
   describe("open_file", function()
+    local original_notify
+
+    before_each(function()
+      original_notify = vim.notify
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
     it("returns nil for nil file", function()
       assert.is_nil(diff.open_file(nil))
     end)
@@ -281,6 +295,17 @@ describe("raccoon.diff", function()
   end)
 
   describe("next_diff and prev_diff", function()
+    local original_notify
+
+    before_each(function()
+      original_notify = vim.notify
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
     it("next_diff returns false when no session", function()
       assert.is_false(diff.next_diff())
     end)
@@ -463,18 +488,6 @@ describe("raccoon.diff", function()
       assert.is_number(ns)
 
       vim.api.nvim_buf_delete(buf, { force = true })
-    end)
-  end)
-
-  describe("keymaps", function()
-    it("setup_keymaps does not error", function()
-      -- Should not error even without active session
-      diff.setup_keymaps()
-    end)
-
-    it("clear_keymaps does not error", function()
-      -- Should not error even if keymaps weren't set
-      diff.clear_keymaps()
     end)
   end)
 

@@ -4,6 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local NORMAL_MODE = config.NORMAL
 
 --- Current floating window state
 M.state = {
@@ -134,7 +135,8 @@ end
 --- Render the PR list in the buffer
 ---@param prs table[] List of PRs
 ---@param buf_width number Buffer width for formatting
-local function render_pr_list(prs, buf_width)
+---@param shortcuts table Shortcut bindings from config
+local function render_pr_list(prs, buf_width, shortcuts)
   local lines = {}
   local highlights = {}
   buf_width = buf_width or 60
@@ -143,7 +145,8 @@ local function render_pr_list(prs, buf_width)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    table.insert(lines, "  Press 'r' to refresh, '<leader>q' to close")
+    local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
+    table.insert(lines, string.format("  Press 'r' to refresh, '%s' to close", close_key))
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -199,7 +202,8 @@ local function render_pr_list(prs, buf_width)
 
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
-  table.insert(lines, " Enter: open │ <leader>q: close │ r: refresh │ j/k: navigate")
+  local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
+  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", close_key))
 
   return lines, highlights
 end
@@ -296,6 +300,9 @@ function M.show_pr_list()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  Loading..." })
   vim.bo[buf].modifiable = false
 
+  -- Load shortcuts from config
+  local shortcuts = config.load_shortcuts()
+
   -- Setup buffer-local keymaps
   local opts = { buffer = buf, noremap = true, silent = true }
 
@@ -313,13 +320,13 @@ function M.show_pr_list()
     end
   end
 
-  vim.keymap.set("n", "j", move_down, opts)
-  vim.keymap.set("n", "<Down>", move_down, opts)
-  vim.keymap.set("n", "k", move_up, opts)
-  vim.keymap.set("n", "<Up>", move_up, opts)
+  vim.keymap.set(NORMAL_MODE, "j", move_down, opts)
+  vim.keymap.set(NORMAL_MODE, "<Down>", move_down, opts)
+  vim.keymap.set(NORMAL_MODE, "k", move_up, opts)
+  vim.keymap.set(NORMAL_MODE, "<Up>", move_up, opts)
 
   -- Open selected PR on Enter
-  vim.keymap.set("n", "<CR>", function()
+  vim.keymap.set(NORMAL_MODE, "<CR>", function()
     local pr = M.state.prs[M.state.selected]
     if not pr then return end
 
@@ -332,12 +339,14 @@ function M.show_pr_list()
     open.open_pr(url)
   end, opts)
 
-  -- Close on <leader>q or Esc
-  vim.keymap.set("n", "<leader>q", function() M.close_pr_list() end, opts)
-  vim.keymap.set("n", "<Esc>", function() M.close_pr_list() end, opts)
+  -- Close keymaps
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function() M.close_pr_list() end, opts)
+  end
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function() M.close_pr_list() end, opts)
 
   -- Refresh on r
-  vim.keymap.set("n", "r", function() M.refresh_pr_list() end, opts)
+  vim.keymap.set(NORMAL_MODE, "r", function() M.refresh_pr_list() end, opts)
 
   -- Fetch and display PRs
   M.refresh_pr_list()
@@ -387,7 +396,8 @@ function M.refresh_pr_list()
       M.state.error_line_count = #error_lines
     end
 
-    local lines, highlights = render_pr_list(prs, win_width)
+    local shortcuts = config.load_shortcuts()
+    local lines, highlights = render_pr_list(prs, win_width, shortcuts)
 
     -- Offset PR highlights by error lines count
     if #error_lines > 0 then
@@ -443,13 +453,6 @@ function M.fetch_all_prs(callback)
         seen[token] = true
       end
     end
-  end
-
-  if cfg.github_token and cfg.github_token ~= "" and not seen[cfg.github_token] then
-    table.insert(token_entries, {
-      key = cfg.github_username or "github_token",
-      token = cfg.github_token,
-    })
   end
 
   if #token_entries == 0 then
@@ -549,15 +552,149 @@ function M.show_description()
   vim.wo[win].wrap = true
 
   -- Close keymaps (also clear state)
+  local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "<leader>q", function()
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+      M.state.description_win = nil
+    end, opts)
+  end
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
   end, opts)
-  vim.keymap.set("n", "<Esc>", function()
-    vim.api.nvim_win_close(win, true)
-    M.state.description_win = nil
-  end, opts)
+end
+
+--- Shortcut descriptions keyed by config shortcut name
+local shortcut_descriptions = {
+  pr_list = "Open PR list",
+  show_shortcuts = "Show shortcuts help",
+  next_point = "Next diff/comment",
+  prev_point = "Previous diff/comment",
+  next_file = "Next file",
+  prev_file = "Previous file",
+  next_thread = "Next comment thread",
+  prev_thread = "Previous comment thread",
+  comment = "Comment at cursor",
+  description = "Show PR description",
+  list_comments = "List all PR comments",
+  merge = "Merge PR (pick method)",
+  commit_viewer = "Toggle commit viewer",
+  comment_save = "Save comment",
+  comment_resolve = "Resolve thread",
+  comment_unresolve = "Unresolve thread",
+  close = "Close/dismiss",
+}
+
+--- Commit mode shortcut descriptions (nested under shortcuts.commit_mode)
+local commit_mode_descriptions = {
+  next_page = "Next page of hunks",
+  prev_page = "Previous page of hunks",
+  next_page_alt = "Next page (alt)",
+  exit = "Exit commit viewer",
+  maximize_prefix = "Maximize cell (+ number)",
+}
+
+--- Display groups for the shortcuts help window
+local shortcut_groups = {
+  { title = "Global", keys = { "pr_list", "show_shortcuts" } },
+  {
+    title = "Review Navigation",
+    keys = { "next_point", "prev_point", "next_file", "prev_file", "next_thread", "prev_thread" },
+  },
+  {
+    title = "Review Actions",
+    keys = { "comment", "description", "list_comments", "merge", "commit_viewer" },
+  },
+  { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
+  {
+    title = "Commit Viewer", nested = "commit_mode",
+    keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" },
+  },
+  { title = "Common", keys = { "close" } },
+}
+
+--- Show a floating window with all configured shortcuts
+--- Closes on any keystroke
+function M.show_shortcuts()
+  local shortcuts = config.load_shortcuts()
+
+  -- Build display lines
+  local lines = {}
+  local highlights = {}
+
+  for _, group in ipairs(shortcut_groups) do
+    local header = "── " .. group.title .. " ──"
+    table.insert(lines, header)
+    table.insert(highlights, { line = #lines - 1, hl = "Title" })
+
+    local source = group.nested and shortcuts[group.nested] or shortcuts
+    local descs = group.nested and commit_mode_descriptions or shortcut_descriptions
+    for _, key in ipairs(group.keys) do
+      local binding = source and source[key]
+      local desc = descs[key] or key
+      if config.is_enabled(binding) then
+        table.insert(lines, string.format("  %-22s %s", binding, desc))
+      else
+        table.insert(lines, string.format("  %-22s %s", "(disabled)", desc))
+        table.insert(highlights, { line = #lines - 1, hl = "Comment" })
+      end
+    end
+
+    table.insert(lines, "")
+  end
+
+  -- Remove trailing empty line
+  if lines[#lines] == "" then
+    table.remove(lines)
+  end
+
+  -- Calculate window size
+  local max_line_width = 0
+  for _, line in ipairs(lines) do
+    max_line_width = math.max(max_line_width, #line)
+  end
+  local width = math.min(max_line_width + 4, vim.o.columns - 4)
+  local height = math.min(#lines + 1, vim.o.lines - 4)
+
+  -- Create floating window
+  local win, buf = M.create_floating_window({
+    width = width,
+    height = height,
+    title = "Raccoon Shortcuts",
+    border = "rounded",
+  })
+
+  -- Set content
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.wo[win].cursorline = false
+
+  -- Apply highlights
+  local ns = vim.api.nvim_create_namespace("raccoon_shortcuts_hl")
+  for _, hl in ipairs(highlights) do
+    pcall(vim.api.nvim_buf_add_highlight, buf, ns, hl.hl, hl.line, 0, -1)
+  end
+
+  -- Close on any keystroke
+  local function close_win()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+
+  local key_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
+  -- Map all printable chars
+  local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()-_=+[]{}|;:',.<>?/ "
+  for i = 1, #chars do
+    pcall(vim.keymap.set, NORMAL_MODE, chars:sub(i, i), close_win, key_opts)
+  end
+  -- Map special keys
+  for _, key in ipairs({ "<CR>", "<Esc>", "<Space>", "<BS>", "<Tab>", "<leader>" }) do
+    pcall(vim.keymap.set, NORMAL_MODE, key, close_win, key_opts)
+  end
 end
 
 return M

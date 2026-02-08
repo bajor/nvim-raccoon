@@ -307,28 +307,6 @@ function M.goto_file(index)
   return false
 end
 
---- Setup keymaps for diff navigation
---- Called when a PR review session starts
-function M.setup_keymaps()
-  -- Use buffer-local mappings for the PR files
-  local opts = { noremap = true, silent = true }
-
-  -- Global navigation (available everywhere during review)
-  vim.keymap.set("n", "]f", function()
-    M.next_file()
-  end, vim.tbl_extend("force", opts, { desc = "Next PR file" }))
-
-  vim.keymap.set("n", "[f", function()
-    M.prev_file()
-  end, vim.tbl_extend("force", opts, { desc = "Previous PR file" }))
-end
-
---- Clear keymaps when session ends
-function M.clear_keymaps()
-  pcall(vim.keymap.del, "n", "]f")
-  pcall(vim.keymap.del, "n", "[f")
-end
-
 --- Get the namespace ID for diff highlights
 ---@return number
 function M.get_namespace()

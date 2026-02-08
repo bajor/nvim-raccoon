@@ -154,7 +154,12 @@ local function open_first_file()
     if #file_comments > 0 then
       comments.show_comments(buf, file_comments)
     end
-    notify_success(string.format("Opened %s (1/%d files) - Use ]f/[f to navigate", file.filename, #state.get_files()))
+    local shortcuts = config.load_shortcuts()
+    local nav_hint = ""
+    if config.is_enabled(shortcuts.next_file) and config.is_enabled(shortcuts.prev_file) then
+      nav_hint = " - Use " .. shortcuts.next_file .. "/" .. shortcuts.prev_file .. " to navigate"
+    end
+    notify_success(string.format("Opened %s (1/%d files)%s", file.filename, #state.get_files(), nav_hint))
   end
 end
 
@@ -318,6 +323,10 @@ local function sync_pr(silent, force)
 
   local branch = pr.head.ref
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+    return
+  end
   local repo_url = string.format("https://%s@github.com/%s/%s.git", token, owner, repo)
 
   -- Check remote for updates first
@@ -560,6 +569,10 @@ function M.open_pr(url)
 
   -- Resolve token for this owner
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+    return
+  end
 
   notify_loading(string.format("Opening PR #%d from %s/%s...", number, owner, repo))
 
