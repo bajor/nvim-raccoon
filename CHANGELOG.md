@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5] - 2026-02-08
+
+### Added
+- Configurable keyboard shortcuts — all keymaps are now defined in `config.json` under the `shortcuts` field, with sensible defaults
+- `:Raccoon shortcuts` command and `<leader>?` keymap to display all active shortcuts in a floating help window (closes on any keystroke)
+- Default shortcut values written to config file on creation via `:Raccoon config`
+- `shortcuts` field documented in README with config key names for each binding
+
+### Changed
+- All hardcoded keymaps across the plugin now load dynamically from config
+- All shortcut hints in floating window titles (e.g., save/close/resolve labels) update to reflect user-configured bindings
+- `keymaps.lua` refactored from static table to dynamic `build_keymaps()` driven by config
+
 ## [0.4.1] - 2026-02-08
 
 ### Fixed

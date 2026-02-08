@@ -85,6 +85,7 @@ Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/c
 | `tokens` | object | `{}` | Per-org tokens, e.g. `{"my-org": "ghp_..."}`. Overrides `github_token` for matching owners |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `poll_interval_seconds` | number | `300` | How often (in seconds) to check for new commits |
+| `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
 | `commit_viewer.grid.rows` | number | `2` | Rows in the commit viewer diff grid |
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
@@ -106,6 +107,10 @@ You need either `github_token` (used for all repos) or `tokens` (per-org tokens)
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
+  },
+  "shortcuts": {
+    "pr_list": "<leader>pp",
+    "close": "<leader>x"
   }
 }
 ```
@@ -134,27 +139,32 @@ When you open a PR, raccoon clones the branch locally and displays each changed 
 | `:Raccoon squash` | Squash and merge |
 | `:Raccoon rebase` | Rebase and merge |
 | `:Raccoon commits` | Toggle commit viewer mode |
+| `:Raccoon shortcuts` | Show all keyboard shortcuts in a floating window |
 | `:Raccoon close` | Close the review session |
 | `:Raccoon config` | Open the config file (creates default if missing) |
 
 ## Keymaps
 
-These keymaps are active during a PR review session:
+All keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Run `:Raccoon shortcuts` (or press `<leader>?`) to see your active bindings.
 
-| Key | Action |
-|-----|--------|
-| `<leader>j` | Next diff/comment |
-| `<leader>k` | Previous diff/comment |
-| `<leader>nf` | Next file |
-| `<leader>pf` | Previous file |
-| `<leader>nt` | Next comment thread |
-| `<leader>pt` | Previous comment thread |
-| `<leader>c` | Comment at cursor position |
-| `<leader>dd` | Show PR description |
-| `<leader>ll` | List all comments |
-| `<leader>pr` | Open PR list picker |
-| `<leader>rr` | Merge PR (pick method) |
-| `<leader>cm` | Toggle commit viewer mode |
+| Key | Config key | Action |
+|-----|------------|--------|
+| `<leader>j` | `next_point` | Next diff/comment |
+| `<leader>k` | `prev_point` | Previous diff/comment |
+| `<leader>nf` | `next_file` | Next file |
+| `<leader>pf` | `prev_file` | Previous file |
+| `<leader>nt` | `next_thread` | Next comment thread |
+| `<leader>pt` | `prev_thread` | Previous comment thread |
+| `]f` | `next_file_alt` | Next file (bracket-style) |
+| `[f` | `prev_file_alt` | Previous file (bracket-style) |
+| `<leader>c` | `comment` | Comment at cursor position |
+| `<leader>dd` | `description` | Show PR description |
+| `<leader>ll` | `list_comments` | List all comments |
+| `<leader>pr` | `pr_list` | Open PR list picker |
+| `<leader>?` | `show_shortcuts` | Show shortcuts help |
+| `<leader>rr` | `merge` | Merge PR (pick method) |
+| `<leader>cm` | `commit_viewer` | Toggle commit viewer mode |
+| `<leader>q` | `close` | Close window / exit session |
 
 ## Commit Viewer Mode
 
@@ -164,15 +174,15 @@ Press `<leader>cm` during a PR review to enter commit viewer mode. A sidebar lis
 
 ### Commit viewer keymaps
 
-| Key | Action |
-|-----|--------|
-| `j` / `k` | Navigate commits in sidebar (auto-loads diffs) |
-| `<leader>j` | Next page of diff hunks |
-| `<leader>k` | Previous page of diff hunks |
-| `<leader>l` | Next page of diff hunks (alias) |
-| `<leader>m1`..`m9` | Maximize a grid cell (full file diff in floating window) |
-| `<leader>q` / `q` | Exit maximized view |
-| `<leader>cm` | Exit commit viewer mode |
+| Key | Config key | Action |
+|-----|------------|--------|
+| `j` / `k` | — | Navigate commits in sidebar (auto-loads diffs) |
+| `<leader>j` | `commit_next_page` | Next page of diff hunks |
+| `<leader>k` | `commit_prev_page` | Previous page of diff hunks |
+| `<leader>l` | `commit_next_page_alt` | Next page of diff hunks (alias) |
+| `<leader>m1`..`m9` | `commit_maximize_prefix` | Maximize a grid cell (full file diff) |
+| `<leader>q` / `q` | `close` | Exit maximized view |
+| `<leader>cm` | `commit_exit` | Exit commit viewer mode |
 
 Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number are shown in the winbar. A header bar displays the current commit message and page indicator. Navigation crosses seamlessly from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
 
