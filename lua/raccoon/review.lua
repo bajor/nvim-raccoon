@@ -127,10 +127,12 @@ function M.show_submit_ui()
   end, { buffer = buf, noremap = true, silent = true })
 
   local shortcuts = config.load_shortcuts()
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-    vim.api.nvim_win_close(win, true)
-    vim.notify("Review cancelled", vim.log.levels.INFO)
-  end, { buffer = buf, noremap = true, silent = true })
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+      vim.notify("Review cancelled", vim.log.levels.INFO)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 
   vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
@@ -212,10 +214,12 @@ function M.prompt_review_body(event)
 
   -- Cancel in normal mode
   local shortcuts = config.load_shortcuts()
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-    vim.api.nvim_win_close(win, true)
-    vim.notify("Review cancelled", vim.log.levels.INFO)
-  end, { buffer = buf, noremap = true, silent = true })
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+      vim.notify("Review cancelled", vim.log.levels.INFO)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 end
 
 --- Quick approve - approve without comments
@@ -307,9 +311,11 @@ function M.show_status()
   })
 
   local shortcuts = config.load_shortcuts()
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, noremap = true, silent = true })
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 
   vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)

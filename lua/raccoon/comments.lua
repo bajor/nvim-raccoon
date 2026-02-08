@@ -39,6 +39,30 @@ function M._build_comment_title(label, shortcuts)
   return string.format(" %s ", label)
 end
 
+--- Build a floating window title for comment threads, skipping disabled shortcuts
+---@param line number The line number
+---@param shortcuts table Shortcut bindings from config
+---@return string
+function M._build_thread_title(line, shortcuts)
+  local hints = {}
+  if config.is_enabled(shortcuts.comment_save) then
+    table.insert(hints, shortcuts.comment_save .. "=save")
+  end
+  if config.is_enabled(shortcuts.comment_resolve) then
+    table.insert(hints, shortcuts.comment_resolve .. "=resolve")
+  end
+  if config.is_enabled(shortcuts.comment_unresolve) then
+    table.insert(hints, shortcuts.comment_unresolve .. "=unresolve")
+  end
+  if config.is_enabled(shortcuts.close) then
+    table.insert(hints, shortcuts.close .. "=close")
+  end
+  if #hints > 0 then
+    return string.format(" Comments on L%d (%s) ", line, table.concat(hints, ", "))
+  end
+  return string.format(" Comments on L%d ", line)
+end
+
 --- Namespace for comment highlights and extmarks
 local ns_id = vim.api.nvim_create_namespace("raccoon_comments")
 
@@ -456,11 +480,7 @@ function M.show_comment_thread()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = string.format(
-      " Comments on L%d (%s=save, %s=resolve, %s=unresolve, %s=close) ",
-      current_line, shortcuts.comment_save, shortcuts.comment_resolve,
-      shortcuts.comment_unresolve, shortcuts.close
-    ),
+    title = M._build_thread_title(current_line, shortcuts),
     title_pos = "center",
   })
 

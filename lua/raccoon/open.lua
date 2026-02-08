@@ -154,7 +154,12 @@ local function open_first_file()
     if #file_comments > 0 then
       comments.show_comments(buf, file_comments)
     end
-    notify_success(string.format("Opened %s (1/%d files) - Use <leader>nf/<leader>pf to navigate", file.filename, #state.get_files()))
+    local shortcuts = config.load_shortcuts()
+    local nav_hint = ""
+    if config.is_enabled(shortcuts.next_file) and config.is_enabled(shortcuts.prev_file) then
+      nav_hint = " - Use " .. shortcuts.next_file .. "/" .. shortcuts.prev_file .. " to navigate"
+    end
+    notify_success(string.format("Opened %s (1/%d files)%s", file.filename, #state.get_files(), nav_hint))
   end
 end
 
