@@ -191,7 +191,7 @@ function M.open_file(file)
     return nil
   end
 
-  local file_path = clone_path .. "/" .. file.filename
+  local file_path = vim.fs.joinpath(clone_path, file.filename)
 
   -- Check if file exists (might be deleted)
   if vim.fn.filereadable(file_path) == 0 then

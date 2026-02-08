@@ -19,7 +19,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     local url = args[2]
     -- If no URL provided, read from temp file (written by macOS app to avoid long command line issues)
     if not url then
-      local url_file = vim.fn.stdpath("data") .. "/raccoon-url.txt"
+      local url_file = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon-url.txt")
       local f = io.open(url_file, "r")
       if f then
         url = f:read("*a"):gsub("%s+$", "")
@@ -119,7 +119,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     end
     -- Create default config if file doesn't exist
     if vim.fn.filereadable(config_path) == 0 then
-      local data_dir = vim.fn.stdpath("data")
+      local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
       local default_config = string.format([[{
   "github_token": "ghp_xxxxxxxxxxxxxxxxxxxx",
   "github_username": "your-username",
@@ -127,13 +127,13 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     "owner/repo1",
     "owner/repo2"
   ],
-  "clone_root": "%s/raccoon/repos",
+  "clone_root": "%s",
   "poll_interval_seconds": 300,
   "commit_viewer": {
     "grid": { "rows": 2, "cols": 2 },
     "base_commits_count": 20
   }
-}]], data_dir)
+}]], clone_root)
       local file = io.open(config_path, "w")
       if file then
         file:write(default_config)

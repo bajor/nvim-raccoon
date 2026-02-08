@@ -232,7 +232,7 @@ function M.is_git_repo(path)
   if not path or path == "" then
     return false
   end
-  local git_dir = path .. "/.git"
+  local git_dir = vim.fs.joinpath(path, ".git")
   return vim.fn.isdirectory(git_dir) == 1
 end
 
@@ -282,9 +282,8 @@ end
 ---@param pr_number number PR number
 ---@return string
 function M.build_pr_path(clone_root, owner, repo, pr_number)
-  -- Strip trailing slash from clone_root to prevent double slashes
-  local root = clone_root:gsub("/$", "")
-  return string.format("%s/%s/%s/pr-%d", root, owner, repo, pr_number)
+  local root = clone_root:gsub("[/\\]+$", "")
+  return vim.fs.joinpath(root, owner, repo, "pr-" .. pr_number)
 end
 
 --- Check how many commits the current branch is behind the base branch
