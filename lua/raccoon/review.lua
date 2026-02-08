@@ -120,7 +120,8 @@ function M.show_submit_ui()
     handle_selection(M.events.COMMENT)
   end, { buffer = buf, noremap = true, silent = true })
 
-  vim.keymap.set("n", "<leader>q", function()
+  local shortcuts = config.load_shortcuts()
+  vim.keymap.set("n", shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
     vim.notify("Review cancelled", vim.log.levels.INFO)
   end, { buffer = buf, noremap = true, silent = true })
@@ -203,8 +204,9 @@ function M.prompt_review_body(event)
     end)
   end, { buffer = buf, noremap = true, silent = true })
 
-  -- Cancel on <leader>q in normal mode
-  vim.keymap.set("n", "<leader>q", function()
+  -- Cancel in normal mode
+  local shortcuts = config.load_shortcuts()
+  vim.keymap.set("n", shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
     vim.notify("Review cancelled", vim.log.levels.INFO)
   end, { buffer = buf, noremap = true, silent = true })
@@ -298,7 +300,8 @@ function M.show_status()
     title_pos = "center",
   })
 
-  vim.keymap.set("n", "<leader>q", function()
+  local shortcuts = config.load_shortcuts()
+  vim.keymap.set("n", shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 
