@@ -6,7 +6,7 @@ local api = require("raccoon.api")
 local comments = require("raccoon.comments")
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
-local NORMAL_INSERT_MODE = config.NORMAL_INSERT
+local INSERT_MODE = config.INSERT
 local state = require("raccoon.state")
 
 --- Review event types
@@ -177,7 +177,7 @@ function M.prompt_review_body(event)
   vim.cmd("startinsert")
 
   -- Submit on Ctrl-S
-  vim.keymap.set(NORMAL_INSERT_MODE, "<C-s>", function()
+  vim.keymap.set({ NORMAL_MODE, INSERT_MODE }, "<C-s>", function()
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     -- Skip header lines
     local body_lines = {}

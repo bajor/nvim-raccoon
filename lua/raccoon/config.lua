@@ -11,7 +11,6 @@ local M = {}
 --- Vim mode constants for vim.keymap.set / vim.keymap.del
 M.NORMAL = "n"
 M.INSERT = "i"
-M.NORMAL_INSERT = { "n", "i" }
 
 --- Default configuration values
 M.defaults = {
