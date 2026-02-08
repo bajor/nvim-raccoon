@@ -419,7 +419,7 @@ describe("raccoon.config", function()
       local expected = {
         "pr_list", "show_shortcuts",
         "next_point", "prev_point", "next_file", "prev_file",
-        "next_thread", "prev_thread", "next_file_alt", "prev_file_alt",
+        "next_thread", "prev_thread",
         "comment", "description", "list_comments", "merge", "commit_viewer",
         "comment_save", "comment_resolve", "comment_unresolve",
         "close",
@@ -456,7 +456,6 @@ describe("raccoon.config", function()
   describe("is_enabled", function()
     it("returns true for normal shortcut strings", function()
       assert.is_true(config.is_enabled("<leader>j"))
-      assert.is_true(config.is_enabled("]f"))
       assert.is_true(config.is_enabled("<leader>pr"))
     end)
 

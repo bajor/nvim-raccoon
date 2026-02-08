@@ -307,43 +307,6 @@ function M.goto_file(index)
   return false
 end
 
---- Active diff keymaps (stored for cleanup)
-M._active_keymaps = {}
-
---- Setup keymaps for diff navigation
---- Called when a PR review session starts
-function M.setup_keymaps()
-  local config = require("raccoon.config")
-  local NORMAL_MODE = config.NORMAL
-  local shortcuts = config.load_shortcuts()
-  local opts = { noremap = true, silent = true }
-
-  M._active_keymaps = {}
-
-  if config.is_enabled(shortcuts.next_file_alt) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.next_file_alt, function()
-      M.next_file()
-    end, vim.tbl_extend("force", opts, { desc = "Next PR file" }))
-    table.insert(M._active_keymaps, shortcuts.next_file_alt)
-  end
-
-  if config.is_enabled(shortcuts.prev_file_alt) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.prev_file_alt, function()
-      M.prev_file()
-    end, vim.tbl_extend("force", opts, { desc = "Previous PR file" }))
-    table.insert(M._active_keymaps, shortcuts.prev_file_alt)
-  end
-end
-
---- Clear keymaps when session ends
-function M.clear_keymaps()
-  local N = require("raccoon.config").NORMAL
-  for _, lhs in ipairs(M._active_keymaps) do
-    pcall(vim.keymap.del, NORMAL_MODE, lhs)
-  end
-  M._active_keymaps = {}
-end
-
 --- Get the namespace ID for diff highlights
 ---@return number
 function M.get_namespace()

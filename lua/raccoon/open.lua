@@ -154,7 +154,7 @@ local function open_first_file()
     if #file_comments > 0 then
       comments.show_comments(buf, file_comments)
     end
-    notify_success(string.format("Opened %s (1/%d files) - Use ]f/[f to navigate", file.filename, #state.get_files()))
+    notify_success(string.format("Opened %s (1/%d files) - Use <leader>nf/<leader>pf to navigate", file.filename, #state.get_files()))
   end
 end
 

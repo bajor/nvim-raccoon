@@ -145,8 +145,6 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     "prev_file": "<leader>pf",
     "next_thread": "<leader>nt",
     "prev_thread": "<leader>pt",
-    "next_file_alt": "]f",
-    "prev_file_alt": "[f",
     "comment": "<leader>c",
     "description": "<leader>dd",
     "list_comments": "<leader>ll",

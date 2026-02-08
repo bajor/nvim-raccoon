@@ -47,14 +47,6 @@ describe("raccoon.diff", function()
       assert.is_function(diff.goto_file)
     end)
 
-    it("has setup_keymaps function", function()
-      assert.is_function(diff.setup_keymaps)
-    end)
-
-    it("has clear_keymaps function", function()
-      assert.is_function(diff.clear_keymaps)
-    end)
-
     it("has get_namespace function", function()
       assert.is_function(diff.get_namespace)
     end)
@@ -463,18 +455,6 @@ describe("raccoon.diff", function()
       assert.is_number(ns)
 
       vim.api.nvim_buf_delete(buf, { force = true })
-    end)
-  end)
-
-  describe("keymaps", function()
-    it("setup_keymaps does not error", function()
-      -- Should not error even without active session
-      diff.setup_keymaps()
-    end)
-
-    it("clear_keymaps does not error", function()
-      -- Should not error even if keymaps weren't set
-      diff.clear_keymaps()
     end)
   end)
 
