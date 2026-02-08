@@ -588,6 +588,7 @@ describe("raccoon.commits buffer-local keymaps", function()
     cs = commits._get_state()
     cs.sidebar_buf = create_scratch_buf()
     cs.header_buf = create_scratch_buf()
+    cs.filetree_buf = create_scratch_buf()
     cs.grid_bufs = {
       create_scratch_buf(),
       create_scratch_buf(),
@@ -596,7 +597,7 @@ describe("raccoon.commits buffer-local keymaps", function()
     }
     cs.grid_rows = 2
     cs.grid_cols = 2
-    bufs_to_clean = { cs.sidebar_buf, cs.header_buf }
+    bufs_to_clean = { cs.sidebar_buf, cs.header_buf, cs.filetree_buf }
     for _, buf in ipairs(cs.grid_bufs) do
       table.insert(bufs_to_clean, buf)
     end
@@ -609,6 +610,10 @@ describe("raccoon.commits buffer-local keymaps", function()
       end
     end
     bufs_to_clean = {}
+    cs.sidebar_buf = nil
+    cs.header_buf = nil
+    cs.filetree_buf = nil
+    cs.grid_bufs = {}
   end)
 
   describe("_setup_keymaps", function()
@@ -668,6 +673,16 @@ describe("raccoon.commits buffer-local keymaps", function()
       end
     end)
 
+    it("applies keymaps to filetree_buf", function()
+      commits._setup_keymaps()
+      assert.is_true(has_buf_keymap(cs.filetree_buf, "n", " cm"),
+        "expected <leader>cm on filetree_buf")
+      for _, key in ipairs({ " j", " k", " l" }) do
+        assert.is_true(has_buf_keymap(cs.filetree_buf, "n", key),
+          "expected " .. key .. " on filetree_buf")
+      end
+    end)
+
     it("handles invalid buffers gracefully", function()
       cs.sidebar_buf = 99999
       cs.header_buf = nil
@@ -722,5 +737,542 @@ describe("raccoon.commits input validation", function()
       assert.equals(1, commits._clamp_int(1, 2, 1, 10))
       assert.equals(10, commits._clamp_int(10, 2, 1, 10))
     end)
+  end)
+end)
+
+describe("raccoon.commits file tree panel", function()
+  before_each(function()
+    state.reset()
+  end)
+
+  it("exposes _render_filetree for testing", function()
+    assert.is_function(commits._render_filetree)
+  end)
+
+  it("has filetree_win and filetree_buf in state", function()
+    local cs = commits._get_state()
+    assert.is_nil(cs.filetree_win)
+    assert.is_nil(cs.filetree_buf)
+  end)
+
+  it("render_filetree handles nil buffer gracefully", function()
+    local cs = commits._get_state()
+    cs.filetree_buf = nil
+    -- Should not error
+    commits._render_filetree()
+  end)
+
+  it("render_filetree handles invalid buffer gracefully", function()
+    local cs = commits._get_state()
+    cs.filetree_buf = 99999
+    -- Should not error
+    commits._render_filetree()
+  end)
+
+  describe("_build_file_tree", function()
+    it("builds tree from flat paths", function()
+      local tree = commits._build_file_tree({ "a/b.lua", "a/c.lua", "d.lua" })
+      assert.equals(2, #tree.children) -- "a/" dir + "d.lua" file
+    end)
+
+    it("handles empty input", function()
+      local tree = commits._build_file_tree({})
+      assert.equals(0, #tree.children)
+    end)
+
+    it("nests deeply", function()
+      local tree = commits._build_file_tree({ "a/b/c/d.lua" })
+      assert.equals("a", tree.children[1].name)
+      assert.equals("b", tree.children[1].children[1].name)
+      assert.equals("c", tree.children[1].children[1].children[1].name)
+      assert.equals("d.lua", tree.children[1].children[1].children[1].children[1].name)
+    end)
+
+    it("handles a single root-level file", function()
+      local tree = commits._build_file_tree({ "README.md" })
+      assert.equals(1, #tree.children)
+      assert.equals("README.md", tree.children[1].name)
+      assert.equals("README.md", tree.children[1].path)
+      assert.is_nil(tree.children[1].children)
+    end)
+
+    it("groups multiple files in the same directory", function()
+      local tree = commits._build_file_tree({ "src/a.lua", "src/b.lua", "src/c.lua" })
+      assert.equals(1, #tree.children)
+      assert.equals("src", tree.children[1].name)
+      assert.is_table(tree.children[1].children)
+      assert.equals(3, #tree.children[1].children)
+    end)
+
+    it("handles sibling directories at the same level", function()
+      local tree = commits._build_file_tree({ "alpha/x.lua", "beta/y.lua", "gamma/z.lua" })
+      assert.equals(3, #tree.children)
+      for _, child in ipairs(tree.children) do
+        assert.is_table(child.children)
+      end
+    end)
+
+    it("mixes root files and subdirectory files", function()
+      local tree = commits._build_file_tree({ "init.lua", "lib/init.lua", "lib/utils.lua", "README.md" })
+      -- root children: "lib" dir + "init.lua" file + "README.md" file = 3
+      assert.equals(3, #tree.children)
+    end)
+
+    it("distinguishes similar-prefix directory names", function()
+      local tree = commits._build_file_tree({ "a/file.lua", "ab/file.lua" })
+      assert.equals(2, #tree.children)
+      assert.equals("a", tree.children[1].name)
+      assert.equals("ab", tree.children[2].name)
+    end)
+
+    it("files have path and no children, dirs have children and no path", function()
+      local tree = commits._build_file_tree({ "src/lib/utils.lua", "src/main.lua" })
+      local src = tree.children[1]
+      assert.is_table(src.children)
+      assert.is_nil(src.path)
+      for _, child in ipairs(src.children) do
+        if child.name == "main.lua" then
+          assert.equals("src/main.lua", child.path)
+          assert.is_nil(child.children)
+        elseif child.name == "lib" then
+          assert.is_table(child.children)
+          assert.is_nil(child.path)
+        end
+      end
+    end)
+  end)
+
+  describe("_render_tree_node", function()
+    it("renders with tree characters", function()
+      local tree = commits._build_file_tree({ "a/b.lua", "c.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.is_true(#lines > 0)
+      -- Should contain tree drawing characters
+      local joined = table.concat(lines, "\n")
+      assert.is_truthy(joined:match("[├└│]"))
+    end)
+
+    it("maps file lines to paths", function()
+      local tree = commits._build_file_tree({ "x.lua", "y.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      -- Both files should have path mappings
+      local mapped = 0
+      for _ in pairs(line_paths) do mapped = mapped + 1 end
+      assert.equals(2, mapped)
+    end)
+
+    it("does not map directory lines to paths", function()
+      local tree = commits._build_file_tree({ "dir/file.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      -- 2 lines: dir/ and file.lua, only file.lua has path
+      assert.equals(2, #lines)
+      assert.is_nil(line_paths[0]) -- dir line
+      assert.equals("dir/file.lua", line_paths[1]) -- file line
+    end)
+
+    it("renders directories before files", function()
+      local tree = commits._build_file_tree({ "src/a.lua", "z_file.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.is_truthy(lines[1]:match("src/"))
+      assert.is_truthy(lines[#lines]:match("z_file.lua"))
+    end)
+
+    it("uses correct connector for last vs non-last items", function()
+      local tree = commits._build_file_tree({ "a.lua", "b.lua", "c.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.equals(3, #lines)
+      assert.is_truthy(lines[1]:match("├── "))
+      assert.is_truthy(lines[2]:match("├── "))
+      assert.is_truthy(lines[3]:match("└── "))
+    end)
+
+    it("propagates prefix correctly for nested items", function()
+      local tree = commits._build_file_tree({ "a/nested.lua", "b/nested.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      -- a/ not last -> child gets "│   " prefix; b/ is last -> child gets "    " prefix
+      assert.equals(4, #lines)
+      assert.is_truthy(lines[2]:match("^│   └── nested.lua"))
+      assert.is_truthy(lines[4]:match("^    └── nested.lua"))
+    end)
+
+    it("indents deeply nested items correctly", function()
+      local tree = commits._build_file_tree({ "a/b/c/d.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.equals(4, #lines)
+      assert.equals("└── a/", lines[1])
+      assert.equals("    └── b/", lines[2])
+      assert.equals("        └── c/", lines[3])
+      assert.equals("            └── d.lua", lines[4])
+    end)
+
+    it("handles many siblings correctly", function()
+      local paths = {}
+      for i = 1, 20 do
+        table.insert(paths, string.format("file_%02d.lua", i))
+      end
+      local tree = commits._build_file_tree(paths)
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.equals(20, #lines)
+      local mapped = 0
+      for _ in pairs(line_paths) do mapped = mapped + 1 end
+      assert.equals(20, mapped)
+    end)
+
+    it("sorts directories alphabetically among themselves", function()
+      local tree = commits._build_file_tree({ "a_dir/b.lua", "m_file.lua", "z_dir/a.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      -- Dirs first sorted: a_dir, z_dir, then file: m_file.lua
+      assert.is_truthy(lines[1]:match("a_dir"))
+      assert.is_truthy(lines[3]:match("z_dir"))
+      assert.is_truthy(lines[#lines]:match("m_file.lua"))
+    end)
+  end)
+end)
+
+describe("raccoon.commits commit_files tracking", function()
+  local original_show_commit
+  local captured_callback
+
+  before_each(function()
+    state.reset()
+    original_show_commit = git.show_commit
+    git.show_commit = function(_, _, cb)
+      captured_callback = cb
+    end
+    local cs = commits._get_state()
+    cs.pr_commits = {
+      { sha = "aaaa", message = "commit with binary" },
+    }
+    cs.active = true
+    cs.grid_bufs = {}
+    cs.grid_wins = {}
+    cs.all_hunks = {}
+    cs.commit_files = {}
+    cs.select_generation = 0
+    state.session = state.session or {}
+    state.session.clone_path = "/tmp/fake"
+  end)
+
+  after_each(function()
+    git.show_commit = original_show_commit
+    state.reset()
+  end)
+
+  it("includes files with empty patches in commit_files", function()
+    local cs = commits._get_state()
+    commits._select_commit(1)
+
+    captured_callback({
+      { filename = "src/main.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" },
+      { filename = "image.png", patch = "" },
+      { filename = "renamed.lua", patch = "" },
+    }, nil)
+
+    assert.is_true(cs.commit_files["src/main.lua"] == true)
+    assert.is_true(cs.commit_files["image.png"] == true)
+    assert.is_true(cs.commit_files["renamed.lua"] == true)
+    -- Only main.lua contributes hunks
+    assert.is_true(#cs.all_hunks > 0)
+  end)
+
+  it("populates commit_files when all patches are empty", function()
+    local cs = commits._get_state()
+    commits._select_commit(1)
+
+    captured_callback({
+      { filename = "binary1.bin", patch = "" },
+      { filename = "binary2.bin", patch = "" },
+    }, nil)
+
+    assert.is_true(cs.commit_files["binary1.bin"] == true)
+    assert.is_true(cs.commit_files["binary2.bin"] == true)
+    assert.equals(0, #cs.all_hunks)
+  end)
+end)
+
+describe("raccoon.commits render_filetree three-tier highlighting", function()
+  local cs
+  local filetree_buf
+
+  --- Helper: read highlight groups applied to filetree buffer lines
+  local function get_filetree_highlights(buf)
+    local ns = vim.api.nvim_create_namespace("raccoon_filetree_hl")
+    local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+    local result = {}
+    for _, mark in ipairs(marks) do
+      result[mark[2]] = mark[4].hl_group
+    end
+    return result
+  end
+
+  before_each(function()
+    state.reset()
+    require("raccoon").setup()
+    cs = commits._get_state()
+    filetree_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[filetree_buf].buftype = "nofile"
+    cs.filetree_buf = filetree_buf
+    cs.grid_rows = 2
+    cs.grid_cols = 2
+    cs.current_page = 1
+  end)
+
+  after_each(function()
+    if filetree_buf and vim.api.nvim_buf_is_valid(filetree_buf) then
+      vim.api.nvim_buf_delete(filetree_buf, { force = true })
+    end
+    state.reset()
+  end)
+
+  it("applies RaccoonFileVisible to files on current page", function()
+    cs.cached_sha = "test1"
+    cs.cached_tree_lines = { "├── visible.lua", "├── in_commit.lua", "└── normal.lua" }
+    cs.cached_line_paths = { [0] = "visible.lua", [1] = "in_commit.lua", [2] = "normal.lua" }
+    cs.cached_file_count = 3
+
+    cs.all_hunks = { { filename = "visible.lua", hunk = {} } }
+    cs.commit_files = { ["visible.lua"] = true, ["in_commit.lua"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileVisible", hl[0])
+    assert.equals("RaccoonFileInCommit", hl[1])
+    assert.equals("RaccoonFileNormal", hl[2])
+  end)
+
+  it("applies RaccoonFileInCommit to commit files not on current page", function()
+    cs.grid_rows = 1
+    cs.grid_cols = 1
+
+    cs.cached_sha = "test2"
+    cs.cached_tree_lines = { "├── file1.lua", "├── file2.lua", "└── file3.lua" }
+    cs.cached_line_paths = { [0] = "file1.lua", [1] = "file2.lua", [2] = "file3.lua" }
+    cs.cached_file_count = 3
+
+    cs.all_hunks = {
+      { filename = "file1.lua", hunk = {} },
+      { filename = "file2.lua", hunk = {} },
+      { filename = "file3.lua", hunk = {} },
+    }
+    cs.commit_files = { ["file1.lua"] = true, ["file2.lua"] = true, ["file3.lua"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileVisible", hl[0])
+    assert.equals("RaccoonFileInCommit", hl[1])
+    assert.equals("RaccoonFileInCommit", hl[2])
+  end)
+
+  it("applies RaccoonFileNormal to directory lines", function()
+    cs.cached_sha = "test3"
+    cs.cached_tree_lines = { "└── src/", "    └── main.lua" }
+    cs.cached_line_paths = { [1] = "src/main.lua" }
+    cs.cached_file_count = 1
+
+    cs.all_hunks = { { filename = "src/main.lua", hunk = {} } }
+    cs.commit_files = { ["src/main.lua"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileNormal", hl[0])
+    assert.equals("RaccoonFileVisible", hl[1])
+  end)
+
+  it("highlights empty-patch files as RaccoonFileInCommit", function()
+    cs.cached_sha = "test4"
+    cs.cached_tree_lines = { "├── changed.lua", "├── binary.bin", "└── renamed.txt" }
+    cs.cached_line_paths = { [0] = "changed.lua", [1] = "binary.bin", [2] = "renamed.txt" }
+    cs.cached_file_count = 3
+
+    -- Only changed.lua has hunks; binary.bin and renamed.txt are empty-patch
+    cs.all_hunks = { { filename = "changed.lua", hunk = {} } }
+    cs.commit_files = { ["changed.lua"] = true, ["binary.bin"] = true, ["renamed.txt"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileVisible", hl[0])
+    assert.equals("RaccoonFileInCommit", hl[1])
+    assert.equals("RaccoonFileInCommit", hl[2])
+  end)
+end)
+
+describe("raccoon.commits render_filetree early return path", function()
+  local original_show_commit
+  local captured_callback
+  local cs
+  local filetree_buf
+  local grid_bufs
+
+  --- Helper: read highlight groups applied to filetree buffer lines
+  local function get_filetree_highlights(buf)
+    local ns = vim.api.nvim_create_namespace("raccoon_filetree_hl")
+    local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+    local result = {}
+    for _, mark in ipairs(marks) do
+      result[mark[2]] = mark[4].hl_group
+    end
+    return result
+  end
+
+  before_each(function()
+    state.reset()
+    require("raccoon").setup()
+    original_show_commit = git.show_commit
+    git.show_commit = function(_, _, cb)
+      captured_callback = cb
+    end
+
+    cs = commits._get_state()
+    cs.pr_commits = { { sha = "empty1", message = "binary-only commit" } }
+    cs.active = true
+    cs.select_generation = 0
+    cs.all_hunks = {}
+    cs.commit_files = {}
+    state.session = state.session or {}
+    state.session.clone_path = "/tmp/fake"
+
+    -- Create filetree buffer
+    filetree_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[filetree_buf].buftype = "nofile"
+    cs.filetree_buf = filetree_buf
+
+    -- Create grid buffers (needed by early return path)
+    grid_bufs = { vim.api.nvim_create_buf(false, true) }
+    vim.bo[grid_bufs[1]].buftype = "nofile"
+    cs.grid_bufs = grid_bufs
+    cs.grid_wins = {}
+    cs.grid_rows = 1
+    cs.grid_cols = 1
+    cs.current_page = 1
+  end)
+
+  after_each(function()
+    git.show_commit = original_show_commit
+    if filetree_buf and vim.api.nvim_buf_is_valid(filetree_buf) then
+      vim.api.nvim_buf_delete(filetree_buf, { force = true })
+    end
+    for _, buf in ipairs(grid_bufs or {}) do
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end
+    state.reset()
+  end)
+
+  it("calls render_filetree in early return path (zero hunks)", function()
+    -- Place sentinel in filetree buffer to detect overwrite
+    vim.bo[filetree_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(filetree_buf, 0, -1, false, { "SENTINEL" })
+    vim.bo[filetree_buf].modifiable = false
+
+    commits._select_commit(1)
+    captured_callback({
+      { filename = "image.png", patch = "" },
+      { filename = "mode_change.sh", patch = "" },
+    }, nil)
+
+    assert.equals(0, #cs.all_hunks)
+    assert.equals(true, cs.commit_files["image.png"])
+    assert.equals(true, cs.commit_files["mode_change.sh"])
+
+    -- Sentinel was overwritten — proves render_filetree() was called
+    local lines = vim.api.nvim_buf_get_lines(filetree_buf, 0, -1, false)
+    assert.is_not.equals("SENTINEL", lines[1])
+
+    -- Grid cell shows empty-commit message
+    local grid_lines = vim.api.nvim_buf_get_lines(grid_bufs[1], 0, -1, false)
+    assert.is_truthy(table.concat(grid_lines):match("No changes"))
+  end)
+
+  it("calls render_filetree via render_grid_page for mixed patches", function()
+    cs.pr_commits = { { sha = "mixed1", message = "mixed commit" } }
+
+    -- Place sentinel in filetree buffer to detect overwrite
+    vim.bo[filetree_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(filetree_buf, 0, -1, false, { "SENTINEL" })
+    vim.bo[filetree_buf].modifiable = false
+
+    commits._select_commit(1)
+    captured_callback({
+      { filename = "changed.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" },
+      { filename = "binary.bin", patch = "" },
+      { filename = "renamed.txt", patch = "" },
+    }, nil)
+
+    assert.is_true(#cs.all_hunks > 0)
+    assert.equals(true, cs.commit_files["changed.lua"])
+    assert.equals(true, cs.commit_files["binary.bin"])
+    assert.equals(true, cs.commit_files["renamed.txt"])
+
+    -- Sentinel was overwritten — proves render_filetree() was called
+    local lines = vim.api.nvim_buf_get_lines(filetree_buf, 0, -1, false)
+    assert.is_not.equals("SENTINEL", lines[1])
+  end)
+end)
+
+describe("raccoon file tree highlight groups", function()
+  it("defines RaccoonFileNormal highlight group", function()
+    require("raccoon").setup()
+    local hl = vim.api.nvim_get_hl(0, { name = "RaccoonFileNormal" })
+    assert.is_not_nil(hl.fg)
+  end)
+
+  it("defines RaccoonFileInCommit highlight group", function()
+    require("raccoon").setup()
+    local hl = vim.api.nvim_get_hl(0, { name = "RaccoonFileInCommit" })
+    assert.is_not_nil(hl.fg)
+  end)
+
+  it("defines RaccoonFileVisible highlight group", function()
+    require("raccoon").setup()
+    local hl = vim.api.nvim_get_hl(0, { name = "RaccoonFileVisible" })
+    assert.is_not_nil(hl.fg)
+  end)
+end)
+
+describe("raccoon.commits close_filetree", function()
+  it("is exposed for testing", function()
+    assert.is_function(commits._close_filetree)
+  end)
+
+  it("clears filetree_win and filetree_buf to nil", function()
+    local cs = commits._get_state()
+    cs.filetree_win = 99999
+    cs.filetree_buf = 99998
+    commits._close_filetree()
+    assert.is_nil(cs.filetree_win)
+    assert.is_nil(cs.filetree_buf)
+  end)
+
+  it("handles nil filetree state gracefully", function()
+    local cs = commits._get_state()
+    cs.filetree_win = nil
+    cs.filetree_buf = nil
+    -- Should not error
+    commits._close_filetree()
+    assert.is_nil(cs.filetree_win)
+    assert.is_nil(cs.filetree_buf)
   end)
 end)

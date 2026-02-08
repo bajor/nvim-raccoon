@@ -24,6 +24,7 @@ local commit_state = {
   grid_wins = {},
   grid_bufs = {},
   all_hunks = {},
+  commit_files = {},
   current_page = 1,
   saved_buf = nil,
   saved_laststatus = nil,
@@ -34,13 +35,22 @@ local commit_state = {
   focus_augroup = nil,
   header_win = nil,
   header_buf = nil,
+  filetree_win = nil,
+  filetree_buf = nil,
   select_generation = 0,
+  cached_sha = nil,
+  cached_tree_lines = nil,
+  cached_line_paths = nil,
+  cached_file_count = nil,
 }
 
 --- Commit mode keymaps (global)
 local commit_mode_keymaps = {}
 
 local SIDEBAR_WIDTH = 40
+
+-- Forward declaration (defined after create_grid_layout)
+local render_filetree
 
 --- Clamp a config value to an integer within [min_val, max_val], or return default
 ---@param val any
@@ -68,6 +78,7 @@ local function reset_state()
     grid_wins = {},
     grid_bufs = {},
     all_hunks = {},
+    commit_files = {},
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
@@ -78,7 +89,13 @@ local function reset_state()
     focus_augroup = nil,
     header_win = nil,
     header_buf = nil,
+    filetree_win = nil,
+    filetree_buf = nil,
     select_generation = 0,
+    cached_sha = nil,
+    cached_tree_lines = nil,
+    cached_line_paths = nil,
+    cached_file_count = nil,
   }
 end
 
@@ -300,6 +317,7 @@ local function render_grid_page()
   end
 
   update_header()
+  render_filetree()
 end
 
 --- Go to next page of hunks
@@ -456,8 +474,15 @@ local function select_commit(index)
       return
     end
 
+    -- Track all files in commit (includes binary/mode-only/rename-only)
+    commit_state.commit_files = {}
+    for _, file in ipairs(files or {}) do
+      commit_state.commit_files[file.filename] = true
+    end
+
     -- Parse all files into flat hunk list
     commit_state.all_hunks = {}
+    commit_state.cached_sha = nil
     for _, file in ipairs(files or {}) do
       local hunks = diff.parse_patch(file.patch)
       for _, hunk in ipairs(hunks) do
@@ -479,6 +504,7 @@ local function select_commit(index)
         end
       end
       update_header()
+      render_filetree()
       return
     end
 
@@ -597,7 +623,165 @@ local function close_sidebar()
   commit_state.sidebar_buf = nil
 end
 
---- Create the grid layout (grid cells + sidebar)
+--- Close the file tree panel
+local function close_filetree()
+  if commit_state.filetree_win and vim.api.nvim_win_is_valid(commit_state.filetree_win) then
+    pcall(vim.api.nvim_win_close, commit_state.filetree_win, true)
+  end
+  commit_state.filetree_win = nil
+  commit_state.filetree_buf = nil
+end
+
+--- Build a nested tree structure from a sorted list of file paths.
+---@param paths string[] Sorted file paths
+---@return table root Tree root with .children array
+local function build_file_tree(paths)
+  local root = { children = {} }
+  for _, path in ipairs(paths) do
+    local parts = vim.split(path, "/", { plain = true })
+    local node = root
+    for i, part in ipairs(parts) do
+      if i == #parts then
+        table.insert(node.children, { name = part, path = path })
+      else
+        local found
+        for _, child in ipairs(node.children) do
+          if child.children and child.name == part then
+            found = child
+            break
+          end
+        end
+        if not found then
+          found = { name = part, children = {} }
+          table.insert(node.children, found)
+        end
+        node = found
+      end
+    end
+  end
+  return root
+end
+
+--- Render a tree node into lines with tree-drawing characters.
+--- Populates line_paths: maps 0-based line index to file path (for highlights).
+---@param node table Tree node with .children
+---@param prefix string Indentation prefix for current depth
+---@param lines string[] Output lines array (mutated)
+---@param line_paths table<number, string> Output map: line index -> file path (mutated)
+local function render_tree_node(node, prefix, lines, line_paths)
+  local dirs = {}
+  local files = {}
+  for _, child in ipairs(node.children) do
+    if child.children then
+      table.insert(dirs, child)
+    else
+      table.insert(files, child)
+    end
+  end
+  table.sort(dirs, function(a, b) return a.name < b.name end)
+  table.sort(files, function(a, b) return a.name < b.name end)
+
+  local sorted = {}
+  for _, d in ipairs(dirs) do table.insert(sorted, d) end
+  for _, f in ipairs(files) do table.insert(sorted, f) end
+
+  for i, child in ipairs(sorted) do
+    local is_last = (i == #sorted)
+    local connector = is_last and "└── " or "├── "
+    local display = child.children and (child.name .. "/") or child.name
+    table.insert(lines, prefix .. connector .. display)
+    if child.path then
+      line_paths[#lines - 1] = child.path
+    end
+    if child.children then
+      local next_prefix = prefix .. (is_last and "    " or "│   ")
+      render_tree_node(child, next_prefix, lines, line_paths)
+    end
+  end
+end
+
+--- Build and cache the file tree structure for the selected commit.
+--- Only runs git ls-tree when the commit SHA changes.
+local function build_filetree_cache()
+  local clone_path = state.get_clone_path()
+  if not clone_path then return end
+  local commit = get_commit(commit_state.selected_index)
+  local sha = commit and commit.sha or "HEAD"
+
+  if commit_state.cached_sha == sha then return end
+
+  local raw = vim.fn.systemlist(
+    "git -C " .. vim.fn.shellescape(clone_path) .. " ls-tree -r --name-only " .. sha
+  )
+  if vim.v.shell_error ~= 0 then raw = {} end
+  table.sort(raw)
+
+  local tree = build_file_tree(raw)
+  local lines = {}
+  local line_paths = {}
+  render_tree_node(tree, "", lines, line_paths)
+  if #lines == 0 then
+    lines = { "  No files" }
+  end
+
+  commit_state.cached_sha = sha
+  commit_state.cached_tree_lines = lines
+  commit_state.cached_line_paths = line_paths
+  commit_state.cached_file_count = #raw
+end
+
+--- Render the file tree panel with three-tier highlighting.
+--- Uses cached tree structure; only recomputes visible-file highlights per page.
+render_filetree = function()
+  local buf = commit_state.filetree_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  build_filetree_cache()
+
+  local lines = commit_state.cached_tree_lines
+  local line_paths = commit_state.cached_line_paths
+  local commit_files = commit_state.commit_files
+  if not lines then return end
+
+  -- Build lookup: files visible on current grid page
+  local visible_files = {}
+  local cells = commit_state.grid_rows * commit_state.grid_cols
+  local start_idx = (commit_state.current_page - 1) * cells + 1
+  for i = start_idx, math.min(start_idx + cells - 1, #commit_state.all_hunks) do
+    local hunk_data = commit_state.all_hunks[i]
+    if hunk_data then
+      visible_files[hunk_data.filename] = true
+    end
+  end
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  -- Apply three-tier highlights
+  local hl_ns = vim.api.nvim_create_namespace("raccoon_filetree_hl")
+  vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
+  for line_idx = 0, #lines - 1 do
+    local path = line_paths[line_idx]
+    local hl_group
+    if path and visible_files[path] then
+      hl_group = "RaccoonFileVisible"
+    elseif path and commit_files[path] then
+      hl_group = "RaccoonFileInCommit"
+    else
+      hl_group = "RaccoonFileNormal"
+    end
+    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl_group, line_idx, 0, -1)
+  end
+
+  -- Update winbar with file count
+  local win = commit_state.filetree_win
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].winbar = " Files (" .. (commit_state.cached_file_count or 0) .. ")"
+  end
+end
+
+--- Create the grid layout (grid cells + sidebar + file tree)
 ---@param rows number Grid rows
 ---@param cols number Grid columns
 local function create_grid_layout(rows, cols)
@@ -607,7 +791,23 @@ local function create_grid_layout(rows, cols)
   -- Start with single window
   vim.cmd("only")
 
-  -- Create sidebar on the right
+  -- Create file tree panel on the LEFT
+  vim.cmd("vsplit")
+  vim.cmd("wincmd H")
+  commit_state.filetree_win = vim.api.nvim_get_current_win()
+  commit_state.filetree_buf = create_scratch_buf()
+  vim.api.nvim_win_set_buf(commit_state.filetree_win, commit_state.filetree_buf)
+  vim.api.nvim_win_set_width(commit_state.filetree_win, SIDEBAR_WIDTH)
+  vim.wo[commit_state.filetree_win].wrap = false
+  vim.wo[commit_state.filetree_win].number = false
+  vim.wo[commit_state.filetree_win].relativenumber = false
+  vim.wo[commit_state.filetree_win].signcolumn = "no"
+  lock_buf(commit_state.filetree_buf)
+
+  -- Go to main area (right of file tree)
+  vim.cmd("wincmd l")
+
+  -- Create commit sidebar on the RIGHT
   vim.cmd("vsplit")
   vim.cmd("wincmd L")
   commit_state.sidebar_win = vim.api.nvim_get_current_win()
@@ -620,7 +820,7 @@ local function create_grid_layout(rows, cols)
   vim.wo[commit_state.sidebar_win].relativenumber = false
   vim.wo[commit_state.sidebar_win].signcolumn = "no"
 
-  -- Go to main area (left of sidebar)
+  -- Go to main area (between both panels)
   vim.cmd("wincmd h")
   local main_win = vim.api.nvim_get_current_win()
 
@@ -673,9 +873,12 @@ local function create_grid_layout(rows, cols)
     end
   end
 
-  -- Blend sidebar winbar background
+  -- Blend sidebar and filetree winbar backgrounds
   if vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
     vim.wo[commit_state.sidebar_win].winhl = "WinBar:Normal,WinBarNC:Normal"
+  end
+  if vim.api.nvim_win_is_valid(commit_state.filetree_win) then
+    vim.wo[commit_state.filetree_win].winhl = "WinBar:Normal,WinBarNC:Normal"
   end
 
   -- Create header window at the top (full width)
@@ -696,6 +899,9 @@ local function create_grid_layout(rows, cols)
   vim.cmd("wincmd =")
   if vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
     vim.api.nvim_win_set_width(commit_state.sidebar_win, SIDEBAR_WIDTH)
+  end
+  if vim.api.nvim_win_is_valid(commit_state.filetree_win) then
+    vim.api.nvim_win_set_width(commit_state.filetree_win, SIDEBAR_WIDTH)
   end
   vim.api.nvim_win_set_height(commit_state.header_win, 1)
   local total_height = vim.o.lines - vim.o.cmdheight - 2
@@ -785,6 +991,9 @@ local function setup_keymaps()
   end
   if commit_state.header_buf and vim.api.nvim_buf_is_valid(commit_state.header_buf) then
     table.insert(commit_bufs, commit_state.header_buf)
+  end
+  if commit_state.filetree_buf and vim.api.nvim_buf_is_valid(commit_state.filetree_buf) then
+    table.insert(commit_bufs, commit_state.filetree_buf)
   end
 
   -- Apply keymaps buffer-locally (no global side effects)
@@ -961,6 +1170,7 @@ local function exit_commit_mode()
   clear_keymaps()
   close_grid()
   close_sidebar()
+  close_filetree()
 
   state.set_commit_mode(false)
 
@@ -999,5 +1209,9 @@ M._clamp_int = clamp_int
 M._get_state = function() return commit_state end
 M._select_commit = select_commit
 M._setup_keymaps = setup_keymaps
+M._render_filetree = render_filetree
+M._build_file_tree = build_file_tree
+M._render_tree_node = render_tree_node
+M._close_filetree = close_filetree
 
 return M

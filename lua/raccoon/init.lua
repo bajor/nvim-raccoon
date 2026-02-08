@@ -34,6 +34,22 @@ local function setup_highlights()
     fg = "#e06c75", -- Red
     default = true,
   })
+
+  -- File tree highlights (commit viewer)
+  vim.api.nvim_set_hl(0, "RaccoonFileNormal", {
+    fg = "#444444",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "RaccoonFileInCommit", {
+    fg = "#aaaaaa",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "RaccoonFileVisible", {
+    fg = "#ffffff",
+    default = true,
+  })
 end
 
 --- Setup the PR Review plugin

@@ -218,7 +218,7 @@ All keymaps are configurable via the `shortcuts` field in `config.json`. The val
 
 Inspired by chess game review, where you step through moves to understand the sequence that led to the final position. Instead of seeing the PR as a flat diff, commit viewer lets you replay the author's thought process one commit at a time — understanding *how* the code got to where it is, not just *what* changed.
 
-Press `<leader>cm` during a PR review to enter commit viewer mode. A sidebar lists all commits from the PR branch and recent base branch commits. The main area displays a configurable grid of diff hunks.
+Press `<leader>cm` during a PR review to enter commit viewer mode. A file tree on the left shows all PR files with three-level highlighting: files in the current commit are brighter, and files currently visible in the grid are highlighted the strongest. The main area displays a configurable grid of diff hunks. A sidebar on the right lists all commits from the PR branch and recent base branch commits.
 
 ### Commit viewer keymaps
 
