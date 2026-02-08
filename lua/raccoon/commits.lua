@@ -688,10 +688,14 @@ render_filetree = function()
   local buf = commit_state.filetree_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
-  -- Get all repo files via git ls-files (fast, reads index only)
+  -- Get all repo files at the selected commit's tree
   local clone_path = state.get_clone_path()
   if not clone_path then return end
-  local raw = vim.fn.systemlist("git -C " .. vim.fn.shellescape(clone_path) .. " ls-files")
+  local commit = get_commit(commit_state.selected_index)
+  local sha = commit and commit.sha or "HEAD"
+  local raw = vim.fn.systemlist(
+    "git -C " .. vim.fn.shellescape(clone_path) .. " ls-tree -r --name-only " .. sha
+  )
   if vim.v.shell_error ~= 0 then raw = {} end
   table.sort(raw)
 
