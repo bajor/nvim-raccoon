@@ -145,7 +145,8 @@ local function render_pr_list(prs, buf_width, shortcuts)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    table.insert(lines, string.format("  Press 'r' to refresh, '%s' to close", shortcuts.close))
+    local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
+    table.insert(lines, string.format("  Press 'r' to refresh, '%s' to close", close_key))
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -201,7 +202,8 @@ local function render_pr_list(prs, buf_width, shortcuts)
 
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
-  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", shortcuts.close))
+  local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
+  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", close_key))
 
   return lines, highlights
 end
@@ -338,7 +340,9 @@ function M.show_pr_list()
   end, opts)
 
   -- Close keymaps
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function() M.close_pr_list() end, opts)
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function() M.close_pr_list() end, opts)
+  end
   vim.keymap.set(NORMAL_MODE, "<Esc>", function() M.close_pr_list() end, opts)
 
   -- Refresh on r
@@ -557,10 +561,12 @@ function M.show_description()
   -- Close keymaps (also clear state)
   local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-    vim.api.nvim_win_close(win, true)
-    M.state.description_win = nil
-  end, opts)
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+      M.state.description_win = nil
+    end, opts)
+  end
   vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
@@ -577,8 +583,6 @@ local shortcut_descriptions = {
   prev_file = "Previous file",
   next_thread = "Next comment thread",
   prev_thread = "Previous comment thread",
-  next_file_alt = "Next file (alt)",
-  prev_file_alt = "Previous file (alt)",
   comment = "Comment at cursor",
   description = "Show PR description",
   list_comments = "List all PR comments",
@@ -602,7 +606,7 @@ local commit_mode_descriptions = {
 --- Display groups for the shortcuts help window
 local shortcut_groups = {
   { title = "Global", keys = { "pr_list", "show_shortcuts" } },
-  { title = "Review Navigation", keys = { "next_point", "prev_point", "next_file", "prev_file", "next_file_alt", "prev_file_alt", "next_thread", "prev_thread" } },
+  { title = "Review Navigation", keys = { "next_point", "prev_point", "next_file", "prev_file", "next_thread", "prev_thread" } },
   { title = "Review Actions", keys = { "comment", "description", "list_comments", "merge", "commit_viewer" } },
   { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
   { title = "Commit Viewer", nested = "commit_mode", keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" } },
@@ -626,9 +630,14 @@ function M.show_shortcuts()
     local source = group.nested and shortcuts[group.nested] or shortcuts
     local descs = group.nested and commit_mode_descriptions or shortcut_descriptions
     for _, key in ipairs(group.keys) do
-      local binding = source and source[key] or "?"
+      local binding = source and source[key]
       local desc = descs[key] or key
-      table.insert(lines, string.format("  %-22s %s", binding, desc))
+      if config.is_enabled(binding) then
+        table.insert(lines, string.format("  %-22s %s", binding, desc))
+      else
+        table.insert(lines, string.format("  %-22s %s", "(disabled)", desc))
+        table.insert(highlights, { line = #lines - 1, hl = "Comment" })
+      end
     end
 
     table.insert(lines, "")
