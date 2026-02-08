@@ -168,7 +168,13 @@ Disabled shortcuts show as `(disabled)` in `:Raccoon shortcuts`.
 4. Run `:Raccoon prs` to browse open PRs
 5. Press `Enter` on a PR to start reviewing
 
-When you open a PR, raccoon clones the branch locally and displays each changed file with diff highlighting. You can navigate between files and diff hunks, leave comments, and merge — all from inside Neovim.
+## How it works
+
+When you open a PR, raccoon shallow-clones the PR branch into a local directory and opens the changed files with inline diff highlighting. Each PR gets its own clone at `{clone_root}/{owner}/{repo}/pr-{number}` (default root: `~/.local/share/nvim/raccoon/repos`). You can change the root with the `clone_root` config field.
+
+The per-PR directory means previous clones stay on disk — reopening a PR is fast because it fetches updates instead of cloning from scratch. Neovim's working directory changes to the clone path during a review session, so LSP, treesitter, and other tools work on the actual source code.
+
+One review session is active at a time. Opening a second PR closes the first.
 
 ## Commands
 
