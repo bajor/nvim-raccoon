@@ -457,25 +457,34 @@ function M.merge_picker()
   end)
 end
 
---- All PR review keymaps (simplified)
-M.keymaps = {
-  { mode = "n", lhs = "<leader>j", rhs = function() M.next_point() end, desc = "Next diff/comment" },
-  { mode = "n", lhs = "<leader>k", rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
-  { mode = "n", lhs = "<leader>nf", rhs = function() diff.next_file() end, desc = "Next file" },
-  { mode = "n", lhs = "<leader>pf", rhs = function() diff.prev_file() end, desc = "Previous file" },
-  { mode = "n", lhs = "<leader>nt", rhs = function() M.next_thread() end, desc = "Next comment thread" },
-  { mode = "n", lhs = "<leader>pt", rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
-  { mode = "n", lhs = "<leader>c", rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
-  { mode = "n", lhs = "<leader>dd", rhs = function() M.show_description() end, desc = "Show PR description" },
-  { mode = "n", lhs = "<leader>ll", rhs = function() M.list_comments() end, desc = "List all PR comments" },
-  { mode = "n", lhs = "<leader>rr", rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
-  { mode = "n", lhs = "<leader>cm", rhs = function()
-    require("raccoon.commits").toggle()
-  end, desc = "Toggle commit viewer" },
-}
+--- Build PR review keymaps from config shortcuts
+---@param shortcuts table Shortcut bindings from config
+---@return table[] keymaps
+function M.build_keymaps(shortcuts)
+  return {
+    { mode = "n", lhs = shortcuts.next_point, rhs = function() M.next_point() end, desc = "Next diff/comment" },
+    { mode = "n", lhs = shortcuts.prev_point, rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
+    { mode = "n", lhs = shortcuts.next_file, rhs = function() diff.next_file() end, desc = "Next file" },
+    { mode = "n", lhs = shortcuts.prev_file, rhs = function() diff.prev_file() end, desc = "Previous file" },
+    { mode = "n", lhs = shortcuts.next_thread, rhs = function() M.next_thread() end, desc = "Next comment thread" },
+    { mode = "n", lhs = shortcuts.prev_thread, rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
+    { mode = "n", lhs = shortcuts.comment, rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
+    { mode = "n", lhs = shortcuts.description, rhs = function() M.show_description() end, desc = "Show PR description" },
+    { mode = "n", lhs = shortcuts.list_comments, rhs = function() M.list_comments() end, desc = "List all PR comments" },
+    { mode = "n", lhs = shortcuts.merge, rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
+    { mode = "n", lhs = shortcuts.commit_viewer, rhs = function()
+      require("raccoon.commits").toggle()
+    end, desc = "Toggle commit viewer" },
+  }
+end
+
+--- Current active keymaps (built from config at setup time)
+M.keymaps = {}
 
 --- Setup all keymaps for PR review mode
 function M.setup()
+  local shortcuts = config.load_shortcuts()
+  M.keymaps = M.build_keymaps(shortcuts)
   for _, km in ipairs(M.keymaps) do
     local opts = vim.tbl_extend("force", default_opts, { desc = km.desc })
     vim.keymap.set(km.mode, km.lhs, km.rhs, opts)

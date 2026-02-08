@@ -53,10 +53,17 @@ function M.setup(opts)
     callback = setup_highlights,
   })
 
-  -- Global PR list picker keymap (always available)
-  vim.keymap.set("n", "<leader>pr", function()
+  -- Load shortcuts from config (falls back to defaults gracefully)
+  local shortcuts = require("raccoon.config").load_shortcuts()
+
+  -- Global keymaps (always available)
+  vim.keymap.set("n", shortcuts.pr_list, function()
     require("raccoon.ui").show_pr_list()
   end, { noremap = true, silent = true, desc = "Raccoon: PR list" })
+
+  vim.keymap.set("n", shortcuts.show_shortcuts, function()
+    require("raccoon.ui").show_shortcuts()
+  end, { noremap = true, silent = true, desc = "Raccoon: Show shortcuts" })
 end
 
 --- Get sync status for lualine/statusline integration
