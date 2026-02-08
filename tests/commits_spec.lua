@@ -610,6 +610,10 @@ describe("raccoon.commits buffer-local keymaps", function()
       end
     end
     bufs_to_clean = {}
+    cs.sidebar_buf = nil
+    cs.header_buf = nil
+    cs.filetree_buf = nil
+    cs.grid_bufs = {}
   end)
 
   describe("_setup_keymaps", function()
@@ -682,7 +686,6 @@ describe("raccoon.commits buffer-local keymaps", function()
     it("handles invalid buffers gracefully", function()
       cs.sidebar_buf = 99999
       cs.header_buf = nil
-      cs.filetree_buf = 99998
       cs.grid_bufs = { 99998 }
       -- Should not error
       commits._setup_keymaps()
