@@ -109,14 +109,30 @@ You need either `github_token` (used for all repos) or `tokens` (per-org tokens)
     "base_commits_count": 30
   },
   "shortcuts": {
-    "next_file_alt": "]n",
-    "prev_file_alt": "[n",
     "commit_mode": {
       "exit": "<leader>ce"
     }
   }
 }
 ```
+
+### Disabling shortcuts
+
+Set any shortcut to `false` to prevent it from being registered as a keymap. The feature remains available via `:Raccoon` commands. Every floating window always responds to `Esc`, so disabling `close` won't lock you out.
+
+```json
+{
+  "shortcuts": {
+    "show_shortcuts": false,
+    "merge": false,
+    "commit_mode": {
+      "maximize_prefix": false
+    }
+  }
+}
+```
+
+Disabled shortcuts show as `(disabled)` in `:Raccoon shortcuts`.
 
 ## Getting Started
 
@@ -148,7 +164,7 @@ When you open a PR, raccoon clones the branch locally and displays each changed 
 
 ## Keymaps
 
-All keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Run `:Raccoon shortcuts` to see your active bindings.
+All keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Set any shortcut to `false` to disable it entirely — the keymap won't be registered, but the underlying `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
 
 | Key | Config key | Action |
 |-----|------------|--------|
@@ -158,8 +174,6 @@ All keymaps are configurable via the `shortcuts` field in `config.json`. The val
 | `<leader>pf` | `prev_file` | Previous file |
 | `<leader>nt` | `next_thread` | Next comment thread |
 | `<leader>pt` | `prev_thread` | Previous comment thread |
-| `]f` | `next_file_alt` | Next file (bracket-style) |
-| `[f` | `prev_file_alt` | Previous file (bracket-style) |
 | `<leader>c` | `comment` | Comment at cursor position |
 | `<leader>dd` | `description` | Show PR description |
 | `<leader>ll` | `list_comments` | List all comments |
