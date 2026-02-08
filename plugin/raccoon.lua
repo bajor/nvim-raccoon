@@ -106,6 +106,9 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
         pr_open.close_pr()
       end)
     end)
+  elseif subcommand == "shortcuts" then
+    local ui = require("raccoon.ui")
+    ui.show_shortcuts()
   elseif subcommand == "commits" then
     local commits_mod = require("raccoon.commits")
     commits_mod.toggle()
@@ -176,7 +179,7 @@ end, {
     local args = vim.split(cmdline, "%s+")
     if #args == 2 then
       -- Complete subcommands
-      return { "prs", "list", "description", "sync", "merge", "squash", "rebase", "commits", "close", "config" }
+      return { "prs", "list", "description", "sync", "merge", "squash", "rebase", "commits", "shortcuts", "close", "config" }
     end
     return {}
   end,

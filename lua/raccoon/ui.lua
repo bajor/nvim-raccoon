@@ -566,4 +566,117 @@ function M.show_description()
   end, opts)
 end
 
+--- Shortcut descriptions keyed by config shortcut name
+local shortcut_descriptions = {
+  pr_list = "Open PR list",
+  show_shortcuts = "Show this help",
+  next_point = "Next diff/comment",
+  prev_point = "Previous diff/comment",
+  next_file = "Next file",
+  prev_file = "Previous file",
+  next_thread = "Next comment thread",
+  prev_thread = "Previous comment thread",
+  next_file_alt = "Next file (alt)",
+  prev_file_alt = "Previous file (alt)",
+  comment = "Comment at cursor",
+  description = "Show PR description",
+  list_comments = "List all PR comments",
+  merge = "Merge PR (pick method)",
+  commit_viewer = "Toggle commit viewer",
+  comment_save = "Save comment",
+  comment_resolve = "Resolve thread",
+  comment_unresolve = "Unresolve thread",
+  commit_next_page = "Next page of hunks",
+  commit_prev_page = "Previous page of hunks",
+  commit_next_page_alt = "Next page (alt)",
+  commit_exit = "Exit commit viewer",
+  commit_maximize_prefix = "Maximize cell (+ number)",
+  close = "Close/dismiss",
+}
+
+--- Display groups for the shortcuts help window
+local shortcut_groups = {
+  { title = "Global", keys = { "pr_list", "show_shortcuts" } },
+  { title = "Review Navigation", keys = { "next_point", "prev_point", "next_file", "prev_file", "next_file_alt", "prev_file_alt", "next_thread", "prev_thread" } },
+  { title = "Review Actions", keys = { "comment", "description", "list_comments", "merge", "commit_viewer" } },
+  { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
+  { title = "Commit Viewer", keys = { "commit_next_page", "commit_prev_page", "commit_next_page_alt", "commit_exit", "commit_maximize_prefix" } },
+  { title = "Common", keys = { "close" } },
+}
+
+--- Show a floating window with all configured shortcuts
+--- Closes on any keystroke
+function M.show_shortcuts()
+  local shortcuts = config.load_shortcuts()
+
+  -- Build display lines
+  local lines = {}
+  local highlights = {}
+
+  for _, group in ipairs(shortcut_groups) do
+    local header = "── " .. group.title .. " ──"
+    table.insert(lines, header)
+    table.insert(highlights, { line = #lines - 1, hl = "Title" })
+
+    for _, key in ipairs(group.keys) do
+      local binding = shortcuts[key] or "?"
+      local desc = shortcut_descriptions[key] or key
+      table.insert(lines, string.format("  %-22s %s", binding, desc))
+    end
+
+    table.insert(lines, "")
+  end
+
+  -- Remove trailing empty line
+  if lines[#lines] == "" then
+    table.remove(lines)
+  end
+
+  -- Calculate window size
+  local max_line_width = 0
+  for _, line in ipairs(lines) do
+    max_line_width = math.max(max_line_width, #line)
+  end
+  local width = math.min(max_line_width + 4, vim.o.columns - 4)
+  local height = math.min(#lines + 1, vim.o.lines - 4)
+
+  -- Create floating window
+  local win, buf = M.create_floating_window({
+    width = width,
+    height = height,
+    title = "Raccoon Shortcuts",
+    border = "rounded",
+  })
+
+  -- Set content
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.wo[win].cursorline = false
+
+  -- Apply highlights
+  local ns = vim.api.nvim_create_namespace("raccoon_shortcuts_hl")
+  for _, hl in ipairs(highlights) do
+    pcall(vim.api.nvim_buf_add_highlight, buf, ns, hl.hl, hl.line, 0, -1)
+  end
+
+  -- Close on any keystroke
+  local function close_win()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+
+  local key_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
+  -- Map all printable chars
+  local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()-_=+[]{}|;:',.<>?/ "
+  for i = 1, #chars do
+    pcall(vim.keymap.set, "n", chars:sub(i, i), close_win, key_opts)
+  end
+  -- Map special keys
+  for _, key in ipairs({ "<CR>", "<Esc>", "<Space>", "<BS>", "<Tab>", "<leader>" }) do
+    vim.keymap.set("n", key, close_win, key_opts)
+  end
+end
+
 return M
