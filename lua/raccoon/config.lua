@@ -12,6 +12,14 @@ local M = {}
 M.NORMAL = "n"
 M.INSERT = "i"
 
+--- Check whether a shortcut binding is enabled (not disabled by user).
+--- Users can set a shortcut to false (JSON false) or null (JSON null -> vim.NIL) to disable it.
+---@param value any The shortcut value from config
+---@return boolean
+function M.is_enabled(value)
+  return type(value) == "string" and value ~= ""
+end
+
 --- Default configuration values
 M.defaults = {
   github_token = "",

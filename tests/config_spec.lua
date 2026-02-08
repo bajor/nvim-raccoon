@@ -453,6 +453,35 @@ describe("raccoon.config", function()
     end)
   end)
 
+  describe("is_enabled", function()
+    it("returns true for normal shortcut strings", function()
+      assert.is_true(config.is_enabled("<leader>j"))
+      assert.is_true(config.is_enabled("]f"))
+      assert.is_true(config.is_enabled("<leader>pr"))
+    end)
+
+    it("returns false for false", function()
+      assert.is_false(config.is_enabled(false))
+    end)
+
+    it("returns false for vim.NIL (JSON null)", function()
+      assert.is_false(config.is_enabled(vim.NIL))
+    end)
+
+    it("returns false for nil", function()
+      assert.is_false(config.is_enabled(nil))
+    end)
+
+    it("returns false for empty string", function()
+      assert.is_false(config.is_enabled(""))
+    end)
+
+    it("returns false for non-string types", function()
+      assert.is_false(config.is_enabled(42))
+      assert.is_false(config.is_enabled({}))
+    end)
+  end)
+
   describe("load_shortcuts", function()
     it("returns defaults when config file does not exist", function()
       config.config_path = "/nonexistent/path/config.json"
@@ -533,6 +562,35 @@ describe("raccoon.config", function()
       local s2 = config.load_shortcuts()
       s1.pr_list = "MUTATED"
       assert.is_not_equal("MUTATED", s2.pr_list)
+    end)
+
+    it("preserves false values for disabled shortcuts", function()
+      local tmpfile = test_tmp_dir .. "/disabled_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "github_token": "ghp_xxx",
+        "github_username": "user",
+        "shortcuts": {
+          "pr_list": false,
+          "commit_mode": {
+            "exit": false
+          }
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.is_false(shortcuts.pr_list)
+      assert.is_false(config.is_enabled(shortcuts.pr_list))
+      -- Non-overridden keys keep defaults
+      assert.equals(config.defaults.shortcuts.close, shortcuts.close)
+      -- Nested: overridden
+      assert.is_false(shortcuts.commit_mode.exit)
+      -- Nested: non-overridden keep defaults
+      assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
+
+      os.remove(tmpfile)
     end)
   end)
 end)
