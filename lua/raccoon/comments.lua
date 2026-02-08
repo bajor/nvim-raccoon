@@ -21,6 +21,24 @@ local function get_comment_line(comment)
   return nil
 end
 
+--- Build a floating window title for comment editors, skipping disabled shortcuts
+---@param label string The window label (e.g. "New Comment", "Thread")
+---@param shortcuts table Shortcut bindings from config
+---@return string
+function M._build_comment_title(label, shortcuts)
+  local hints = {}
+  if config.is_enabled(shortcuts.comment_save) then
+    table.insert(hints, shortcuts.comment_save .. "=save")
+  end
+  if config.is_enabled(shortcuts.close) then
+    table.insert(hints, shortcuts.close .. "=cancel")
+  end
+  if #hints > 0 then
+    return string.format(" %s (%s) ", label, table.concat(hints, ", "))
+  end
+  return string.format(" %s ", label)
+end
+
 --- Namespace for comment highlights and extmarks
 local ns_id = vim.api.nvim_create_namespace("raccoon_comments")
 
@@ -261,9 +279,11 @@ function M.show_comment_popup(comment)
 
   -- Close keymaps
   local shortcuts = config.load_shortcuts()
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, noremap = true, silent = true })
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 
   vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
@@ -333,9 +353,11 @@ function M.show_readonly_thread(opts)
 
   local shortcuts = config.load_shortcuts()
   local keymap_opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-    vim.api.nvim_win_close(win, true)
-  end, keymap_opts)
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+    end, keymap_opts)
+  end
   vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, keymap_opts)
@@ -724,12 +746,20 @@ function M.show_comment_thread()
   end
 
   -- Keymaps
-  vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, save_comment, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set(NORMAL_MODE, shortcuts.comment_resolve, resolve_thread, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set(NORMAL_MODE, shortcuts.comment_unresolve, unresolve_thread, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, noremap = true, silent = true })
+  if config.is_enabled(shortcuts.comment_save) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, save_comment, { buffer = buf, noremap = true, silent = true })
+  end
+  if config.is_enabled(shortcuts.comment_resolve) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_resolve, resolve_thread, { buffer = buf, noremap = true, silent = true })
+  end
+  if config.is_enabled(shortcuts.comment_unresolve) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_unresolve, unresolve_thread, { buffer = buf, noremap = true, silent = true })
+  end
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      vim.api.nvim_win_close(win, true)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
   vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
@@ -773,7 +803,7 @@ function M.create_comment()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = string.format(" New Comment (%s=save, %s=cancel) ", shortcuts.comment_save, shortcuts.close),
+    title = M._build_comment_title("New Comment", shortcuts),
     title_pos = "center",
   })
 
@@ -888,17 +918,21 @@ function M.create_comment()
   end
 
   -- Keymap: save and submit (works in normal mode)
-  vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, function()
-    save_and_submit()
-  end, { buffer = buf, noremap = true, silent = true })
+  if config.is_enabled(shortcuts.comment_save) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, function()
+      save_and_submit()
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 
   -- Keymap: close/cancel
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-    if not submitted then
-      vim.notify("Comment cancelled", vim.log.levels.INFO)
-    end
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, noremap = true, silent = true })
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+      if not submitted then
+        vim.notify("Comment cancelled", vim.log.levels.INFO)
+      end
+      vim.api.nvim_win_close(win, true)
+    end, { buffer = buf, noremap = true, silent = true })
+  end
 
   -- Also allow Escape to cancel
   vim.keymap.set(NORMAL_MODE, "<Esc>", function()
@@ -1069,13 +1103,17 @@ function M.list_comments()
       end
       M.show_readonly_thread({
         comments = thread,
-        title = string.format(" %s L%d (%d comments, %s=close) ", entry.file, target_line or 0, #thread, shortcuts.close),
+        title = config.is_enabled(shortcuts.close)
+          and string.format(" %s L%d (%d comments, %s=close) ", entry.file, target_line or 0, #thread, shortcuts.close)
+          or string.format(" %s L%d (%d comments) ", entry.file, target_line or 0, #thread),
       })
     end
   end, { buffer = buf, noremap = true, silent = true })
 
   -- Close keymaps
-  vim.keymap.set(NORMAL_MODE, shortcuts.close, close_list, { buffer = buf, noremap = true, silent = true })
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_list, { buffer = buf, noremap = true, silent = true })
+  end
   vim.keymap.set(NORMAL_MODE, "<Esc>", close_list, { buffer = buf, noremap = true, silent = true })
 end
 
