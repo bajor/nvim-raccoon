@@ -5,14 +5,6 @@
 ---@field tokens? table<string, string> Per-owner/org tokens (owner -> token)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field poll_interval_seconds number Polling interval in seconds
----@field ghostty_path string Path to Ghostty.app
----@field nvim_path string Path to nvim binary
----@field notifications? RaccoonNotificationConfig Notification settings
-
----@class RaccoonNotificationConfig
----@field new_commits? boolean Notify on new commits
----@field new_comments? boolean Notify on new comments
----@field sound? boolean Play sound with notifications
 
 local M = {}
 
@@ -22,15 +14,8 @@ M.defaults = {
   github_username = "",
   repos = {},
   tokens = {},
-  clone_root = "~/.local/share/raccoon/repos",
+  clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
   poll_interval_seconds = 300,
-  ghostty_path = "/Applications/Ghostty.app",
-  nvim_path = "/opt/homebrew/bin/nvim",
-  notifications = {
-    new_commits = true,
-    new_comments = true,
-    sound = true,
-  },
   commit_viewer = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
@@ -109,8 +94,6 @@ function M.load()
 
   -- Expand paths
   config.clone_root = expand_path(config.clone_root)
-  config.ghostty_path = expand_path(config.ghostty_path)
-  config.nvim_path = expand_path(config.nvim_path)
 
   -- Validate
   local valid, err = validate_config(config)
@@ -140,15 +123,8 @@ function M.create_default()
   local default = {
     github_username = "your-username",
     repos = { "owner/repo1", "owner/repo2" },
-    clone_root = "~/.local/share/raccoon/repos",
+    clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
     poll_interval_seconds = 300,
-    ghostty_path = "/Applications/Ghostty.app",
-    nvim_path = "/opt/homebrew/bin/nvim",
-    notifications = {
-      new_commits = true,
-      new_comments = true,
-      sound = true,
-    },
     commit_viewer = {
       grid = { rows = 2, cols = 2 },
       base_commits_count = 20,
