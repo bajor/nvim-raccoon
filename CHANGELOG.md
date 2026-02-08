@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6] - 2026-02-08
+
+### Added
+- File tree panel in commit viewer mode — a right-side panel showing all PR files with three-level highlighting: dim for files not in the current commit, medium for files in the current commit, and bright/bold for files currently visible in the grid
+- Three new highlight groups: `RaccoonFileNormal`, `RaccoonFileInCommit`, `RaccoonFileVisible` (overridable via colorscheme)
+
+### Changed
+- Commit sidebar moved from right to left in commit viewer mode to make room for the file tree panel
+
 ## [0.5] - 2026-02-08
 
 ### Added
