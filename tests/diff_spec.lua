@@ -214,6 +214,17 @@ describe("raccoon.diff", function()
   end)
 
   describe("navigation", function()
+    local original_notify
+
+    before_each(function()
+      original_notify = vim.notify
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
     it("next_file returns false when no session", function()
       assert.is_false(diff.next_file())
     end)
@@ -259,6 +270,17 @@ describe("raccoon.diff", function()
   end)
 
   describe("open_file", function()
+    local original_notify
+
+    before_each(function()
+      original_notify = vim.notify
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
     it("returns nil for nil file", function()
       assert.is_nil(diff.open_file(nil))
     end)
@@ -273,6 +295,17 @@ describe("raccoon.diff", function()
   end)
 
   describe("next_diff and prev_diff", function()
+    local original_notify
+
+    before_each(function()
+      original_notify = vim.notify
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
     it("next_diff returns false when no session", function()
       assert.is_false(diff.next_diff())
     end)

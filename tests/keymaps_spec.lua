@@ -169,9 +169,16 @@ describe("raccoon.keymaps", function()
 
   describe("navigation functions", function()
     local state = require("raccoon.state")
+    local original_notify
 
     before_each(function()
       state.reset()
+      original_notify = vim.notify
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
     end)
 
     it("next_point returns false when no session", function()
