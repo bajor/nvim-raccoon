@@ -93,6 +93,35 @@ Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/c
 
 Each owner in your `repos` list needs a matching entry in `tokens`. For example, if you watch `"my-org/backend"`, add `"my-org": "ghp_..."` to `tokens`.
 
+### Shortcut defaults
+
+All shortcut config keys and their defaults:
+
+| Config key | Default | Action |
+|------------|---------|--------|
+| `pr_list` | `<leader>pr` | Open PR list picker |
+| `show_shortcuts` | `<leader>?` | Show shortcuts help |
+| `next_point` | `<leader>j` | Next diff/comment |
+| `prev_point` | `<leader>k` | Previous diff/comment |
+| `next_file` | `<leader>nf` | Next file |
+| `prev_file` | `<leader>pf` | Previous file |
+| `next_thread` | `<leader>nt` | Next comment thread |
+| `prev_thread` | `<leader>pt` | Previous comment thread |
+| `comment` | `<leader>c` | Comment at cursor |
+| `description` | `<leader>dd` | Show PR description |
+| `list_comments` | `<leader>ll` | List all PR comments |
+| `merge` | `<leader>rr` | Merge PR (pick method) |
+| `commit_viewer` | `<leader>cm` | Toggle commit viewer |
+| `comment_save` | `<leader>s` | Save comment |
+| `comment_resolve` | `<leader>r` | Resolve thread |
+| `comment_unresolve` | `<leader>u` | Unresolve thread |
+| `close` | `<leader>q` | Close/dismiss |
+| `commit_mode.next_page` | `<leader>j` | Next page of hunks |
+| `commit_mode.prev_page` | `<leader>k` | Previous page of hunks |
+| `commit_mode.next_page_alt` | `<leader>l` | Next page (alt) |
+| `commit_mode.exit` | `<leader>cm` | Exit commit viewer |
+| `commit_mode.maximize_prefix` | `<leader>m` | Maximize cell (+ number) |
+
 ### Full config example
 
 ```json
@@ -110,8 +139,29 @@ Each owner in your `repos` list needs a matching entry in `tokens`. For example,
     "base_commits_count": 30
   },
   "shortcuts": {
+    "pr_list": "<leader>pr",
+    "show_shortcuts": "<leader>?",
+    "next_point": "<leader>j",
+    "prev_point": "<leader>k",
+    "next_file": "<leader>nf",
+    "prev_file": "<leader>pf",
+    "next_thread": "<leader>nt",
+    "prev_thread": "<leader>pt",
+    "comment": "<leader>c",
+    "description": "<leader>dd",
+    "list_comments": "<leader>ll",
+    "merge": "<leader>rr",
+    "commit_viewer": "<leader>cm",
+    "comment_save": "<leader>s",
+    "comment_resolve": "<leader>r",
+    "comment_unresolve": "<leader>u",
+    "close": "<leader>q",
     "commit_mode": {
-      "exit": "<leader>ce"
+      "next_page": "<leader>j",
+      "prev_page": "<leader>k",
+      "next_page_alt": "<leader>l",
+      "exit": "<leader>cm",
+      "maximize_prefix": "<leader>m"
     }
   }
 }
