@@ -24,6 +24,7 @@ local commit_state = {
   grid_wins = {},
   grid_bufs = {},
   all_hunks = {},
+  commit_files = {},
   current_page = 1,
   saved_buf = nil,
   saved_laststatus = nil,
@@ -37,6 +38,10 @@ local commit_state = {
   filetree_win = nil,
   filetree_buf = nil,
   select_generation = 0,
+  cached_sha = nil,
+  cached_tree_lines = nil,
+  cached_line_paths = nil,
+  cached_file_count = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -73,6 +78,7 @@ local function reset_state()
     grid_wins = {},
     grid_bufs = {},
     all_hunks = {},
+    commit_files = {},
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
@@ -86,6 +92,10 @@ local function reset_state()
     filetree_win = nil,
     filetree_buf = nil,
     select_generation = 0,
+    cached_sha = nil,
+    cached_tree_lines = nil,
+    cached_line_paths = nil,
+    cached_file_count = nil,
   }
 end
 
@@ -464,8 +474,15 @@ local function select_commit(index)
       return
     end
 
+    -- Track all files in commit (includes binary/mode-only/rename-only)
+    commit_state.commit_files = {}
+    for _, file in ipairs(files or {}) do
+      commit_state.commit_files[file.filename] = true
+    end
+
     -- Parse all files into flat hunk list
     commit_state.all_hunks = {}
+    commit_state.cached_sha = nil
     for _, file in ipairs(files or {}) do
       local hunks = diff.parse_patch(file.patch)
       for _, hunk in ipairs(hunks) do
@@ -487,6 +504,7 @@ local function select_commit(index)
         end
       end
       update_header()
+      render_filetree()
       return
     end
 
@@ -682,28 +700,48 @@ local function render_tree_node(node, prefix, lines, line_paths)
   end
 end
 
---- Render the file tree panel with three-tier highlighting.
---- Shows all repo files (git ls-files) as a tree, highlighting commit and visible files.
-render_filetree = function()
-  local buf = commit_state.filetree_buf
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-
-  -- Get all repo files at the selected commit's tree
+--- Build and cache the file tree structure for the selected commit.
+--- Only runs git ls-tree when the commit SHA changes.
+local function build_filetree_cache()
   local clone_path = state.get_clone_path()
   if not clone_path then return end
   local commit = get_commit(commit_state.selected_index)
   local sha = commit and commit.sha or "HEAD"
+
+  if commit_state.cached_sha == sha then return end
+
   local raw = vim.fn.systemlist(
     "git -C " .. vim.fn.shellescape(clone_path) .. " ls-tree -r --name-only " .. sha
   )
   if vim.v.shell_error ~= 0 then raw = {} end
   table.sort(raw)
 
-  -- Build lookup: files in current commit (all hunks)
-  local commit_files = {}
-  for _, hunk_data in ipairs(commit_state.all_hunks) do
-    commit_files[hunk_data.filename] = true
+  local tree = build_file_tree(raw)
+  local lines = {}
+  local line_paths = {}
+  render_tree_node(tree, "", lines, line_paths)
+  if #lines == 0 then
+    lines = { "  No files" }
   end
+
+  commit_state.cached_sha = sha
+  commit_state.cached_tree_lines = lines
+  commit_state.cached_line_paths = line_paths
+  commit_state.cached_file_count = #raw
+end
+
+--- Render the file tree panel with three-tier highlighting.
+--- Uses cached tree structure; only recomputes visible-file highlights per page.
+render_filetree = function()
+  local buf = commit_state.filetree_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  build_filetree_cache()
+
+  local lines = commit_state.cached_tree_lines
+  local line_paths = commit_state.cached_line_paths
+  local commit_files = commit_state.commit_files
+  if not lines then return end
 
   -- Build lookup: files visible on current grid page
   local visible_files = {}
@@ -714,16 +752,6 @@ render_filetree = function()
     if hunk_data then
       visible_files[hunk_data.filename] = true
     end
-  end
-
-  -- Build tree and render
-  local tree = build_file_tree(raw)
-  local lines = {}
-  local line_paths = {} -- 0-based line index -> file path
-  render_tree_node(tree, "", lines, line_paths)
-
-  if #lines == 0 then
-    lines = { "  No files" }
   end
 
   vim.bo[buf].modifiable = true
@@ -749,7 +777,7 @@ render_filetree = function()
   -- Update winbar with file count
   local win = commit_state.filetree_win
   if win and vim.api.nvim_win_is_valid(win) then
-    vim.wo[win].winbar = " Files (" .. #raw .. ")"
+    vim.wo[win].winbar = " Files (" .. (commit_state.cached_file_count or 0) .. ")"
   end
 end
 
@@ -1184,5 +1212,6 @@ M._setup_keymaps = setup_keymaps
 M._render_filetree = render_filetree
 M._build_file_tree = build_file_tree
 M._render_tree_node = render_tree_node
+M._close_filetree = close_filetree
 
 return M

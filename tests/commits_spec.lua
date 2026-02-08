@@ -588,6 +588,7 @@ describe("raccoon.commits buffer-local keymaps", function()
     cs = commits._get_state()
     cs.sidebar_buf = create_scratch_buf()
     cs.header_buf = create_scratch_buf()
+    cs.filetree_buf = create_scratch_buf()
     cs.grid_bufs = {
       create_scratch_buf(),
       create_scratch_buf(),
@@ -596,7 +597,7 @@ describe("raccoon.commits buffer-local keymaps", function()
     }
     cs.grid_rows = 2
     cs.grid_cols = 2
-    bufs_to_clean = { cs.sidebar_buf, cs.header_buf }
+    bufs_to_clean = { cs.sidebar_buf, cs.header_buf, cs.filetree_buf }
     for _, buf in ipairs(cs.grid_bufs) do
       table.insert(bufs_to_clean, buf)
     end
@@ -668,9 +669,20 @@ describe("raccoon.commits buffer-local keymaps", function()
       end
     end)
 
+    it("applies keymaps to filetree_buf", function()
+      commits._setup_keymaps()
+      assert.is_true(has_buf_keymap(cs.filetree_buf, "n", " cm"),
+        "expected <leader>cm on filetree_buf")
+      for _, key in ipairs({ " j", " k", " l" }) do
+        assert.is_true(has_buf_keymap(cs.filetree_buf, "n", key),
+          "expected " .. key .. " on filetree_buf")
+      end
+    end)
+
     it("handles invalid buffers gracefully", function()
       cs.sidebar_buf = 99999
       cs.header_buf = nil
+      cs.filetree_buf = 99998
       cs.grid_bufs = { 99998 }
       -- Should not error
       commits._setup_keymaps()
@@ -772,6 +784,59 @@ describe("raccoon.commits file tree panel", function()
       assert.equals("c", tree.children[1].children[1].children[1].name)
       assert.equals("d.lua", tree.children[1].children[1].children[1].children[1].name)
     end)
+
+    it("handles a single root-level file", function()
+      local tree = commits._build_file_tree({ "README.md" })
+      assert.equals(1, #tree.children)
+      assert.equals("README.md", tree.children[1].name)
+      assert.equals("README.md", tree.children[1].path)
+      assert.is_nil(tree.children[1].children)
+    end)
+
+    it("groups multiple files in the same directory", function()
+      local tree = commits._build_file_tree({ "src/a.lua", "src/b.lua", "src/c.lua" })
+      assert.equals(1, #tree.children)
+      assert.equals("src", tree.children[1].name)
+      assert.is_table(tree.children[1].children)
+      assert.equals(3, #tree.children[1].children)
+    end)
+
+    it("handles sibling directories at the same level", function()
+      local tree = commits._build_file_tree({ "alpha/x.lua", "beta/y.lua", "gamma/z.lua" })
+      assert.equals(3, #tree.children)
+      for _, child in ipairs(tree.children) do
+        assert.is_table(child.children)
+      end
+    end)
+
+    it("mixes root files and subdirectory files", function()
+      local tree = commits._build_file_tree({ "init.lua", "lib/init.lua", "lib/utils.lua", "README.md" })
+      -- root children: "lib" dir + "init.lua" file + "README.md" file = 3
+      assert.equals(3, #tree.children)
+    end)
+
+    it("distinguishes similar-prefix directory names", function()
+      local tree = commits._build_file_tree({ "a/file.lua", "ab/file.lua" })
+      assert.equals(2, #tree.children)
+      assert.equals("a", tree.children[1].name)
+      assert.equals("ab", tree.children[2].name)
+    end)
+
+    it("files have path and no children, dirs have children and no path", function()
+      local tree = commits._build_file_tree({ "src/lib/utils.lua", "src/main.lua" })
+      local src = tree.children[1]
+      assert.is_table(src.children)
+      assert.is_nil(src.path)
+      for _, child in ipairs(src.children) do
+        if child.name == "main.lua" then
+          assert.equals("src/main.lua", child.path)
+          assert.is_nil(child.children)
+        elseif child.name == "lib" then
+          assert.is_table(child.children)
+          assert.is_nil(child.path)
+        end
+      end
+    end)
   end)
 
   describe("_render_tree_node", function()
@@ -807,5 +872,135 @@ describe("raccoon.commits file tree panel", function()
       assert.is_nil(line_paths[0]) -- dir line
       assert.equals("dir/file.lua", line_paths[1]) -- file line
     end)
+
+    it("renders directories before files", function()
+      local tree = commits._build_file_tree({ "src/a.lua", "z_file.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.is_truthy(lines[1]:match("src/"))
+      assert.is_truthy(lines[#lines]:match("z_file.lua"))
+    end)
+
+    it("uses correct connector for last vs non-last items", function()
+      local tree = commits._build_file_tree({ "a.lua", "b.lua", "c.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.equals(3, #lines)
+      assert.is_truthy(lines[1]:match("├── "))
+      assert.is_truthy(lines[2]:match("├── "))
+      assert.is_truthy(lines[3]:match("└── "))
+    end)
+
+    it("propagates prefix correctly for nested items", function()
+      local tree = commits._build_file_tree({ "a/nested.lua", "b/nested.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      -- a/ not last -> child gets "│   " prefix; b/ is last -> child gets "    " prefix
+      assert.equals(4, #lines)
+      assert.is_truthy(lines[2]:match("^│   └── nested.lua"))
+      assert.is_truthy(lines[4]:match("^    └── nested.lua"))
+    end)
+
+    it("indents deeply nested items correctly", function()
+      local tree = commits._build_file_tree({ "a/b/c/d.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.equals(4, #lines)
+      assert.equals("└── a/", lines[1])
+      assert.equals("    └── b/", lines[2])
+      assert.equals("        └── c/", lines[3])
+      assert.equals("            └── d.lua", lines[4])
+    end)
+
+    it("handles many siblings correctly", function()
+      local paths = {}
+      for i = 1, 20 do
+        table.insert(paths, string.format("file_%02d.lua", i))
+      end
+      local tree = commits._build_file_tree(paths)
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      assert.equals(20, #lines)
+      local mapped = 0
+      for _ in pairs(line_paths) do mapped = mapped + 1 end
+      assert.equals(20, mapped)
+    end)
+
+    it("sorts directories alphabetically among themselves", function()
+      local tree = commits._build_file_tree({ "a_dir/b.lua", "m_file.lua", "z_dir/a.lua" })
+      local lines = {}
+      local line_paths = {}
+      commits._render_tree_node(tree, "", lines, line_paths)
+      -- Dirs first sorted: a_dir, z_dir, then file: m_file.lua
+      assert.is_truthy(lines[1]:match("a_dir"))
+      assert.is_truthy(lines[3]:match("z_dir"))
+      assert.is_truthy(lines[#lines]:match("m_file.lua"))
+    end)
+  end)
+end)
+
+describe("raccoon.commits commit_files tracking", function()
+  local original_show_commit
+  local captured_callback
+
+  before_each(function()
+    state.reset()
+    original_show_commit = git.show_commit
+    git.show_commit = function(_, _, cb)
+      captured_callback = cb
+    end
+    local cs = commits._get_state()
+    cs.pr_commits = {
+      { sha = "aaaa", message = "commit with binary" },
+    }
+    cs.active = true
+    cs.grid_bufs = {}
+    cs.grid_wins = {}
+    cs.all_hunks = {}
+    cs.commit_files = {}
+    cs.select_generation = 0
+    state.session = state.session or {}
+    state.session.clone_path = "/tmp/fake"
+  end)
+
+  after_each(function()
+    git.show_commit = original_show_commit
+    state.reset()
+  end)
+
+  it("includes files with empty patches in commit_files", function()
+    local cs = commits._get_state()
+    commits._select_commit(1)
+
+    captured_callback({
+      { filename = "src/main.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" },
+      { filename = "image.png", patch = "" },
+      { filename = "renamed.lua", patch = "" },
+    }, nil)
+
+    assert.is_true(cs.commit_files["src/main.lua"] == true)
+    assert.is_true(cs.commit_files["image.png"] == true)
+    assert.is_true(cs.commit_files["renamed.lua"] == true)
+    -- Only main.lua contributes hunks
+    assert.is_true(#cs.all_hunks > 0)
+  end)
+
+  it("populates commit_files when all patches are empty", function()
+    local cs = commits._get_state()
+    commits._select_commit(1)
+
+    captured_callback({
+      { filename = "binary1.bin", patch = "" },
+      { filename = "binary2.bin", patch = "" },
+    }, nil)
+
+    assert.is_true(cs.commit_files["binary1.bin"] == true)
+    assert.is_true(cs.commit_files["binary2.bin"] == true)
+    assert.equals(0, #cs.all_hunks)
   end)
 end)
