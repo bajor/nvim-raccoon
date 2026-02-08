@@ -95,32 +95,7 @@ Each owner in your `repos` list needs a matching entry in `tokens`. For example,
 
 ### Shortcut defaults
 
-All shortcut config keys and their defaults:
-
-| Config key | Default | Action |
-|------------|---------|--------|
-| `pr_list` | `<leader>pr` | Open PR list picker |
-| `show_shortcuts` | `<leader>?` | Show shortcuts help |
-| `next_point` | `<leader>j` | Next diff/comment |
-| `prev_point` | `<leader>k` | Previous diff/comment |
-| `next_file` | `<leader>nf` | Next file |
-| `prev_file` | `<leader>pf` | Previous file |
-| `next_thread` | `<leader>nt` | Next comment thread |
-| `prev_thread` | `<leader>pt` | Previous comment thread |
-| `comment` | `<leader>c` | Comment at cursor |
-| `description` | `<leader>dd` | Show PR description |
-| `list_comments` | `<leader>ll` | List all PR comments |
-| `merge` | `<leader>rr` | Merge PR (pick method) |
-| `commit_viewer` | `<leader>cm` | Toggle commit viewer |
-| `comment_save` | `<leader>s` | Save comment |
-| `comment_resolve` | `<leader>r` | Resolve thread |
-| `comment_unresolve` | `<leader>u` | Unresolve thread |
-| `close` | `<leader>q` | Close/dismiss |
-| `commit_mode.next_page` | `<leader>j` | Next page of hunks |
-| `commit_mode.prev_page` | `<leader>k` | Previous page of hunks |
-| `commit_mode.next_page_alt` | `<leader>l` | Next page (alt) |
-| `commit_mode.exit` | `<leader>cm` | Exit commit viewer |
-| `commit_mode.maximize_prefix` | `<leader>m` | Maximize cell (+ number) |
+See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 22 configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
 
 ### Full config example
 
