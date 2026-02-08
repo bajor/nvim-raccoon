@@ -134,7 +134,8 @@ end
 --- Render the PR list in the buffer
 ---@param prs table[] List of PRs
 ---@param buf_width number Buffer width for formatting
-local function render_pr_list(prs, buf_width)
+---@param shortcuts table Shortcut bindings from config
+local function render_pr_list(prs, buf_width, shortcuts)
   local lines = {}
   local highlights = {}
   buf_width = buf_width or 60
@@ -143,7 +144,7 @@ local function render_pr_list(prs, buf_width)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    table.insert(lines, "  Press 'r' to refresh, '<leader>q' to close")
+    table.insert(lines, string.format("  Press 'r' to refresh, '%s' to close", shortcuts.close))
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -199,7 +200,7 @@ local function render_pr_list(prs, buf_width)
 
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
-  table.insert(lines, " Enter: open │ <leader>q: close │ r: refresh │ j/k: navigate")
+  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", shortcuts.close))
 
   return lines, highlights
 end
@@ -296,6 +297,9 @@ function M.show_pr_list()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  Loading..." })
   vim.bo[buf].modifiable = false
 
+  -- Load shortcuts from config
+  local shortcuts = config.load_shortcuts()
+
   -- Setup buffer-local keymaps
   local opts = { buffer = buf, noremap = true, silent = true }
 
@@ -332,8 +336,8 @@ function M.show_pr_list()
     open.open_pr(url)
   end, opts)
 
-  -- Close on <leader>q or Esc
-  vim.keymap.set("n", "<leader>q", function() M.close_pr_list() end, opts)
+  -- Close keymaps
+  vim.keymap.set("n", shortcuts.close, function() M.close_pr_list() end, opts)
   vim.keymap.set("n", "<Esc>", function() M.close_pr_list() end, opts)
 
   -- Refresh on r
@@ -387,7 +391,8 @@ function M.refresh_pr_list()
       M.state.error_line_count = #error_lines
     end
 
-    local lines, highlights = render_pr_list(prs, win_width)
+    local shortcuts = config.load_shortcuts()
+    local lines, highlights = render_pr_list(prs, win_width, shortcuts)
 
     -- Offset PR highlights by error lines count
     if #error_lines > 0 then
@@ -549,8 +554,9 @@ function M.show_description()
   vim.wo[win].wrap = true
 
   -- Close keymaps (also clear state)
+  local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "<leader>q", function()
+  vim.keymap.set("n", shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
   end, opts)

@@ -258,8 +258,9 @@ function M.show_comment_popup(comment)
     title_pos = "center",
   })
 
-  -- Close on <leader>q or Esc
-  vim.keymap.set("n", "<leader>q", function()
+  -- Close keymaps
+  local shortcuts = config.load_shortcuts()
+  vim.keymap.set("n", shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 
@@ -329,8 +330,9 @@ function M.show_readonly_thread(opts)
 
   vim.wo[win].wrap = true
 
+  local shortcuts = config.load_shortcuts()
   local keymap_opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "<leader>q", function()
+  vim.keymap.set("n", shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, keymap_opts)
   vim.keymap.set("n", "<Esc>", function()
@@ -353,6 +355,7 @@ function M.show_comment_thread()
   end
 
   local current_line = vim.fn.line(".")
+  local shortcuts = config.load_shortcuts()
   local file_comments = state.get_comments(path)
 
   -- Find comments for this line
@@ -431,8 +434,9 @@ function M.show_comment_thread()
     style = "minimal",
     border = "rounded",
     title = string.format(
-      " Comments on L%d (<leader>s=save, <leader>r=resolve, <leader>u=unresolve, <leader>q=close) ",
-      current_line
+      " Comments on L%d (%s=save, %s=resolve, %s=unresolve, %s=close) ",
+      current_line, shortcuts.comment_save, shortcuts.comment_resolve,
+      shortcuts.comment_unresolve, shortcuts.close
     ),
     title_pos = "center",
   })
@@ -719,10 +723,10 @@ function M.show_comment_thread()
   end
 
   -- Keymaps
-  vim.keymap.set("n", "<leader>s", save_comment, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<leader>r", resolve_thread, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<leader>u", unresolve_thread, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<leader>q", function()
+  vim.keymap.set("n", shortcuts.comment_save, save_comment, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set("n", shortcuts.comment_resolve, resolve_thread, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set("n", shortcuts.comment_unresolve, unresolve_thread, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set("n", shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
   vim.keymap.set("n", "<Esc>", function()
@@ -750,6 +754,7 @@ function M.create_comment()
   end
 
   local line = vim.fn.line(".")
+  local shortcuts = config.load_shortcuts()
 
   -- Create input buffer
   local buf = vim.api.nvim_create_buf(false, true)
@@ -767,7 +772,7 @@ function M.create_comment()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = " New Comment (<leader>s=save, <leader>q=cancel) ",
+    title = string.format(" New Comment (%s=save, %s=cancel) ", shortcuts.comment_save, shortcuts.close),
     title_pos = "center",
   })
 
@@ -881,13 +886,13 @@ function M.create_comment()
     end)
   end
 
-  -- Keymap: <leader>s to save and submit (works in normal mode)
-  vim.keymap.set("n", "<leader>s", function()
+  -- Keymap: save and submit (works in normal mode)
+  vim.keymap.set("n", shortcuts.comment_save, function()
     save_and_submit()
   end, { buffer = buf, noremap = true, silent = true })
 
-  -- Keymap: <leader>q to cancel
-  vim.keymap.set("n", "<leader>q", function()
+  -- Keymap: close/cancel
+  vim.keymap.set("n", shortcuts.close, function()
     if not submitted then
       vim.notify("Comment cancelled", vim.log.levels.INFO)
     end
@@ -945,6 +950,8 @@ function M.list_comments()
     vim.notify("No comments in this PR", vim.log.levels.INFO)
     return
   end
+
+  local shortcuts = config.load_shortcuts()
 
   -- Sort by file path, then by line number
   table.sort(all_comments, function(a, b)
@@ -1061,13 +1068,13 @@ function M.list_comments()
       end
       M.show_readonly_thread({
         comments = thread,
-        title = string.format(" %s L%d (%d comments, <leader>q=close) ", entry.file, target_line or 0, #thread),
+        title = string.format(" %s L%d (%d comments, %s=close) ", entry.file, target_line or 0, #thread, shortcuts.close),
       })
     end
   end, { buffer = buf, noremap = true, silent = true })
 
-  -- Close on <leader>q or Esc
-  vim.keymap.set("n", "<leader>q", close_list, { buffer = buf, noremap = true, silent = true })
+  -- Close keymaps
+  vim.keymap.set("n", shortcuts.close, close_list, { buffer = buf, noremap = true, silent = true })
   vim.keymap.set("n", "<Esc>", close_list, { buffer = buf, noremap = true, silent = true })
 end
 

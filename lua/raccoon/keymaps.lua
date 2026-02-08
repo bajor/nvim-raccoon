@@ -446,12 +446,13 @@ function M.merge_picker()
         elseif cursor_line == 7 then do_merge("rebase")
         end
       end, { buffer = buf, noremap = true, silent = true })
+      local shortcuts = config.load_shortcuts()
       local close_win = function()
         if vim.api.nvim_win_is_valid(win) then
           vim.api.nvim_win_close(win, true)
         end
       end
-      vim.keymap.set("n", "<leader>q", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
+      vim.keymap.set("n", shortcuts.close, close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
       vim.keymap.set("n", "<Esc>", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
     end)
   end)
