@@ -314,24 +314,26 @@ M._active_keymaps = {}
 --- Called when a PR review session starts
 function M.setup_keymaps()
   local config = require("raccoon.config")
+  local NORMAL_MODE = config.NORMAL
   local shortcuts = config.load_shortcuts()
   local opts = { noremap = true, silent = true }
 
   M._active_keymaps = { shortcuts.next_file_alt, shortcuts.prev_file_alt }
 
-  vim.keymap.set("n", shortcuts.next_file_alt, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.next_file_alt, function()
     M.next_file()
   end, vim.tbl_extend("force", opts, { desc = "Next PR file" }))
 
-  vim.keymap.set("n", shortcuts.prev_file_alt, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.prev_file_alt, function()
     M.prev_file()
   end, vim.tbl_extend("force", opts, { desc = "Previous PR file" }))
 end
 
 --- Clear keymaps when session ends
 function M.clear_keymaps()
+  local N = require("raccoon.config").NORMAL
   for _, lhs in ipairs(M._active_keymaps) do
-    pcall(vim.keymap.del, "n", lhs)
+    pcall(vim.keymap.del, NORMAL_MODE, lhs)
   end
   M._active_keymaps = {}
 end

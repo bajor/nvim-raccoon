@@ -54,14 +54,16 @@ function M.setup(opts)
   })
 
   -- Load shortcuts from config (falls back to defaults gracefully)
-  local shortcuts = require("raccoon.config").load_shortcuts()
+  local cfg = require("raccoon.config")
+  local shortcuts = cfg.load_shortcuts()
+  local NORMAL_MODE = cfg.NORMAL
 
   -- Global keymaps (always available)
-  vim.keymap.set("n", shortcuts.pr_list, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.pr_list, function()
     require("raccoon.ui").show_pr_list()
   end, { noremap = true, silent = true, desc = "Raccoon: PR list" })
 
-  vim.keymap.set("n", shortcuts.show_shortcuts, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.show_shortcuts, function()
     require("raccoon.ui").show_shortcuts()
   end, { noremap = true, silent = true, desc = "Raccoon: Show shortcuts" })
 end

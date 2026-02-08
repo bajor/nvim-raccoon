@@ -4,6 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local NORMAL_MODE = config.NORMAL
 
 --- Current floating window state
 M.state = {
@@ -317,13 +318,13 @@ function M.show_pr_list()
     end
   end
 
-  vim.keymap.set("n", "j", move_down, opts)
-  vim.keymap.set("n", "<Down>", move_down, opts)
-  vim.keymap.set("n", "k", move_up, opts)
-  vim.keymap.set("n", "<Up>", move_up, opts)
+  vim.keymap.set(NORMAL_MODE, "j", move_down, opts)
+  vim.keymap.set(NORMAL_MODE, "<Down>", move_down, opts)
+  vim.keymap.set(NORMAL_MODE, "k", move_up, opts)
+  vim.keymap.set(NORMAL_MODE, "<Up>", move_up, opts)
 
   -- Open selected PR on Enter
-  vim.keymap.set("n", "<CR>", function()
+  vim.keymap.set(NORMAL_MODE, "<CR>", function()
     local pr = M.state.prs[M.state.selected]
     if not pr then return end
 
@@ -337,11 +338,11 @@ function M.show_pr_list()
   end, opts)
 
   -- Close keymaps
-  vim.keymap.set("n", shortcuts.close, function() M.close_pr_list() end, opts)
-  vim.keymap.set("n", "<Esc>", function() M.close_pr_list() end, opts)
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function() M.close_pr_list() end, opts)
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function() M.close_pr_list() end, opts)
 
   -- Refresh on r
-  vim.keymap.set("n", "r", function() M.refresh_pr_list() end, opts)
+  vim.keymap.set(NORMAL_MODE, "r", function() M.refresh_pr_list() end, opts)
 
   -- Fetch and display PRs
   M.refresh_pr_list()
@@ -556,11 +557,11 @@ function M.show_description()
   -- Close keymaps (also clear state)
   local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", shortcuts.close, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
   end, opts)
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
   end, opts)
@@ -677,11 +678,11 @@ function M.show_shortcuts()
   -- Map all printable chars
   local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()-_=+[]{}|;:',.<>?/ "
   for i = 1, #chars do
-    pcall(vim.keymap.set, "n", chars:sub(i, i), close_win, key_opts)
+    pcall(vim.keymap.set, NORMAL_MODE, chars:sub(i, i), close_win, key_opts)
   end
   -- Map special keys
   for _, key in ipairs({ "<CR>", "<Esc>", "<Space>", "<BS>", "<Tab>", "<leader>" }) do
-    vim.keymap.set("n", key, close_win, key_opts)
+    vim.keymap.set(NORMAL_MODE, key, close_win, key_opts)
   end
 end
 

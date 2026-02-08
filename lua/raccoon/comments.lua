@@ -4,6 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local NORMAL_MODE = config.NORMAL
 local state = require("raccoon.state")
 
 --- Get a valid line number from a comment, handling vim.NIL from JSON null
@@ -260,11 +261,11 @@ function M.show_comment_popup(comment)
 
   -- Close keymaps
   local shortcuts = config.load_shortcuts()
-  vim.keymap.set("n", shortcuts.close, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 end
@@ -332,10 +333,10 @@ function M.show_readonly_thread(opts)
 
   local shortcuts = config.load_shortcuts()
   local keymap_opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", shortcuts.close, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, keymap_opts)
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, keymap_opts)
 end
@@ -723,13 +724,13 @@ function M.show_comment_thread()
   end
 
   -- Keymaps
-  vim.keymap.set("n", shortcuts.comment_save, save_comment, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", shortcuts.comment_resolve, resolve_thread, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", shortcuts.comment_unresolve, unresolve_thread, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", shortcuts.close, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, save_comment, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set(NORMAL_MODE, shortcuts.comment_resolve, resolve_thread, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set(NORMAL_MODE, shortcuts.comment_unresolve, unresolve_thread, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 
@@ -887,12 +888,12 @@ function M.create_comment()
   end
 
   -- Keymap: save and submit (works in normal mode)
-  vim.keymap.set("n", shortcuts.comment_save, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, function()
     save_and_submit()
   end, { buffer = buf, noremap = true, silent = true })
 
   -- Keymap: close/cancel
-  vim.keymap.set("n", shortcuts.close, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     if not submitted then
       vim.notify("Comment cancelled", vim.log.levels.INFO)
     end
@@ -900,7 +901,7 @@ function M.create_comment()
   end, { buffer = buf, noremap = true, silent = true })
 
   -- Also allow Escape to cancel
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     if not submitted then
       vim.notify("Comment cancelled", vim.log.levels.INFO)
     end
@@ -1043,7 +1044,7 @@ function M.list_comments()
   end
 
   -- View thread on Enter
-  vim.keymap.set("n", "<CR>", function()
+  vim.keymap.set(NORMAL_MODE, "<CR>", function()
     local cursor_line = vim.fn.line(".")
     local entry = line_to_entry[cursor_line]
     if not entry then
@@ -1074,8 +1075,8 @@ function M.list_comments()
   end, { buffer = buf, noremap = true, silent = true })
 
   -- Close keymaps
-  vim.keymap.set("n", shortcuts.close, close_list, { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<Esc>", close_list, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, close_list, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set(NORMAL_MODE, "<Esc>", close_list, { buffer = buf, noremap = true, silent = true })
 end
 
 --- Toggle resolved status of comment at current line

@@ -5,6 +5,8 @@ local M = {}
 local api = require("raccoon.api")
 local comments = require("raccoon.comments")
 local config = require("raccoon.config")
+local NORMAL_MODE = config.NORMAL
+local NORMAL_INSERT_MODE = config.NORMAL_INSERT
 local state = require("raccoon.state")
 
 --- Review event types
@@ -108,25 +110,25 @@ function M.show_submit_ui()
     M.prompt_review_body(event)
   end
 
-  vim.keymap.set("n", "a", function()
+  vim.keymap.set(NORMAL_MODE, "a", function()
     handle_selection(M.events.APPROVE)
   end, { buffer = buf, noremap = true, silent = true })
 
-  vim.keymap.set("n", "r", function()
+  vim.keymap.set(NORMAL_MODE, "r", function()
     handle_selection(M.events.REQUEST_CHANGES)
   end, { buffer = buf, noremap = true, silent = true })
 
-  vim.keymap.set("n", "c", function()
+  vim.keymap.set(NORMAL_MODE, "c", function()
     handle_selection(M.events.COMMENT)
   end, { buffer = buf, noremap = true, silent = true })
 
   local shortcuts = config.load_shortcuts()
-  vim.keymap.set("n", shortcuts.close, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
     vim.notify("Review cancelled", vim.log.levels.INFO)
   end, { buffer = buf, noremap = true, silent = true })
 
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
     vim.notify("Review cancelled", vim.log.levels.INFO)
   end, { buffer = buf, noremap = true, silent = true })
@@ -175,7 +177,7 @@ function M.prompt_review_body(event)
   vim.cmd("startinsert")
 
   -- Submit on Ctrl-S
-  vim.keymap.set({ "n", "i" }, "<C-s>", function()
+  vim.keymap.set(NORMAL_INSERT_MODE, "<C-s>", function()
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     -- Skip header lines
     local body_lines = {}
@@ -206,7 +208,7 @@ function M.prompt_review_body(event)
 
   -- Cancel in normal mode
   local shortcuts = config.load_shortcuts()
-  vim.keymap.set("n", shortcuts.close, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
     vim.notify("Review cancelled", vim.log.levels.INFO)
   end, { buffer = buf, noremap = true, silent = true })
@@ -301,11 +303,11 @@ function M.show_status()
   })
 
   local shortcuts = config.load_shortcuts()
-  vim.keymap.set("n", shortcuts.close, function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 
-  vim.keymap.set("n", "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 end
