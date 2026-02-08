@@ -1,8 +1,7 @@
 ---@class RaccoonConfig
----@field github_token string GitHub personal access token (default/fallback)
 ---@field github_username string GitHub username
 ---@field repos string[] List of repos to watch (format: "owner/repo")
----@field tokens? table<string, string> Per-owner/org tokens (owner -> token)
+---@field tokens table<string, string> Per-owner/org tokens (owner -> token)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field poll_interval_seconds number Polling interval in seconds
 
@@ -22,7 +21,6 @@ end
 
 --- Default configuration values
 M.defaults = {
-  github_token = "",
   github_username = "",
   repos = {},
   tokens = {},
@@ -83,11 +81,15 @@ end
 ---@param config table
 ---@return boolean, string?
 local function validate_config(config)
-  -- Require either github_token or tokens map
-  local has_token = config.github_token and config.github_token ~= ""
+  -- Require tokens map
   local has_tokens = config.tokens and type(config.tokens) == "table" and next(config.tokens) ~= nil
-  if not has_token and not has_tokens then
-    return false, "github_token or tokens is required"
+  if not has_tokens then
+    if config.github_token and config.github_token ~= "" then
+      return false,
+        "github_token was removed. Move your token to the tokens table: "
+          .. '"tokens": {"your-username": "your-token"}'
+    end
+    return false, "tokens is required (maps owner/org name to GitHub token)"
   end
 
   if not config.github_username or config.github_username == "" then
@@ -163,9 +165,9 @@ function M.create_default()
     return false, "Config file already exists"
   end
 
-  -- Create default config (token comes from GITHUB_TOKEN env var)
   local default = {
     github_username = "your-username",
+    tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
     repos = { "owner/repo1", "owner/repo2" },
     clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
     poll_interval_seconds = 300,
@@ -191,7 +193,7 @@ function M.create_default()
 end
 
 --- Load shortcuts from config, falling back to defaults gracefully.
---- Unlike load(), this does not require valid github_token/username.
+--- Unlike load(), this does not require valid tokens/username.
 ---@return table shortcuts
 function M.load_shortcuts()
   local path = M.config_path
@@ -216,27 +218,26 @@ function M.load_shortcuts()
   return vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
 end
 
---- Get the appropriate token for a given owner/org
---- Returns the owner-specific token if available, otherwise the default github_token
+--- Get the token for a given owner/org from the tokens table
 ---@param config RaccoonConfig
 ---@param owner string
----@return string
+---@return string?
 function M.get_token_for_owner(config, owner)
   if config.tokens and config.tokens[owner] then
     return config.tokens[owner]
   end
-  return config.github_token
+  return nil
 end
 
---- Get the appropriate token for a repo string ("owner/repo")
+--- Get the token for a repo string ("owner/repo")
 --- Extracts owner from the repo string and resolves the token
 ---@param config RaccoonConfig
 ---@param repo string Repository in "owner/repo" format
----@return string
+---@return string?
 function M.get_token_for_repo(config, repo)
   local owner = repo:match("^([^/]+)/")
   if not owner then
-    return config.github_token
+    return nil
   end
   return M.get_token_for_owner(config, owner)
 end

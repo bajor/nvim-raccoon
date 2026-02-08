@@ -455,13 +455,6 @@ function M.fetch_all_prs(callback)
     end
   end
 
-  if cfg.github_token and cfg.github_token ~= "" and not seen[cfg.github_token] then
-    table.insert(token_entries, {
-      key = cfg.github_username or "github_token",
-      token = cfg.github_token,
-    })
-  end
-
   if #token_entries == 0 then
     callback({}, { { key = "config", err = "No tokens configured" } })
     return

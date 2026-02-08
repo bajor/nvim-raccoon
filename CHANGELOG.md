@@ -18,6 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - All shortcut hints in floating window titles update to reflect user-configured bindings and omit disabled shortcuts
 - `keymaps.lua` refactored from static table to dynamic `build_keymaps()` driven by config
 
+### Removed
+- `github_token` config field — use the `tokens` table instead (maps owner/org to token)
+
 ## [0.4.1] - 2026-02-08
 
 ### Fixed

@@ -20,9 +20,9 @@ describe("raccoon.config", function()
 
   describe("defaults", function()
     it("has all required default fields", function()
-      assert.is_string(config.defaults.github_token)
       assert.is_string(config.defaults.github_username)
       assert.is_table(config.defaults.repos)
+      assert.is_table(config.defaults.tokens)
       assert.is_string(config.defaults.clone_root)
       assert.is_number(config.defaults.poll_interval_seconds)
     end)
@@ -31,6 +31,7 @@ describe("raccoon.config", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
       assert.is_nil(config.defaults.notifications)
+      assert.is_nil(config.defaults.github_token)
     end)
   end)
 
@@ -58,7 +59,7 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("returns error when github_token and tokens are missing", function()
+    it("returns error when tokens are missing", function()
       local tmpfile = test_tmp_dir .. "/no_token.json"
       local f = io.open(tmpfile, "w")
       f:write('{"github_username": "user", "repos": ["owner/repo"]}')
@@ -68,7 +69,23 @@ describe("raccoon.config", function()
       local cfg, err = config.load()
       assert.is_nil(cfg)
       assert.is_not_nil(err)
-      assert.matches("github_token or tokens is required", err)
+      assert.matches("tokens is required", err)
+
+      os.remove(tmpfile)
+    end)
+
+    it("returns migration hint when old github_token is present without tokens", function()
+      local tmpfile = test_tmp_dir .. "/old_config.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_token": "ghp_xxx", "github_username": "user", "repos": ["owner/repo"]}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(cfg)
+      assert.is_not_nil(err)
+      assert.matches("github_token was removed", err)
+      assert.matches("tokens", err)
 
       os.remove(tmpfile)
     end)
@@ -76,7 +93,7 @@ describe("raccoon.config", function()
     it("returns error when github_username is missing", function()
       local tmpfile = test_tmp_dir .. "/no_username.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"github_token": "ghp_xxx", "repos": ["owner/repo"]}')
+      f:write('{"tokens": {"owner": "ghp_xxx"}, "repos": ["owner/repo"]}')
       f:close()
 
       config.config_path = tmpfile
@@ -91,7 +108,7 @@ describe("raccoon.config", function()
     it("accepts empty repos for auto-discovery", function()
       local tmpfile = test_tmp_dir .. "/empty_repos.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"github_token": "ghp_xxx", "github_username": "user", "repos": []}')
+      f:write('{"tokens": {"user": "ghp_xxx"}, "github_username": "user", "repos": []}')
       f:close()
 
       config.config_path = tmpfile
@@ -107,7 +124,7 @@ describe("raccoon.config", function()
     it("returns error for invalid repo format", function()
       local tmpfile = test_tmp_dir .. "/invalid_repo.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"github_token": "ghp_xxx", "github_username": "user", "repos": ["invalid"]}')
+      f:write('{"tokens": {"user": "ghp_xxx"}, "github_username": "user", "repos": ["invalid"]}')
       f:close()
 
       config.config_path = tmpfile
@@ -123,8 +140,8 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/valid_config.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "ghp_test123",
         "github_username": "testuser",
+        "tokens": {"owner": "ghp_test123"},
         "repos": ["owner/repo1", "owner/repo2"],
         "clone_root": "~/test/repos"
       }]])
@@ -134,7 +151,7 @@ describe("raccoon.config", function()
       local cfg, err = config.load()
       assert.is_nil(err)
       assert.is_not_nil(cfg)
-      assert.equals("ghp_test123", cfg.github_token)
+      assert.equals("ghp_test123", cfg.tokens["owner"])
       assert.equals("testuser", cfg.github_username)
       assert.equals(2, #cfg.repos)
       -- Check tilde expansion
@@ -147,8 +164,8 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/partial_config.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "ghp_test123",
         "github_username": "testuser",
+        "tokens": {"owner": "ghp_test123"},
         "repos": ["owner/repo"]
       }]])
       f:close()
@@ -197,18 +214,16 @@ describe("raccoon.config", function()
   end)
 
   describe("get_token_for_owner", function()
-    it("returns default token when no owner-specific token exists", function()
+    it("returns nil when no owner-specific token exists", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {},
       }
       local token = config.get_token_for_owner(cfg, "some-owner")
-      assert.equals("default_token", token)
+      assert.is_nil(token)
     end)
 
     it("returns owner-specific token when available", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {
           ["my-org"] = "org_specific_token",
         },
@@ -217,40 +232,36 @@ describe("raccoon.config", function()
       assert.equals("org_specific_token", token)
     end)
 
-    it("returns default token for non-matching owner", function()
+    it("returns nil for non-matching owner", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {
           ["other-org"] = "other_token",
         },
       }
       local token = config.get_token_for_owner(cfg, "my-org")
-      assert.equals("default_token", token)
+      assert.is_nil(token)
     end)
 
     it("handles nil tokens table", function()
       local cfg = {
-        github_token = "default_token",
         tokens = nil,
       }
       local token = config.get_token_for_owner(cfg, "any-owner")
-      assert.equals("default_token", token)
+      assert.is_nil(token)
     end)
 
     it("handles empty tokens table", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {},
       }
       local token = config.get_token_for_owner(cfg, "any-owner")
-      assert.equals("default_token", token)
+      assert.is_nil(token)
     end)
   end)
 
   describe("get_token_for_repo", function()
     it("extracts owner from repo string and returns token", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {
           ["my-org"] = "org_token",
         },
@@ -259,38 +270,34 @@ describe("raccoon.config", function()
       assert.equals("org_token", token)
     end)
 
-    it("returns default token for unrecognized owner", function()
+    it("returns nil for unrecognized owner", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {
           ["other-org"] = "other_token",
         },
       }
       local token = config.get_token_for_repo(cfg, "my-org/my-repo")
-      assert.equals("default_token", token)
+      assert.is_nil(token)
     end)
 
-    it("returns default token for invalid repo format", function()
+    it("returns nil for invalid repo format", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {},
       }
       local token = config.get_token_for_repo(cfg, "invalid-format")
-      assert.equals("default_token", token)
+      assert.is_nil(token)
     end)
 
-    it("returns default token for empty string", function()
+    it("returns nil for empty string", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {},
       }
       local token = config.get_token_for_repo(cfg, "")
-      assert.equals("default_token", token)
+      assert.is_nil(token)
     end)
 
     it("handles repo with multiple slashes", function()
       local cfg = {
-        github_token = "default_token",
         tokens = {
           ["my-org"] = "org_token",
         },
@@ -302,7 +309,7 @@ describe("raccoon.config", function()
   end)
 
   describe("load with tokens", function()
-    it("accepts config with tokens map instead of github_token", function()
+    it("accepts config with tokens map", function()
       local tmpfile = test_tmp_dir .. "/tokens_only.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
@@ -325,7 +332,7 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("accepts config with both github_token and tokens", function()
+    it("ignores github_token when tokens is present", function()
       local tmpfile = test_tmp_dir .. "/both_tokens.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
@@ -342,7 +349,6 @@ describe("raccoon.config", function()
       local cfg, err = config.load()
       assert.is_nil(err)
       assert.is_not_nil(cfg)
-      assert.equals("default_token", cfg.github_token)
       assert.equals("special_token", cfg.tokens["special-org"])
 
       os.remove(tmpfile)
@@ -354,7 +360,7 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/dotted_repo.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "ghp_xxx",
+        "tokens": {"owner": "ghp_xxx"},
         "github_username": "user",
         "repos": ["owner/repo.nvim", "owner/my-plugin.lua"]
       }]])
@@ -373,7 +379,7 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/special_chars_repo.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "ghp_xxx",
+        "tokens": {"my_org": "ghp_xxx", "org-name": "ghp_yyy"},
         "github_username": "user",
         "repos": ["my_org/my-repo_name", "org-name/repo_name"]
       }]])
@@ -392,7 +398,7 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/extra_fields.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "ghp_xxx",
+        "tokens": {"owner": "ghp_xxx"},
         "github_username": "user",
         "repos": ["owner/repo"],
         "some_extra_field": "value"
@@ -508,8 +514,8 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/custom_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "ghp_xxx",
         "github_username": "user",
+        "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "pr_list": "<leader>pp",
           "close": "<leader>x",
@@ -540,8 +546,8 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/no_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "ghp_xxx",
-        "github_username": "user"
+        "github_username": "user",
+        "tokens": {"user": "ghp_xxx"}
       }]])
       f:close()
 
@@ -567,8 +573,8 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/disabled_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "ghp_xxx",
         "github_username": "user",
+        "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "pr_list": false,
           "commit_mode": {

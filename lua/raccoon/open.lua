@@ -318,6 +318,10 @@ local function sync_pr(silent, force)
 
   local branch = pr.head.ref
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+    return
+  end
   local repo_url = string.format("https://%s@github.com/%s/%s.git", token, owner, repo)
 
   -- Check remote for updates first
@@ -560,6 +564,10 @@ function M.open_pr(url)
 
   -- Resolve token for this owner
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+    return
+  end
 
   notify_loading(string.format("Opening PR #%d from %s/%s...", number, owner, repo))
 

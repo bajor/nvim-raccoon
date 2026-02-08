@@ -372,6 +372,10 @@ function M.merge_picker()
     return
   end
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+    return
+  end
 
   -- Fetch check runs first, then show picker
   vim.notify("Fetching CI status...", vim.log.levels.INFO)

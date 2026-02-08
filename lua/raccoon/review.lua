@@ -36,6 +36,10 @@ function M.submit_review(event, body, callback)
   local repo = state.get_repo()
   local number = state.get_number()
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    callback(string.format("No token configured for '%s'", owner))
+    return
+  end
 
   -- Submit review with comments
   api.submit_review(owner, repo, number, event, body, token, function(_result, err)

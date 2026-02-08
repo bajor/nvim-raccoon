@@ -508,6 +508,10 @@ function M.show_comment_thread()
     local number = state.get_number()
     local pr = state.get_pr()
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      return
+    end
 
     if section.type == "new" then
       -- Get all lines from new_comment_start to end
@@ -630,6 +634,10 @@ function M.show_comment_thread()
 
     local owner = state.get_owner()
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      return
+    end
 
     vim.notify("Resolving thread...", vim.log.levels.INFO)
 
@@ -696,6 +704,10 @@ function M.show_comment_thread()
 
     local owner = state.get_owner()
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      return
+    end
 
     vim.notify("Unresolving thread...", vim.log.levels.INFO)
 
@@ -836,6 +848,10 @@ function M.create_comment()
     local number = state.get_number()
     local pr = state.get_pr()
     local token = config.get_token_for_owner(cfg, owner)
+    if not token then
+      vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+      return
+    end
 
     if not pr or not pr.head or not pr.head.sha then
       vim.notify("Missing PR data (commit_id)", vim.log.levels.ERROR)
@@ -1181,6 +1197,10 @@ function M.submit_comments(callback)
   local number = state.get_number()
   local pr = state.get_pr()
   local token = config.get_token_for_owner(cfg, owner)
+  if not token then
+    callback(string.format("No token configured for '%s'", owner))
+    return
+  end
 
   if not pr or not pr.head or not pr.head.sha then
     callback("Missing PR data (commit_id)")
