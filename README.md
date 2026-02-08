@@ -43,7 +43,11 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 
 - Neovim 0.9+
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
-- A [GitHub personal access token](https://github.com/settings/tokens) with `repo` scope
+- A GitHub personal access token — either:
+  - **Classic token** ([create here](https://github.com/settings/tokens)): with `repo` scope
+  - **Fine-grained token** ([create here](https://github.com/settings/personal-access-tokens)): with these repository permissions:
+    - Read access to metadata
+    - Read and Write access to code, issues, and pull requests
 
 ## Installation
 
