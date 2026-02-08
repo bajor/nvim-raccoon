@@ -453,7 +453,9 @@ function M.merge_picker()
           vim.api.nvim_win_close(win, true)
         end
       end
-      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
+      if config.is_enabled(shortcuts.close) then
+        vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
+      end
       vim.keymap.set(NORMAL_MODE, "<Esc>", close_win, { buffer = buf, noremap = true, silent = true, nowait = true })
     end)
   end)
@@ -463,7 +465,7 @@ end
 ---@param shortcuts table Shortcut bindings from config
 ---@return table[] keymaps
 function M.build_keymaps(shortcuts)
-  return {
+  local all = {
     { mode = NORMAL_MODE, lhs = shortcuts.next_point, rhs = function() M.next_point() end, desc = "Next diff/comment" },
     { mode = NORMAL_MODE, lhs = shortcuts.prev_point, rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
     { mode = NORMAL_MODE, lhs = shortcuts.next_file, rhs = function() diff.next_file() end, desc = "Next file" },
@@ -478,6 +480,13 @@ function M.build_keymaps(shortcuts)
       require("raccoon.commits").toggle()
     end, desc = "Toggle commit viewer" },
   }
+  local result = {}
+  for _, km in ipairs(all) do
+    if config.is_enabled(km.lhs) then
+      table.insert(result, km)
+    end
+  end
+  return result
 end
 
 --- Current active keymaps (built from config at setup time)
