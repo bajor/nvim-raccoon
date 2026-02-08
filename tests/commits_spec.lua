@@ -1008,6 +1008,230 @@ describe("raccoon.commits commit_files tracking", function()
   end)
 end)
 
+describe("raccoon.commits render_filetree three-tier highlighting", function()
+  local cs
+  local filetree_buf
+
+  --- Helper: read highlight groups applied to filetree buffer lines
+  local function get_filetree_highlights(buf)
+    local ns = vim.api.nvim_create_namespace("raccoon_filetree_hl")
+    local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+    local result = {}
+    for _, mark in ipairs(marks) do
+      result[mark[2]] = mark[4].hl_group
+    end
+    return result
+  end
+
+  before_each(function()
+    state.reset()
+    require("raccoon").setup()
+    cs = commits._get_state()
+    filetree_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[filetree_buf].buftype = "nofile"
+    cs.filetree_buf = filetree_buf
+    cs.grid_rows = 2
+    cs.grid_cols = 2
+    cs.current_page = 1
+  end)
+
+  after_each(function()
+    if filetree_buf and vim.api.nvim_buf_is_valid(filetree_buf) then
+      vim.api.nvim_buf_delete(filetree_buf, { force = true })
+    end
+    state.reset()
+  end)
+
+  it("applies RaccoonFileVisible to files on current page", function()
+    cs.cached_sha = "test1"
+    cs.cached_tree_lines = { "├── visible.lua", "├── in_commit.lua", "└── normal.lua" }
+    cs.cached_line_paths = { [0] = "visible.lua", [1] = "in_commit.lua", [2] = "normal.lua" }
+    cs.cached_file_count = 3
+
+    cs.all_hunks = { { filename = "visible.lua", hunk = {} } }
+    cs.commit_files = { ["visible.lua"] = true, ["in_commit.lua"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileVisible", hl[0])
+    assert.equals("RaccoonFileInCommit", hl[1])
+    assert.equals("RaccoonFileNormal", hl[2])
+  end)
+
+  it("applies RaccoonFileInCommit to commit files not on current page", function()
+    cs.grid_rows = 1
+    cs.grid_cols = 1
+
+    cs.cached_sha = "test2"
+    cs.cached_tree_lines = { "├── file1.lua", "├── file2.lua", "└── file3.lua" }
+    cs.cached_line_paths = { [0] = "file1.lua", [1] = "file2.lua", [2] = "file3.lua" }
+    cs.cached_file_count = 3
+
+    cs.all_hunks = {
+      { filename = "file1.lua", hunk = {} },
+      { filename = "file2.lua", hunk = {} },
+      { filename = "file3.lua", hunk = {} },
+    }
+    cs.commit_files = { ["file1.lua"] = true, ["file2.lua"] = true, ["file3.lua"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileVisible", hl[0])
+    assert.equals("RaccoonFileInCommit", hl[1])
+    assert.equals("RaccoonFileInCommit", hl[2])
+  end)
+
+  it("applies RaccoonFileNormal to directory lines", function()
+    cs.cached_sha = "test3"
+    cs.cached_tree_lines = { "└── src/", "    └── main.lua" }
+    cs.cached_line_paths = { [1] = "src/main.lua" }
+    cs.cached_file_count = 1
+
+    cs.all_hunks = { { filename = "src/main.lua", hunk = {} } }
+    cs.commit_files = { ["src/main.lua"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileNormal", hl[0])
+    assert.equals("RaccoonFileVisible", hl[1])
+  end)
+
+  it("highlights empty-patch files as RaccoonFileInCommit", function()
+    cs.cached_sha = "test4"
+    cs.cached_tree_lines = { "├── changed.lua", "├── binary.bin", "└── renamed.txt" }
+    cs.cached_line_paths = { [0] = "changed.lua", [1] = "binary.bin", [2] = "renamed.txt" }
+    cs.cached_file_count = 3
+
+    -- Only changed.lua has hunks; binary.bin and renamed.txt are empty-patch
+    cs.all_hunks = { { filename = "changed.lua", hunk = {} } }
+    cs.commit_files = { ["changed.lua"] = true, ["binary.bin"] = true, ["renamed.txt"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileVisible", hl[0])
+    assert.equals("RaccoonFileInCommit", hl[1])
+    assert.equals("RaccoonFileInCommit", hl[2])
+  end)
+end)
+
+describe("raccoon.commits render_filetree early return path", function()
+  local original_show_commit
+  local captured_callback
+  local cs
+  local filetree_buf
+  local grid_bufs
+
+  --- Helper: read highlight groups applied to filetree buffer lines
+  local function get_filetree_highlights(buf)
+    local ns = vim.api.nvim_create_namespace("raccoon_filetree_hl")
+    local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+    local result = {}
+    for _, mark in ipairs(marks) do
+      result[mark[2]] = mark[4].hl_group
+    end
+    return result
+  end
+
+  before_each(function()
+    state.reset()
+    require("raccoon").setup()
+    original_show_commit = git.show_commit
+    git.show_commit = function(_, _, cb)
+      captured_callback = cb
+    end
+
+    cs = commits._get_state()
+    cs.pr_commits = { { sha = "empty1", message = "binary-only commit" } }
+    cs.active = true
+    cs.select_generation = 0
+    cs.all_hunks = {}
+    cs.commit_files = {}
+    state.session = state.session or {}
+    state.session.clone_path = "/tmp/fake"
+
+    -- Create filetree buffer
+    filetree_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[filetree_buf].buftype = "nofile"
+    cs.filetree_buf = filetree_buf
+
+    -- Create grid buffers (needed by early return path)
+    grid_bufs = { vim.api.nvim_create_buf(false, true) }
+    vim.bo[grid_bufs[1]].buftype = "nofile"
+    cs.grid_bufs = grid_bufs
+    cs.grid_wins = {}
+    cs.grid_rows = 1
+    cs.grid_cols = 1
+    cs.current_page = 1
+  end)
+
+  after_each(function()
+    git.show_commit = original_show_commit
+    if filetree_buf and vim.api.nvim_buf_is_valid(filetree_buf) then
+      vim.api.nvim_buf_delete(filetree_buf, { force = true })
+    end
+    for _, buf in ipairs(grid_bufs or {}) do
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end
+    state.reset()
+  end)
+
+  it("calls render_filetree in early return path (zero hunks)", function()
+    -- Place sentinel in filetree buffer to detect overwrite
+    vim.bo[filetree_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(filetree_buf, 0, -1, false, { "SENTINEL" })
+    vim.bo[filetree_buf].modifiable = false
+
+    commits._select_commit(1)
+    captured_callback({
+      { filename = "image.png", patch = "" },
+      { filename = "mode_change.sh", patch = "" },
+    }, nil)
+
+    assert.equals(0, #cs.all_hunks)
+    assert.equals(true, cs.commit_files["image.png"])
+    assert.equals(true, cs.commit_files["mode_change.sh"])
+
+    -- Sentinel was overwritten — proves render_filetree() was called
+    local lines = vim.api.nvim_buf_get_lines(filetree_buf, 0, -1, false)
+    assert.is_not.equals("SENTINEL", lines[1])
+
+    -- Grid cell shows empty-commit message
+    local grid_lines = vim.api.nvim_buf_get_lines(grid_bufs[1], 0, -1, false)
+    assert.is_truthy(table.concat(grid_lines):match("No changes"))
+  end)
+
+  it("calls render_filetree via render_grid_page for mixed patches", function()
+    cs.pr_commits = { { sha = "mixed1", message = "mixed commit" } }
+
+    -- Place sentinel in filetree buffer to detect overwrite
+    vim.bo[filetree_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(filetree_buf, 0, -1, false, { "SENTINEL" })
+    vim.bo[filetree_buf].modifiable = false
+
+    commits._select_commit(1)
+    captured_callback({
+      { filename = "changed.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" },
+      { filename = "binary.bin", patch = "" },
+      { filename = "renamed.txt", patch = "" },
+    }, nil)
+
+    assert.is_true(#cs.all_hunks > 0)
+    assert.equals(true, cs.commit_files["changed.lua"])
+    assert.equals(true, cs.commit_files["binary.bin"])
+    assert.equals(true, cs.commit_files["renamed.txt"])
+
+    -- Sentinel was overwritten — proves render_filetree() was called
+    local lines = vim.api.nvim_buf_get_lines(filetree_buf, 0, -1, false)
+    assert.is_not.equals("SENTINEL", lines[1])
+  end)
+end)
+
 describe("raccoon file tree highlight groups", function()
   it("defines RaccoonFileNormal highlight group", function()
     require("raccoon").setup()
