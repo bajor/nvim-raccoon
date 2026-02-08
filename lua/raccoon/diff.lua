@@ -318,15 +318,21 @@ function M.setup_keymaps()
   local shortcuts = config.load_shortcuts()
   local opts = { noremap = true, silent = true }
 
-  M._active_keymaps = { shortcuts.next_file_alt, shortcuts.prev_file_alt }
+  M._active_keymaps = {}
 
-  vim.keymap.set(NORMAL_MODE, shortcuts.next_file_alt, function()
-    M.next_file()
-  end, vim.tbl_extend("force", opts, { desc = "Next PR file" }))
+  if config.is_enabled(shortcuts.next_file_alt) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.next_file_alt, function()
+      M.next_file()
+    end, vim.tbl_extend("force", opts, { desc = "Next PR file" }))
+    table.insert(M._active_keymaps, shortcuts.next_file_alt)
+  end
 
-  vim.keymap.set(NORMAL_MODE, shortcuts.prev_file_alt, function()
-    M.prev_file()
-  end, vim.tbl_extend("force", opts, { desc = "Previous PR file" }))
+  if config.is_enabled(shortcuts.prev_file_alt) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.prev_file_alt, function()
+      M.prev_file()
+    end, vim.tbl_extend("force", opts, { desc = "Previous PR file" }))
+    table.insert(M._active_keymaps, shortcuts.prev_file_alt)
+  end
 end
 
 --- Clear keymaps when session ends
