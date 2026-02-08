@@ -58,14 +58,18 @@ function M.setup(opts)
   local shortcuts = cfg.load_shortcuts()
   local NORMAL_MODE = cfg.NORMAL
 
-  -- Global keymaps (always available)
-  vim.keymap.set(NORMAL_MODE, shortcuts.pr_list, function()
-    require("raccoon.ui").show_pr_list()
-  end, { noremap = true, silent = true, desc = "Raccoon: PR list" })
+  -- Global keymaps (always available, unless disabled by user)
+  if cfg.is_enabled(shortcuts.pr_list) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.pr_list, function()
+      require("raccoon.ui").show_pr_list()
+    end, { noremap = true, silent = true, desc = "Raccoon: PR list" })
+  end
 
-  vim.keymap.set(NORMAL_MODE, shortcuts.show_shortcuts, function()
-    require("raccoon.ui").show_shortcuts()
-  end, { noremap = true, silent = true, desc = "Raccoon: Show shortcuts" })
+  if cfg.is_enabled(shortcuts.show_shortcuts) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.show_shortcuts, function()
+      require("raccoon.ui").show_shortcuts()
+    end, { noremap = true, silent = true, desc = "Raccoon: Show shortcuts" })
+  end
 end
 
 --- Get sync status for lualine/statusline integration
