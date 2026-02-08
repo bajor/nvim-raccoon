@@ -110,7 +110,10 @@ You need either `github_token` (used for all repos) or `tokens` (per-org tokens)
   },
   "shortcuts": {
     "next_file_alt": "]n",
-    "prev_file_alt": "[n"
+    "prev_file_alt": "[n",
+    "commit_mode": {
+      "exit": "<leader>ce"
+    }
   }
 }
 ```
@@ -161,6 +164,7 @@ All keymaps are configurable via the `shortcuts` field in `config.json`. The val
 | `<leader>dd` | `description` | Show PR description |
 | `<leader>ll` | `list_comments` | List all comments |
 | `<leader>pr` | `pr_list` | Open PR list picker |
+| `<leader>?` | `show_shortcuts` | Show shortcuts help |
 | `<leader>rr` | `merge` | Merge PR (pick method) |
 | `<leader>cm` | `commit_viewer` | Toggle commit viewer mode |
 | `<leader>q` | `close` | Close window / exit session |
@@ -173,15 +177,17 @@ Press `<leader>cm` during a PR review to enter commit viewer mode. A sidebar lis
 
 ### Commit viewer keymaps
 
+Commit mode shortcuts live under `shortcuts.commit_mode` in config:
+
 | Key | Config key | Action |
 |-----|------------|--------|
 | `j` / `k` | — | Navigate commits in sidebar (auto-loads diffs) |
-| `<leader>j` | `commit_next_page` | Next page of diff hunks |
-| `<leader>k` | `commit_prev_page` | Previous page of diff hunks |
-| `<leader>l` | `commit_next_page_alt` | Next page of diff hunks (alias) |
-| `<leader>m1`..`m9` | `commit_maximize_prefix` | Maximize a grid cell (full file diff) |
+| `<leader>j` | `commit_mode.next_page` | Next page of diff hunks |
+| `<leader>k` | `commit_mode.prev_page` | Previous page of diff hunks |
+| `<leader>l` | `commit_mode.next_page_alt` | Next page of diff hunks (alias) |
+| `<leader>m1`..`m9` | `commit_mode.maximize_prefix` | Maximize a grid cell (full file diff) |
 | `<leader>q` / `q` | `close` | Exit maximized view |
-| `<leader>cm` | `commit_exit` | Exit commit viewer mode |
+| `<leader>cm` | `commit_mode.exit` | Exit commit viewer mode |
 
 Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number are shown in the winbar. A header bar displays the current commit message and page indicator. Navigation crosses seamlessly from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
 

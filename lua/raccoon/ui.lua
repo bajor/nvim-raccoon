@@ -569,6 +569,7 @@ end
 --- Shortcut descriptions keyed by config shortcut name
 local shortcut_descriptions = {
   pr_list = "Open PR list",
+  show_shortcuts = "Show shortcuts help",
   next_point = "Next diff/comment",
   prev_point = "Previous diff/comment",
   next_file = "Next file",
@@ -585,21 +586,25 @@ local shortcut_descriptions = {
   comment_save = "Save comment",
   comment_resolve = "Resolve thread",
   comment_unresolve = "Unresolve thread",
-  commit_next_page = "Next page of hunks",
-  commit_prev_page = "Previous page of hunks",
-  commit_next_page_alt = "Next page (alt)",
-  commit_exit = "Exit commit viewer",
-  commit_maximize_prefix = "Maximize cell (+ number)",
   close = "Close/dismiss",
+}
+
+--- Commit mode shortcut descriptions (nested under shortcuts.commit_mode)
+local commit_mode_descriptions = {
+  next_page = "Next page of hunks",
+  prev_page = "Previous page of hunks",
+  next_page_alt = "Next page (alt)",
+  exit = "Exit commit viewer",
+  maximize_prefix = "Maximize cell (+ number)",
 }
 
 --- Display groups for the shortcuts help window
 local shortcut_groups = {
-  { title = "Global", keys = { "pr_list" } },
+  { title = "Global", keys = { "pr_list", "show_shortcuts" } },
   { title = "Review Navigation", keys = { "next_point", "prev_point", "next_file", "prev_file", "next_file_alt", "prev_file_alt", "next_thread", "prev_thread" } },
   { title = "Review Actions", keys = { "comment", "description", "list_comments", "merge", "commit_viewer" } },
   { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
-  { title = "Commit Viewer", keys = { "commit_next_page", "commit_prev_page", "commit_next_page_alt", "commit_exit", "commit_maximize_prefix" } },
+  { title = "Commit Viewer", nested = "commit_mode", keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" } },
   { title = "Common", keys = { "close" } },
 }
 
@@ -617,9 +622,11 @@ function M.show_shortcuts()
     table.insert(lines, header)
     table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
+    local source = group.nested and shortcuts[group.nested] or shortcuts
+    local descs = group.nested and commit_mode_descriptions or shortcut_descriptions
     for _, key in ipairs(group.keys) do
-      local binding = shortcuts[key] or "?"
-      local desc = shortcut_descriptions[key] or key
+      local binding = source and source[key] or "?"
+      local desc = descs[key] or key
       table.insert(lines, string.format("  %-22s %s", binding, desc))
     end
 

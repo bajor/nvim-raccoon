@@ -138,7 +138,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   },
   "shortcuts": {
     "pr_list": "<leader>pr",
-
+    "show_shortcuts": "<leader>?",
     "next_point": "<leader>j",
     "prev_point": "<leader>k",
     "next_file": "<leader>nf",
@@ -155,12 +155,14 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     "comment_save": "<leader>s",
     "comment_resolve": "<leader>r",
     "comment_unresolve": "<leader>u",
-    "commit_next_page": "<leader>j",
-    "commit_prev_page": "<leader>k",
-    "commit_next_page_alt": "<leader>l",
-    "commit_exit": "<leader>cm",
-    "commit_maximize_prefix": "<leader>m",
-    "close": "<leader>q"
+    "close": "<leader>q",
+    "commit_mode": {
+      "next_page": "<leader>j",
+      "prev_page": "<leader>k",
+      "next_page_alt": "<leader>l",
+      "exit": "<leader>cm",
+      "maximize_prefix": "<leader>m"
+    }
   }
 }]], clone_root)
       local file = io.open(config_path, "w")

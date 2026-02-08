@@ -417,13 +417,11 @@ describe("raccoon.config", function()
 
     it("has all expected shortcut keys", function()
       local expected = {
-        "pr_list",
+        "pr_list", "show_shortcuts",
         "next_point", "prev_point", "next_file", "prev_file",
         "next_thread", "prev_thread", "next_file_alt", "prev_file_alt",
         "comment", "description", "list_comments", "merge", "commit_viewer",
         "comment_save", "comment_resolve", "comment_unresolve",
-        "commit_next_page", "commit_prev_page", "commit_next_page_alt",
-        "commit_exit", "commit_maximize_prefix",
         "close",
       }
       for _, key in ipairs(expected) do
@@ -432,10 +430,25 @@ describe("raccoon.config", function()
       end
     end)
 
+    it("has commit_mode subsection with expected keys", function()
+      assert.is_table(config.defaults.shortcuts.commit_mode)
+      local expected = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" }
+      for _, key in ipairs(expected) do
+        assert.is_string(config.defaults.shortcuts.commit_mode[key],
+          "Missing commit_mode shortcut default: " .. key)
+      end
+    end)
+
     it("default shortcuts are non-empty strings", function()
       for key, val in pairs(config.defaults.shortcuts) do
-        assert.is_string(val, "Shortcut " .. key .. " should be a string")
-        assert.is_true(#val > 0, "Shortcut " .. key .. " should not be empty")
+        if key ~= "commit_mode" then
+          assert.is_string(val, "Shortcut " .. key .. " should be a string")
+          assert.is_true(#val > 0, "Shortcut " .. key .. " should not be empty")
+        end
+      end
+      for key, val in pairs(config.defaults.shortcuts.commit_mode) do
+        assert.is_string(val, "commit_mode." .. key .. " should be a string")
+        assert.is_true(#val > 0, "commit_mode." .. key .. " should not be empty")
       end
     end)
   end)
@@ -471,7 +484,10 @@ describe("raccoon.config", function()
         "github_username": "user",
         "shortcuts": {
           "pr_list": "<leader>pp",
-          "close": "<leader>x"
+          "close": "<leader>x",
+          "commit_mode": {
+            "exit": "<leader>xx"
+          }
         }
       }]])
       f:close()
@@ -484,6 +500,10 @@ describe("raccoon.config", function()
       -- Non-overridden values get defaults
       assert.equals(config.defaults.shortcuts.next_point, shortcuts.next_point)
       assert.equals(config.defaults.shortcuts.description, shortcuts.description)
+      -- Nested commit_mode: overridden key
+      assert.equals("<leader>xx", shortcuts.commit_mode.exit)
+      -- Nested commit_mode: non-overridden keys keep defaults
+      assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
 
       os.remove(tmpfile)
     end)

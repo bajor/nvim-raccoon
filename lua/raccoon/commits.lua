@@ -128,8 +128,8 @@ local function lock_maximize_buf(buf)
     "ZZ", "ZQ",
     "<C-z>",
     -- Block commit-mode navigation (override globals so maximize is isolated)
-    shortcuts.commit_next_page, shortcuts.commit_prev_page, shortcuts.commit_next_page_alt,
-    shortcuts.commit_exit,
+    shortcuts.commit_mode.next_page, shortcuts.commit_mode.prev_page, shortcuts.commit_mode.next_page_alt,
+    shortcuts.commit_mode.exit,
   }
   for _, key in ipairs(blocked) do
     vim.keymap.set("n", key, nop, opts)
@@ -137,7 +137,7 @@ local function lock_maximize_buf(buf)
   -- Block all cell maximize keys
   local cells = commit_state.grid_rows * commit_state.grid_cols
   for i = 1, cells do
-    vim.keymap.set("n", shortcuts.commit_maximize_prefix .. i, nop, opts)
+    vim.keymap.set("n", shortcuts.commit_mode.maximize_prefix .. i, nop, opts)
   end
 end
 
@@ -714,10 +714,10 @@ local function setup_keymaps()
   local nop = function() end
 
   commit_mode_keymaps = {
-    { mode = "n", lhs = shortcuts.commit_exit, rhs = function() M.toggle() end, desc = "Exit commit viewer" },
-    { mode = "n", lhs = shortcuts.commit_next_page, rhs = next_page, desc = "Next page of hunks" },
-    { mode = "n", lhs = shortcuts.commit_prev_page, rhs = prev_page, desc = "Previous page of hunks" },
-    { mode = "n", lhs = shortcuts.commit_next_page_alt, rhs = next_page, desc = "Next page of hunks" },
+    { mode = "n", lhs = shortcuts.commit_mode.exit, rhs = function() M.toggle() end, desc = "Exit commit viewer" },
+    { mode = "n", lhs = shortcuts.commit_mode.next_page, rhs = next_page, desc = "Next page of hunks" },
+    { mode = "n", lhs = shortcuts.commit_mode.prev_page, rhs = prev_page, desc = "Previous page of hunks" },
+    { mode = "n", lhs = shortcuts.commit_mode.next_page_alt, rhs = next_page, desc = "Next page of hunks" },
     -- Block window-switching keys
     { mode = "n", lhs = "<C-w>h", rhs = nop, desc = "Blocked in commit mode" },
     { mode = "n", lhs = "<C-w>j", rhs = nop, desc = "Blocked in commit mode" },
@@ -736,7 +736,7 @@ local function setup_keymaps()
   for i = 1, cells do
     table.insert(commit_mode_keymaps, {
       mode = "n",
-      lhs = shortcuts.commit_maximize_prefix .. i,
+      lhs = shortcuts.commit_mode.maximize_prefix .. i,
       rhs = function() maximize_cell(i) end,
       desc = "Maximize grid cell " .. i,
     })

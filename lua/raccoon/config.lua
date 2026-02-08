@@ -23,6 +23,7 @@ M.defaults = {
   shortcuts = {
     -- Global
     pr_list = "<leader>pr",
+    show_shortcuts = "<leader>?",
     -- Review navigation
     next_point = "<leader>j",
     prev_point = "<leader>k",
@@ -42,14 +43,16 @@ M.defaults = {
     comment_save = "<leader>s",
     comment_resolve = "<leader>r",
     comment_unresolve = "<leader>u",
-    -- Commit viewer
-    commit_next_page = "<leader>j",
-    commit_prev_page = "<leader>k",
-    commit_next_page_alt = "<leader>l",
-    commit_exit = "<leader>cm",
-    commit_maximize_prefix = "<leader>m",
     -- Common
     close = "<leader>q",
+    -- Commit viewer mode
+    commit_mode = {
+      next_page = "<leader>j",
+      prev_page = "<leader>k",
+      next_page_alt = "<leader>l",
+      exit = "<leader>cm",
+      maximize_prefix = "<leader>m",
+    },
   },
 }
 

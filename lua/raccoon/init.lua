@@ -61,6 +61,9 @@ function M.setup(opts)
     require("raccoon.ui").show_pr_list()
   end, { noremap = true, silent = true, desc = "Raccoon: PR list" })
 
+  vim.keymap.set("n", shortcuts.show_shortcuts, function()
+    require("raccoon.ui").show_shortcuts()
+  end, { noremap = true, silent = true, desc = "Raccoon: Show shortcuts" })
 end
 
 --- Get sync status for lualine/statusline integration
