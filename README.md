@@ -77,6 +77,8 @@ Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/c
 }
 ```
 
+See [config_docs.md](config_docs.md) for a detailed reference of every config field with descriptions, examples, and GitHub Enterprise setup.
+
 ### All config fields
 
 | Field | Type | Default | Description |
