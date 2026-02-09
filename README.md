@@ -282,6 +282,10 @@ When navigating with `<leader>j`/`<leader>k`, notifications show position within
 
 The [prs-and-issues-preview-osx](https://github.com/bajor/prs-and-issues-preview-osx) macOS menu bar app can display your PRs in the menu bar and open them directly in Neovim with raccoon.nvim. The built-in `:Raccoon prs` picker makes the companion app optional.
 
+## Inspiration
+
+The design philosophy of this plugin is influenced by Gabriella Gonzalez's [Beyond Agentic Coding](https://haskellforall.com/2026/02/beyond-agentic-coding), which argues that good tools keep the user in a flow state and in direct contact with the code. Raccoon tries to follow that principle as a guiding star — keep everything inside Neovim, stay close to the code, never break focus.
+
 ## License
 
 MIT
