@@ -311,6 +311,9 @@ local function sync_pr(silent, force)
     return
   end
 
+  -- Initialize API URLs for this host
+  api.init(cfg.github_host)
+
   local owner = state.get_owner()
   local repo = state.get_repo()
   local number = state.get_number()
@@ -327,7 +330,7 @@ local function sync_pr(silent, force)
     vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
     return
   end
-  local repo_url = string.format("https://%s@github.com/%s/%s.git", token, owner, repo)
+  local repo_url = string.format("https://%s@%s/%s/%s.git", token, cfg.github_host, owner, repo)
 
   -- Check remote for updates first
   api.get_pr(owner, repo, number, token, function(new_pr, pr_err)
@@ -541,17 +544,20 @@ end
 --- Open a PR for review
 ---@param url string GitHub PR URL
 function M.open_pr(url)
-  -- Parse URL
-  local owner, repo, number = api.parse_pr_url(url)
-  if not owner or not repo or not number then
-    notify_error("Invalid PR URL: " .. url)
-    return
-  end
-
-  -- Load config
+  -- Load config first (needed for github_host)
   local cfg, cfg_err = config.load()
   if cfg_err then
     notify_error("Config error: " .. cfg_err)
+    return
+  end
+
+  -- Initialize API URLs for this host
+  api.init(cfg.github_host)
+
+  -- Parse URL
+  local owner, repo, number = api.parse_pr_url(url, cfg.github_host)
+  if not owner or not repo or not number then
+    notify_error("Invalid PR URL: " .. url)
     return
   end
 
@@ -588,7 +594,7 @@ function M.open_pr(url)
 
     local branch = pr.head.ref
     -- Use token in URL for HTTPS authentication
-    local repo_url = string.format("https://%s@github.com/%s/%s.git", token, owner, repo)
+    local repo_url = string.format("https://%s@%s/%s/%s.git", token, cfg.github_host, owner, repo)
 
     -- Clone or update the repo
     prepare_repo(clone_path, repo_url, branch, function(repo_err)

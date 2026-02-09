@@ -1,5 +1,6 @@
 ---@class RaccoonConfig
 ---@field github_username string GitHub username
+---@field github_host string GitHub host (default: "github.com", set for GitHub Enterprise)
 ---@field repos string[] List of repos to watch (format: "owner/repo")
 ---@field tokens table<string, string> Per-owner/org tokens (owner -> token)
 ---@field clone_root string Root directory for cloned PR repos
@@ -22,6 +23,7 @@ end
 --- Default configuration values
 M.defaults = {
   github_username = "",
+  github_host = "github.com",
   repos = {},
   tokens = {},
   clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
@@ -167,6 +169,7 @@ function M.create_default()
 
   local default = {
     github_username = "your-username",
+    github_host = "github.com",
     tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
     repos = { "owner/repo1", "owner/repo2" },
     clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),

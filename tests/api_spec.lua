@@ -10,6 +10,14 @@ describe("raccoon.api", function()
       assert.equals("https://api.github.com", api.base_url)
     end)
 
+    it("has graphql_url", function()
+      assert.equals("https://api.github.com/graphql", api.graphql_url)
+    end)
+
+    it("has init function", function()
+      assert.is_function(api.init)
+    end)
+
     it("has list_prs function", function()
       assert.is_function(api.list_prs)
     end)
@@ -138,12 +146,23 @@ describe("raccoon.api", function()
       end
     end)
 
-    it("handles enterprise GitHub URLs", function()
-      -- Enterprise GitHub uses different domain
+    it("returns nil for enterprise URL without matching host", function()
       local owner, repo, number = api.parse_pr_url("https://github.mycompany.com/owner/repo/pull/42")
-      -- Our current pattern only matches github.com
-      -- This is expected behavior - enterprise support would need pattern update
       assert.is_nil(owner)
+    end)
+
+    it("parses enterprise GitHub URL with matching host", function()
+      local owner, repo, number = api.parse_pr_url("https://github.mycompany.com/owner/repo/pull/42", "github.mycompany.com")
+      assert.equals("owner", owner)
+      assert.equals("repo", repo)
+      assert.equals(42, number)
+    end)
+
+    it("parses enterprise URL with subpath", function()
+      local owner, repo, number = api.parse_pr_url("https://git.corp.example.com/team/project/pull/7", "git.corp.example.com")
+      assert.equals("team", owner)
+      assert.equals("project", repo)
+      assert.equals(7, number)
     end)
   end)
 end)
@@ -245,12 +264,47 @@ describe("raccoon.api edge cases", function()
       assert.truthy(api.base_url:match("^https://"))
     end)
 
-    it("base_url is GitHub API", function()
+    it("base_url defaults to GitHub API", function()
+      api.init("github.com")
       assert.truthy(api.base_url:match("api%.github%.com"))
     end)
 
     it("base_url has no trailing slash", function()
       assert.is_nil(api.base_url:match("/$"))
+    end)
+  end)
+
+  describe("init", function()
+    after_each(function()
+      api.init("github.com")
+    end)
+
+    it("sets github.com URLs by default", function()
+      api.init("github.com")
+      assert.equals("https://api.github.com", api.base_url)
+      assert.equals("https://api.github.com/graphql", api.graphql_url)
+    end)
+
+    it("sets GHE REST URL for custom host", function()
+      api.init("github.mycompany.com")
+      assert.equals("https://github.mycompany.com/api/v3", api.base_url)
+    end)
+
+    it("sets GHE GraphQL URL for custom host", function()
+      api.init("github.mycompany.com")
+      assert.equals("https://github.mycompany.com/api/graphql", api.graphql_url)
+    end)
+
+    it("handles host with subdomain", function()
+      api.init("git.corp.example.com")
+      assert.equals("https://git.corp.example.com/api/v3", api.base_url)
+      assert.equals("https://git.corp.example.com/api/graphql", api.graphql_url)
+    end)
+
+    it("produces URLs without trailing slash", function()
+      api.init("github.mycompany.com")
+      assert.is_nil(api.base_url:match("/$"))
+      assert.is_nil(api.graphql_url:match("/$"))
     end)
   end)
 end)

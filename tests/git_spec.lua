@@ -84,6 +84,26 @@ describe("raccoon.git", function()
     it("handles orgs with hyphens and dots", function()
       assert.equals("my-org/my.repo", git.parse_repo_from_remote_url("git@github.com:my-org/my.repo.git"))
     end)
+
+    it("parses GHE SSH remote URL with matching host", function()
+      assert.equals("owner/repo", git.parse_repo_from_remote_url("git@github.mycompany.com:owner/repo.git", "github.mycompany.com"))
+    end)
+
+    it("parses GHE HTTPS remote URL with matching host", function()
+      assert.equals("owner/repo", git.parse_repo_from_remote_url("https://github.mycompany.com/owner/repo.git", "github.mycompany.com"))
+    end)
+
+    it("parses GHE HTTPS URL with token", function()
+      assert.equals("owner/repo", git.parse_repo_from_remote_url("https://ghp_xxx@github.mycompany.com/owner/repo.git", "github.mycompany.com"))
+    end)
+
+    it("returns nil for GHE URL without matching host", function()
+      assert.is_nil(git.parse_repo_from_remote_url("git@github.mycompany.com:owner/repo.git"))
+    end)
+
+    it("parses GHE URL with subdomain host", function()
+      assert.equals("team/project", git.parse_repo_from_remote_url("git@git.corp.example.com:team/project.git", "git.corp.example.com"))
+    end)
   end)
 
   describe("is_git_repo", function()
