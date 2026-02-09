@@ -128,7 +128,7 @@ How often (in seconds) the plugin checks for new commits pushed to the PR branch
 }
 ```
 
-The sync check compares the HEAD SHA — if nothing changed, no further API calls are made. You can also manually sync with `:Raccoon sync` at any time.
+The sync check compares the HEAD SHA — if nothing changed, no further API calls are made. Auto-sync is paused while commit viewer mode is active and resumes when you exit. You can also manually sync with `:Raccoon sync` at any time.
 
 ### `commit_viewer`
 
