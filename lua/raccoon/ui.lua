@@ -442,6 +442,8 @@ function M.fetch_all_prs(callback)
     return
   end
 
+  api.init(cfg.github_host)
+
   -- Collect unique tokens: {key, token} pairs
   local token_entries = {}
   local seen = {}
