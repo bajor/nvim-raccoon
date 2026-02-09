@@ -21,16 +21,18 @@ describe("raccoon.config", function()
   describe("defaults", function()
     it("has all required default fields", function()
       assert.is_string(config.defaults.github_username)
-      assert.is_table(config.defaults.repos)
       assert.is_table(config.defaults.tokens)
       assert.is_string(config.defaults.clone_root)
-      assert.is_number(config.defaults.poll_interval_seconds)
+      assert.is_number(config.defaults.pull_changes_interval)
+      assert.equals(300, config.defaults.pull_changes_interval)
     end)
 
     it("does not contain dead config fields", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
       assert.is_nil(config.defaults.notifications)
+      assert.is_nil(config.defaults.repos)
+      assert.is_nil(config.defaults.poll_interval_seconds)
     end)
   end)
 
@@ -61,7 +63,7 @@ describe("raccoon.config", function()
     it("returns error when tokens are missing", function()
       local tmpfile = test_tmp_dir .. "/no_token.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"github_username": "user", "repos": ["owner/repo"]}')
+      f:write('{"github_username": "user"}')
       f:close()
 
       config.config_path = tmpfile
@@ -76,7 +78,7 @@ describe("raccoon.config", function()
     it("returns error when tokens is missing", function()
       local tmpfile = test_tmp_dir .. "/no_tokens.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"github_username": "user", "repos": ["owner/repo"]}')
+      f:write('{"github_username": "user"}')
       f:close()
 
       config.config_path = tmpfile
@@ -91,7 +93,7 @@ describe("raccoon.config", function()
     it("returns error when github_username is missing", function()
       local tmpfile = test_tmp_dir .. "/no_username.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"tokens": {"owner": "ghp_xxx"}, "repos": ["owner/repo"]}')
+      f:write('{"tokens": {"owner": "ghp_xxx"}}')
       f:close()
 
       config.config_path = tmpfile
@@ -103,44 +105,12 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("accepts empty repos for auto-discovery", function()
-      local tmpfile = test_tmp_dir .. "/empty_repos.json"
-      local f = io.open(tmpfile, "w")
-      f:write('{"tokens": {"user": "ghp_xxx"}, "github_username": "user", "repos": []}')
-      f:close()
-
-      config.config_path = tmpfile
-      local cfg, err = config.load()
-      -- Empty repos is now valid - enables auto-discovery
-      assert.is_nil(err)
-      assert.is_not_nil(cfg)
-      assert.equals(0, #cfg.repos)
-
-      os.remove(tmpfile)
-    end)
-
-    it("returns error for invalid repo format", function()
-      local tmpfile = test_tmp_dir .. "/invalid_repo.json"
-      local f = io.open(tmpfile, "w")
-      f:write('{"tokens": {"user": "ghp_xxx"}, "github_username": "user", "repos": ["invalid"]}')
-      f:close()
-
-      config.config_path = tmpfile
-      local cfg, err = config.load()
-      assert.is_nil(cfg)
-      assert.is_not_nil(err)
-      assert.matches("Invalid repo format", err)
-
-      os.remove(tmpfile)
-    end)
-
     it("loads valid config successfully", function()
       local tmpfile = test_tmp_dir .. "/valid_config.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
         "github_username": "testuser",
         "tokens": {"owner": "ghp_test123"},
-        "repos": ["owner/repo1", "owner/repo2"],
         "clone_root": "~/test/repos"
       }]])
       f:close()
@@ -151,7 +121,6 @@ describe("raccoon.config", function()
       assert.is_not_nil(cfg)
       assert.equals("ghp_test123", cfg.tokens["owner"])
       assert.equals("testuser", cfg.github_username)
-      assert.equals(2, #cfg.repos)
       -- Check tilde expansion
       assert.is_not_nil(cfg.clone_root:match("^/"))
 
@@ -163,8 +132,7 @@ describe("raccoon.config", function()
       local f = io.open(tmpfile, "w")
       f:write([[{
         "github_username": "testuser",
-        "tokens": {"owner": "ghp_test123"},
-        "repos": ["owner/repo"]
+        "tokens": {"owner": "ghp_test123"}
       }]])
       f:close()
 
@@ -173,7 +141,7 @@ describe("raccoon.config", function()
       assert.is_nil(err)
       assert.is_not_nil(cfg)
       -- Should have default values
-      assert.equals(300, cfg.poll_interval_seconds)
+      assert.is_not_nil(cfg.clone_root)
 
       os.remove(tmpfile)
     end)
@@ -315,8 +283,7 @@ describe("raccoon.config", function()
         "tokens": {
           "org1": "token1",
           "org2": "token2"
-        },
-        "repos": ["org1/repo1"]
+        }
       }]])
       f:close()
 
@@ -338,8 +305,7 @@ describe("raccoon.config", function()
         "github_username": "testuser",
         "tokens": {
           "special-org": "special_token"
-        },
-        "repos": ["owner/repo"]
+        }
       }]])
       f:close()
 
@@ -354,51 +320,12 @@ describe("raccoon.config", function()
   end)
 
   describe("load edge cases", function()
-    it("handles repos with dots in name", function()
-      local tmpfile = test_tmp_dir .. "/dotted_repo.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "tokens": {"owner": "ghp_xxx"},
-        "github_username": "user",
-        "repos": ["owner/repo.nvim", "owner/my-plugin.lua"]
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local cfg, err = config.load()
-      assert.is_nil(err)
-      assert.is_not_nil(cfg)
-      assert.equals(2, #cfg.repos)
-
-      os.remove(tmpfile)
-    end)
-
-    it("handles repos with underscores and hyphens", function()
-      local tmpfile = test_tmp_dir .. "/special_chars_repo.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "tokens": {"my_org": "ghp_xxx", "org-name": "ghp_yyy"},
-        "github_username": "user",
-        "repos": ["my_org/my-repo_name", "org-name/repo_name"]
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local cfg, err = config.load()
-      assert.is_nil(err)
-      assert.is_not_nil(cfg)
-      assert.equals(2, #cfg.repos)
-
-      os.remove(tmpfile)
-    end)
-
     it("passes through unknown fields from config file", function()
       local tmpfile = test_tmp_dir .. "/extra_fields.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
         "tokens": {"owner": "ghp_xxx"},
         "github_username": "user",
-        "repos": ["owner/repo"],
         "some_extra_field": "value"
       }]])
       f:close()

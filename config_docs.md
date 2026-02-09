@@ -11,7 +11,6 @@ The merge uses a deep merge strategy, so nested objects like `shortcuts` and `co
 Validation rules:
 - **`tokens`** is required and must contain at least one entry
 - **`github_username`** is required and must be non-empty
-- **`repos`** entries must match the `"owner/repo"` format
 - Unknown fields are silently ignored
 
 ## Minimal config
@@ -51,7 +50,7 @@ Your GitHub username. Used to search for PRs you're involved in (author, reviewe
 |------|---------|----------|
 | object | `{}` | Yes |
 
-A map of owner/org names to GitHub personal access tokens. Each owner in your `repos` list needs a matching token entry.
+A map of owner/org names to GitHub personal access tokens. Each owner/org you want to access needs a matching token entry.
 
 Tokens are used for both API authentication (`Authorization: Bearer <token>`) and HTTPS git operations (cloning, fetching).
 
@@ -97,28 +96,6 @@ PR URLs, clone URLs, and git remote parsing all use the configured host. For exa
 
 Leave this unset (or set to `"github.com"`) for regular GitHub.
 
-### `repos`
-
-| Type | Default |
-|------|---------|
-| string[] | `[]` |
-
-List of repositories to monitor, in `"owner/repo"` format. These repos appear in the PR list picker (`:Raccoon prs`).
-
-Each owner referenced here needs a matching entry in `tokens`.
-
-```json
-{
-  "repos": [
-    "my-username/side-project",
-    "work-org/backend",
-    "work-org/frontend"
-  ]
-}
-```
-
-When empty, the PR list fetches all open PRs visible to your tokens.
-
 ### `clone_root`
 
 | Type | Default |
@@ -137,17 +114,17 @@ Supports tilde expansion (`~/...`).
 
 Clones persist on disk, so reopening a PR is fast — it fetches updates instead of cloning from scratch. Delete the directory to free disk space when you no longer need old review clones.
 
-### `poll_interval_seconds`
+### `pull_changes_interval`
 
 | Type | Default |
 |------|---------|
 | number | `300` |
 
-How often (in seconds) the plugin checks for new commits pushed to the PR branch while a review session is active. Set lower for faster detection, higher to reduce API calls.
+How often (in seconds) the plugin checks for new commits pushed to the PR branch while a review session is active. Set lower for faster detection, higher to reduce API calls. Minimum value is 10 seconds.
 
 ```json
 {
-  "poll_interval_seconds": 120
+  "pull_changes_interval": 120
 }
 ```
 
@@ -226,9 +203,8 @@ Partial overrides are merged with defaults — you only need to specify keys you
     "your-username": "ghp_personal_token",
     "work-org": "ghp_work_token"
   },
-  "repos": ["your-username/side-project", "work-org/backend"],
   "clone_root": "~/code/pr-reviews",
-  "poll_interval_seconds": 120,
+  "pull_changes_interval": 120,
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
@@ -250,12 +226,7 @@ Partial overrides are merged with defaults — you only need to specify keys you
   "tokens": {
     "jdoe": "ghp_xxxxxxxxxxxxxxxxxxxx",
     "platform-team": "ghp_yyyyyyyyyyyyyyyyyyyy"
-  },
-  "repos": [
-    "jdoe/dotfiles",
-    "platform-team/infra",
-    "platform-team/api-gateway"
-  ]
+  }
 }
 ```
 

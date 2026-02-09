@@ -72,8 +72,7 @@ Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/c
   "github_username": "your-username",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
-  },
-  "repos": ["owner/repo1", "owner/repo2"]
+  }
 }
 ```
 
@@ -86,15 +85,14 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `github_username` | string | `""` | Your GitHub username |
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org, e.g. `{"my-org": "ghp_..."}` |
-| `repos` | string[] | `[]` | Repos to watch, in `"owner/repo"` format |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
-| `poll_interval_seconds` | number | `300` | How often (in seconds) to check for new commits |
+| `pull_changes_interval` | number | `300` | How often (in seconds) to auto-sync with remote |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
 | `commit_viewer.grid.rows` | number | `2` | Rows in the commit viewer diff grid |
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 
-Each owner in your `repos` list needs a matching entry in `tokens`. For example, if you watch `"my-org/backend"`, add `"my-org": "ghp_..."` to `tokens`.
+Each owner/org you want to access needs a matching entry in `tokens`. For example, to review PRs from `my-org`, add `"my-org": "ghp_..."` to `tokens`.
 
 ### GitHub Enterprise
 
@@ -106,8 +104,7 @@ Set `github_host` to your company's GitHub Enterprise domain:
   "github_host": "github.mycompany.com",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
-  },
-  "repos": ["your-team/backend"]
+  }
 }
 ```
 
@@ -127,9 +124,8 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 22 co
     "your-username": "ghp_personal_token",
     "work-org": "ghp_work_token"
   },
-  "repos": ["your-username/side-project", "work-org/backend"],
   "clone_root": "~/code/pr-reviews",
-  "poll_interval_seconds": 120,
+  "pull_changes_interval": 120,
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
@@ -185,7 +181,7 @@ Disabled shortcuts show as `(disabled)` in `:Raccoon shortcuts`.
 
 1. Install the plugin and restart Neovim
 2. Run `:Raccoon config` to create and edit your config file
-3. Add your username, tokens, and repos you want to review
+3. Add your username and tokens
 4. Run `:Raccoon prs` to browse open PRs
 5. Press `Enter` on a PR to start reviewing
 
