@@ -130,6 +130,8 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     -- Create default config if file doesn't exist
     if vim.fn.filereadable(config_path) == 0 then
       local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
+      local home = vim.fn.expand("~")
+      clone_root = clone_root:gsub("^" .. vim.pesc(home), "~")
       local default_config = string.format([[{
   "github_username": "your-username",
   "github_host": "github.com",
