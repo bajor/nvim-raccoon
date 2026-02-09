@@ -10,9 +10,9 @@ local git = require("raccoon.git")
 local keymaps = require("raccoon.keymaps")
 local state = require("raccoon.state")
 
---- Sync timer (runs every 5 minutes)
+--- Sync timer
 local sync_timer = nil
-local SYNC_INTERVAL_MS = 5 * 60 * 1000 -- 5 minutes
+local sync_interval_ms = nil
 
 --- Last known commit SHA (to detect changes)
 local last_known_sha = nil
@@ -489,9 +489,10 @@ end
 --- Start the periodic sync timer
 local function start_sync_timer()
   stop_sync_timer()
+  if not sync_interval_ms then return end
 
   sync_timer = vim.uv.new_timer()
-  sync_timer:start(SYNC_INTERVAL_MS, SYNC_INTERVAL_MS, vim.schedule_wrap(function()
+  sync_timer:start(sync_interval_ms, sync_interval_ms, vim.schedule_wrap(function()
     sync_pr(true) -- silent sync
   end))
 end
@@ -553,6 +554,10 @@ function M.open_pr(url)
 
   -- Initialize API URLs for this host
   api.init(cfg.github_host)
+
+  -- Set sync interval from config (clamped to 10s minimum)
+  local interval_s = math.max(10, cfg.pull_changes_interval or 300)
+  sync_interval_ms = interval_s * 1000
 
   -- Parse URL
   local owner, repo, number = api.parse_pr_url(url, cfg.github_host)
@@ -640,7 +645,7 @@ function M.open_pr(url)
         -- Store initial SHA for change detection
         last_known_sha = pr.head.sha
 
-        -- Start periodic sync timer (every 5 mins)
+        -- Start periodic sync timer
         start_sync_timer()
 
         -- Open the first file
