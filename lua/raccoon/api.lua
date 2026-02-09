@@ -401,7 +401,7 @@ function M.parse_pr_url(url, host)
     return nil, nil, nil
   end
   host = host or "github.com"
-  local escaped_host = host:gsub("%.", "%%.")
+  local escaped_host = host:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
   local owner, repo, num = url:match(escaped_host .. "/([^/]+)/([^/]+)/pull/(%d+)")
   if owner and repo and num then
     return owner, repo, tonumber(num)

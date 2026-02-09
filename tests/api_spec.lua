@@ -164,6 +164,13 @@ describe("raccoon.api", function()
       assert.equals("project", repo)
       assert.equals(7, number)
     end)
+
+    it("parses enterprise URL with hyphenated host", function()
+      local owner, repo, number = api.parse_pr_url("https://github-enterprise.acme.com/team/project/pull/99", "github-enterprise.acme.com")
+      assert.equals("team", owner)
+      assert.equals("project", repo)
+      assert.equals(99, number)
+    end)
   end)
 end)
 

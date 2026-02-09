@@ -259,7 +259,7 @@ function M.parse_repo_from_remote_url(url, host)
     return nil
   end
   host = host or "github.com"
-  local escaped_host = host:gsub("%.", "%%.")
+  local escaped_host = host:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
   -- SSH: git@<host>:owner/repo.git
   local owner, repo = url:match("git@" .. escaped_host .. ":([^/]+)/(.+)$")
   if not owner then

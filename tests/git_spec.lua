@@ -104,6 +104,14 @@ describe("raccoon.git", function()
     it("parses GHE URL with subdomain host", function()
       assert.equals("team/project", git.parse_repo_from_remote_url("git@git.corp.example.com:team/project.git", "git.corp.example.com"))
     end)
+
+    it("parses SSH URL with hyphenated host", function()
+      assert.equals("team/project", git.parse_repo_from_remote_url("git@github-enterprise.acme.com:team/project.git", "github-enterprise.acme.com"))
+    end)
+
+    it("parses HTTPS URL with hyphenated host", function()
+      assert.equals("team/project", git.parse_repo_from_remote_url("https://github-enterprise.acme.com/team/project.git", "github-enterprise.acme.com"))
+    end)
   end)
 
   describe("is_git_repo", function()
