@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7] - 2026-02-09
+
+### Added
+- `github_host` configuration option for GitHub Enterprise support — set to your GHE hostname instead of the default `github.com`
+- `pull_changes_interval` configuration option to control how often the auto-sync timer checks for new commits (default: 300 seconds, minimum: 10 seconds)
+- Comprehensive configuration reference documentation (`config_docs.md`)
+
+### Changed
+- File tree panel now shows the full repository file tree instead of only PR-touched files, generated per commit via `git ls-tree`
+- File tree highlights use a greyscale palette; currently displayed files shown in white
+- File tree panel on the left, commit sidebar on the right (swapped from v0.6)
+- Track all commit file types including binary, mode-only, and rename-only changes
+
+### Removed
+- `repos` config field — PRs are auto-discovered from token permissions; an explicit repo list was never used
+- `poll_interval_seconds` config field — was defined but never consumed (sync uses a fixed interval)
+- Deprecated `spinner` module and its tests
+- Legacy deprecated code paths
+
 ## [0.6] - 2026-02-08
 
 ### Added
