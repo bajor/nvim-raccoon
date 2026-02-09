@@ -1,5 +1,6 @@
 local open = require("raccoon.open")
 local state = require("raccoon.state")
+local config = require("raccoon.config")
 
 describe("raccoon.open", function()
   -- Reset state before each test
@@ -227,8 +228,22 @@ end)
 
 -- Edge case tests
 describe("raccoon.open edge cases", function()
+  local original_config_path
+  local test_config_path = "/tmp/claude/raccoon-tests/open_test_config.json"
+
   before_each(function()
     state.reset()
+    original_config_path = config.config_path
+    vim.fn.mkdir("/tmp/claude/raccoon-tests", "p")
+    local f = io.open(test_config_path, "w")
+    f:write('{"github_username":"test","tokens":{"test":"ghp_fake"}}')
+    f:close()
+    config.config_path = test_config_path
+  end)
+
+  after_each(function()
+    config.config_path = original_config_path
+    os.remove(test_config_path)
   end)
 
   describe("open_pr", function()

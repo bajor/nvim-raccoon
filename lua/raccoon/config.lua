@@ -1,9 +1,9 @@
 ---@class RaccoonConfig
 ---@field github_username string GitHub username
----@field repos string[] List of repos to watch (format: "owner/repo")
+---@field github_host string GitHub host (default: "github.com", set for GitHub Enterprise)
 ---@field tokens table<string, string> Per-owner/org tokens (owner -> token)
 ---@field clone_root string Root directory for cloned PR repos
----@field poll_interval_seconds number Polling interval in seconds
+---@field pull_changes_interval number Auto-sync interval in seconds (default: 300)
 
 local M = {}
 
@@ -22,10 +22,10 @@ end
 --- Default configuration values
 M.defaults = {
   github_username = "",
-  repos = {},
+  github_host = "github.com",
   tokens = {},
   clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-  poll_interval_seconds = 300,
+  pull_changes_interval = 300,
   commit_viewer = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
@@ -84,26 +84,11 @@ local function validate_config(config)
   -- Require tokens map
   local has_tokens = config.tokens and type(config.tokens) == "table" and next(config.tokens) ~= nil
   if not has_tokens then
-    if config.github_token and config.github_token ~= "" then
-      return false,
-        "github_token was removed. Move your token to the tokens table: "
-          .. '"tokens": {"your-username": "your-token"}'
-    end
     return false, "tokens is required (maps owner/org name to GitHub token)"
   end
 
   if not config.github_username or config.github_username == "" then
     return false, "github_username is required"
-  end
-
-  -- repos is optional (empty means auto-discovery in Swift app)
-  -- Validate repo format if repos are specified
-  if config.repos and type(config.repos) == "table" then
-    for _, repo in ipairs(config.repos) do
-      if not repo:match("^[%w%-_.]+/[%w%-_.]+$") then
-        return false, string.format("Invalid repo format: '%s' (expected 'owner/repo')", repo)
-      end
-    end
   end
 
   return true, nil
@@ -167,10 +152,10 @@ function M.create_default()
 
   local default = {
     github_username = "your-username",
+    github_host = "github.com",
     tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
-    repos = { "owner/repo1", "owner/repo2" },
     clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-    poll_interval_seconds = 300,
+    pull_changes_interval = 300,
     commit_viewer = {
       grid = { rows = 2, cols = 2 },
       base_commits_count = 20,

@@ -10,9 +10,9 @@ local git = require("raccoon.git")
 local keymaps = require("raccoon.keymaps")
 local state = require("raccoon.state")
 
---- Sync timer (runs every 5 minutes)
+--- Sync timer
 local sync_timer = nil
-local SYNC_INTERVAL_MS = 5 * 60 * 1000 -- 5 minutes
+local sync_interval_ms = nil
 
 --- Last known commit SHA (to detect changes)
 local last_known_sha = nil
@@ -311,6 +311,9 @@ local function sync_pr(silent, force)
     return
   end
 
+  -- Initialize API URLs for this host
+  api.init(cfg.github_host)
+
   local owner = state.get_owner()
   local repo = state.get_repo()
   local number = state.get_number()
@@ -327,7 +330,7 @@ local function sync_pr(silent, force)
     vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
     return
   end
-  local repo_url = string.format("https://%s@github.com/%s/%s.git", token, owner, repo)
+  local repo_url = string.format("https://%s@%s/%s/%s.git", token, cfg.github_host, owner, repo)
 
   -- Check remote for updates first
   api.get_pr(owner, repo, number, token, function(new_pr, pr_err)
@@ -486,9 +489,10 @@ end
 --- Start the periodic sync timer
 local function start_sync_timer()
   stop_sync_timer()
+  if not sync_interval_ms then return end
 
   sync_timer = vim.uv.new_timer()
-  sync_timer:start(SYNC_INTERVAL_MS, SYNC_INTERVAL_MS, vim.schedule_wrap(function()
+  sync_timer:start(sync_interval_ms, sync_interval_ms, vim.schedule_wrap(function()
     sync_pr(true) -- silent sync
   end))
 end
@@ -541,17 +545,24 @@ end
 --- Open a PR for review
 ---@param url string GitHub PR URL
 function M.open_pr(url)
-  -- Parse URL
-  local owner, repo, number = api.parse_pr_url(url)
-  if not owner or not repo or not number then
-    notify_error("Invalid PR URL: " .. url)
-    return
-  end
-
-  -- Load config
+  -- Load config first (needed for github_host)
   local cfg, cfg_err = config.load()
   if cfg_err then
     notify_error("Config error: " .. cfg_err)
+    return
+  end
+
+  -- Initialize API URLs for this host
+  api.init(cfg.github_host)
+
+  -- Set sync interval from config (clamped to 10s minimum)
+  local interval_s = math.max(10, cfg.pull_changes_interval or 300)
+  sync_interval_ms = interval_s * 1000
+
+  -- Parse URL
+  local owner, repo, number = api.parse_pr_url(url, cfg.github_host)
+  if not owner or not repo or not number then
+    notify_error("Invalid PR URL: " .. url)
     return
   end
 
@@ -588,7 +599,7 @@ function M.open_pr(url)
 
     local branch = pr.head.ref
     -- Use token in URL for HTTPS authentication
-    local repo_url = string.format("https://%s@github.com/%s/%s.git", token, owner, repo)
+    local repo_url = string.format("https://%s@%s/%s/%s.git", token, cfg.github_host, owner, repo)
 
     -- Clone or update the repo
     prepare_repo(clone_path, repo_url, branch, function(repo_err)
@@ -634,7 +645,7 @@ function M.open_pr(url)
         -- Store initial SHA for change detection
         last_known_sha = pr.head.sha
 
-        -- Start periodic sync timer (every 5 mins)
+        -- Start periodic sync timer
         start_sync_timer()
 
         -- Open the first file

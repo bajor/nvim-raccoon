@@ -4,8 +4,27 @@ local M = {}
 
 local curl = require("plenary.curl")
 
---- Base URL for GitHub API
+--- Base URL for GitHub REST API
 M.base_url = "https://api.github.com"
+
+--- Base URL for GitHub GraphQL API
+M.graphql_url = "https://api.github.com/graphql"
+
+--- Compute REST and GraphQL base URLs from a GitHub host
+---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
+---@return string base_url, string graphql_url
+local function compute_api_urls(host)
+  if host == "github.com" then
+    return "https://api.github.com", "https://api.github.com/graphql"
+  end
+  return ("https://%s/api/v3"):format(host), ("https://%s/api/graphql"):format(host)
+end
+
+--- Initialize API URLs from a GitHub host
+---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
+function M.init(host)
+  M.base_url, M.graphql_url = compute_api_urls(host)
+end
 
 --- Default headers for API requests
 ---@param token string GitHub token
@@ -375,13 +394,15 @@ end
 
 --- Parse a GitHub PR URL to extract owner, repo, and number
 ---@param url string|nil GitHub PR URL
+---@param host string|nil GitHub host to match (default: "github.com")
 ---@return string|nil owner, string|nil repo, number|nil number
-function M.parse_pr_url(url)
+function M.parse_pr_url(url, host)
   if not url then
     return nil, nil, nil
   end
-  -- Match: https://github.com/owner/repo/pull/123
-  local owner, repo, num = url:match("github%.com/([^/]+)/([^/]+)/pull/(%d+)")
+  host = host or "github.com"
+  local escaped_host = host:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+  local owner, repo, num = url:match(escaped_host .. "/([^/]+)/([^/]+)/pull/(%d+)")
   if owner and repo and num then
     return owner, repo, tonumber(num)
   end
@@ -422,7 +443,7 @@ local function graphql_request(query, variables, token)
   headers["Content-Type"] = "application/json"
 
   local response = curl.request({
-    url = "https://api.github.com/graphql",
+    url = M.graphql_url,
     method = "POST",
     headers = headers,
     body = vim.json.encode({

@@ -103,12 +103,6 @@ end
 ---@param url string|nil Optional: update remote URL before fetching (for auth)
 ---@param callback fun(success: boolean, err: string|nil)
 function M.fetch_reset(path, branch, url, callback)
-  -- Handle optional url parameter (backwards compatibility)
-  if type(url) == "function" then
-    callback = url
-    url = nil
-  end
-
   local function do_fetch()
     run_git({ "fetch", "origin", branch }, {
       cwd = path,
@@ -258,16 +252,19 @@ end
 
 --- Parse owner/repo from a git remote URL
 ---@param url string|nil Git remote URL (SSH or HTTPS)
+---@param host string|nil GitHub host to match (default: "github.com")
 ---@return string|nil repo_string "owner/repo" format, or nil if unparseable
-function M.parse_repo_from_remote_url(url)
+function M.parse_repo_from_remote_url(url, host)
   if not url or url == "" then
     return nil
   end
-  -- SSH: git@github.com:owner/repo.git
-  local owner, repo = url:match("git@github%.com:([^/]+)/(.+)$")
+  host = host or "github.com"
+  local escaped_host = host:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+  -- SSH: git@<host>:owner/repo.git
+  local owner, repo = url:match("git@" .. escaped_host .. ":([^/]+)/(.+)$")
   if not owner then
-    -- HTTPS: https://github.com/owner/repo.git
-    owner, repo = url:match("github%.com/([^/]+)/(.+)$")
+    -- HTTPS: https://<host>/owner/repo.git (or https://token@<host>/...)
+    owner, repo = url:match(escaped_host .. "/([^/]+)/(.+)$")
   end
   if owner and repo then
     return owner .. "/" .. repo:gsub("%.git$", "")
