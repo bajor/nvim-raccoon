@@ -131,8 +131,11 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     if vim.fn.filereadable(config_path) == 0 then
       local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
       local default_config = string.format([[{
-  "github_token": "ghp_xxxxxxxxxxxxxxxxxxxx",
   "github_username": "your-username",
+  "github_host": "github.com",
+  "tokens": {
+    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
+  },
   "repos": [
     "owner/repo1",
     "owner/repo2"

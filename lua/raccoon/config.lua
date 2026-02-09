@@ -86,11 +86,6 @@ local function validate_config(config)
   -- Require tokens map
   local has_tokens = config.tokens and type(config.tokens) == "table" and next(config.tokens) ~= nil
   if not has_tokens then
-    if config.github_token and config.github_token ~= "" then
-      return false,
-        "github_token was removed. Move your token to the tokens table: "
-          .. '"tokens": {"your-username": "your-token"}'
-    end
     return false, "tokens is required (maps owner/org name to GitHub token)"
   end
 

@@ -82,6 +82,7 @@ Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/c
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `github_username` | string | `""` | Your GitHub username |
+| `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org, e.g. `{"my-org": "ghp_..."}` |
 | `repos` | string[] | `[]` | Repos to watch, in `"owner/repo"` format |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
@@ -93,6 +94,23 @@ Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/c
 
 Each owner in your `repos` list needs a matching entry in `tokens`. For example, if you watch `"my-org/backend"`, add `"my-org": "ghp_..."` to `tokens`.
 
+### GitHub Enterprise
+
+Set `github_host` to your company's GitHub Enterprise domain:
+
+```json
+{
+  "github_username": "your-username",
+  "github_host": "github.mycompany.com",
+  "tokens": {
+    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
+  },
+  "repos": ["your-team/backend"]
+}
+```
+
+The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for REST, `https://<host>/api/graphql` for GraphQL). PR URLs, clone URLs, and remote parsing all use the configured host.
+
 ### Shortcut defaults
 
 See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 22 configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
@@ -102,6 +120,7 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 22 co
 ```json
 {
   "github_username": "your-username",
+  "github_host": "github.com",
   "tokens": {
     "your-username": "ghp_personal_token",
     "work-org": "ghp_work_token"

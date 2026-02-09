@@ -103,12 +103,6 @@ end
 ---@param url string|nil Optional: update remote URL before fetching (for auth)
 ---@param callback fun(success: boolean, err: string|nil)
 function M.fetch_reset(path, branch, url, callback)
-  -- Handle optional url parameter (backwards compatibility)
-  if type(url) == "function" then
-    callback = url
-    url = nil
-  end
-
   local function do_fetch()
     run_git({ "fetch", "origin", branch }, {
       cwd = path,

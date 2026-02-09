@@ -31,7 +31,6 @@ describe("raccoon.config", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
       assert.is_nil(config.defaults.notifications)
-      assert.is_nil(config.defaults.github_token)
     end)
   end)
 
@@ -74,18 +73,17 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("returns migration hint when old github_token is present without tokens", function()
-      local tmpfile = test_tmp_dir .. "/old_config.json"
+    it("returns error when tokens is missing", function()
+      local tmpfile = test_tmp_dir .. "/no_tokens.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"github_token": "ghp_xxx", "github_username": "user", "repos": ["owner/repo"]}')
+      f:write('{"github_username": "user", "repos": ["owner/repo"]}')
       f:close()
 
       config.config_path = tmpfile
       local cfg, err = config.load()
       assert.is_nil(cfg)
       assert.is_not_nil(err)
-      assert.matches("github_token was removed", err)
-      assert.matches("tokens", err)
+      assert.matches("tokens is required", err)
 
       os.remove(tmpfile)
     end)
@@ -332,11 +330,11 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("ignores github_token when tokens is present", function()
-      local tmpfile = test_tmp_dir .. "/both_tokens.json"
+    it("ignores unknown fields in config", function()
+      local tmpfile = test_tmp_dir .. "/extra_fields.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_token": "default_token",
+        "some_unknown_field": "value",
         "github_username": "testuser",
         "tokens": {
           "special-org": "special_token"
