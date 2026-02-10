@@ -611,4 +611,46 @@ function M.show_commit_file(path, sha, filename, callback)
   })
 end
 
+--- Get paginated commit log (all commits, not branch-filtered)
+---@param path string Repository path
+---@param count number Number of commits to fetch
+---@param skip number Number of commits to skip
+---@param callback fun(commits: table[]|nil, err: string|nil)
+function M.log_all_commits(path, count, skip, callback)
+  run_git({ "log", "--format=%H %s", "-n", tostring(count), "--skip=" .. tostring(skip) }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      local commits = {}
+      for _, line in ipairs(stdout) do
+        local sha = line:sub(1, 40)
+        local message = line:sub(42)
+        if #sha == 40 then
+          table.insert(commits, { sha = sha, message = message })
+        end
+      end
+      callback(commits, nil)
+    end,
+  })
+end
+
+--- Find the git repository root for a given path
+---@param path string Starting path
+---@param callback fun(root: string|nil, err: string|nil)
+function M.find_repo_root(path, callback)
+  run_git({ "rev-parse", "--show-toplevel" }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code == 0 and #stdout > 0 then
+        callback(stdout[1], nil)
+      else
+        callback(nil, table.concat(stderr, "\n"))
+      end
+    end,
+  })
+end
+
 return M
