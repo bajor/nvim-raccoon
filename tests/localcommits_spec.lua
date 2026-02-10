@@ -51,6 +51,16 @@ describe("raccoon.localcommits", function()
       local ls = localcommits._get_state()
       assert.equals(0, ls.select_generation)
     end)
+
+    it("has empty last_status_output", function()
+      local ls = localcommits._get_state()
+      assert.equals("", ls.last_status_output)
+    end)
+
+    it("has nil workdir_poll_timer", function()
+      local ls = localcommits._get_state()
+      assert.is_nil(ls.workdir_poll_timer)
+    end)
   end)
 end)
 
@@ -149,6 +159,52 @@ describe("raccoon.git local commit functions", function()
 
       vim.wait(5000, function() return done end)
       assert.is_true(done)
+    end)
+  end)
+
+  describe("status_porcelain", function()
+    it("has status_porcelain function", function()
+      assert.is_function(git.status_porcelain)
+    end)
+
+    it("returns a string for current repo", function()
+      local done = false
+      local result_output = nil
+
+      git.status_porcelain(vim.fn.getcwd(), function(output, err)
+        result_output = output
+        done = true
+      end)
+
+      vim.wait(5000, function() return done end)
+      assert.is_true(done)
+      assert.is_string(result_output)
+    end)
+  end)
+
+  describe("diff_working_dir", function()
+    it("has diff_working_dir function", function()
+      assert.is_function(git.diff_working_dir)
+    end)
+
+    it("returns a table for current repo", function()
+      local done = false
+      local result_files = nil
+
+      git.diff_working_dir(vim.fn.getcwd(), function(files, err)
+        result_files = files
+        done = true
+      end)
+
+      vim.wait(5000, function() return done end)
+      assert.is_true(done)
+      assert.is_table(result_files)
+    end)
+  end)
+
+  describe("diff_working_dir_file", function()
+    it("has diff_working_dir_file function", function()
+      assert.is_function(git.diff_working_dir_file)
     end)
   end)
 

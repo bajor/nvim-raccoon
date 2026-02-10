@@ -15,6 +15,7 @@ local ns_id = vim.api.nvim_create_namespace("raccoon_local_commits")
 
 local BATCH_SIZE = 100
 local POLL_INTERVAL_MS = 10000
+local WORKDIR_POLL_MIN_MS = 333
 
 local function make_initial_state()
   return {
@@ -25,6 +26,8 @@ local function make_initial_state()
     loading_more = false,
     poll_timer = nil,
     last_head_sha = nil,
+    workdir_poll_timer = nil,
+    last_status_output = "",
     sidebar_win = nil,
     sidebar_buf = nil,
     selected_index = 1,
@@ -106,6 +109,7 @@ local function maximize_cell(cell_num)
     generation = local_state.select_generation,
     get_generation = function() return local_state.select_generation end,
     state = local_state,
+    is_working_dir = commit.sha == nil,
   })
 end
 
@@ -121,7 +125,11 @@ local function select_commit(index)
   local commit = local_state.commits[index]
   if not local_state.repo_path then return end
 
-  git.show_commit(local_state.repo_path, commit.sha, function(files, err)
+  local fetch_diff = commit.sha
+    and function(cb) git.show_commit(local_state.repo_path, commit.sha, cb) end
+    or function(cb) git.diff_working_dir(local_state.repo_path, cb) end
+
+  fetch_diff(function(files, err)
     if generation ~= local_state.select_generation then return end
 
     if err then
@@ -191,15 +199,19 @@ local function render_sidebar()
   local lines = {}
   local highlights = {}
 
-  table.insert(lines, "── Commits (" .. #local_state.commits .. ") ──")
+  local commit_count = math.max(0, #local_state.commits - 1)
+  table.insert(lines, "── Commits (" .. commit_count .. ") ──")
   table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
-  for _, commit in ipairs(local_state.commits) do
+  for i, commit in ipairs(local_state.commits) do
     local msg = commit.message
     if #msg > ui.SIDEBAR_WIDTH - 2 then
       msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
     end
     table.insert(lines, "  " .. msg)
+    if commit.sha == nil then
+      table.insert(highlights, { line = i, hl = "DiagnosticInfo" })
+    end
   end
 
   if local_state.loading_more then
@@ -246,7 +258,7 @@ end
 local function build_filetree_cache()
   if not local_state.repo_path then return end
   local commit = local_state.commits[local_state.selected_index]
-  local sha = commit and commit.sha or "HEAD"
+  local sha = (commit and commit.sha) or nil
   ui.build_filetree_cache(local_state, local_state.repo_path, sha)
 end
 
@@ -322,24 +334,79 @@ local function stop_poll_timer()
   end
 end
 
+--- Stop the working directory poll timer
+local function stop_workdir_poll_timer()
+  if local_state.workdir_poll_timer then
+    local_state.workdir_poll_timer:stop()
+    local_state.workdir_poll_timer:close()
+    local_state.workdir_poll_timer = nil
+  end
+end
+
+-- Forward declaration
+local start_workdir_poll_timer
+
+--- Start the fast working directory poll timer (~3x/sec)
+start_workdir_poll_timer = function()
+  stop_workdir_poll_timer()
+  if not local_state.active then return end
+
+  local_state.workdir_poll_timer = vim.uv.new_timer()
+  local_state.workdir_poll_timer:start(WORKDIR_POLL_MIN_MS, 0, vim.schedule_wrap(function()
+    if not local_state.active then return end
+
+    git.status_porcelain(local_state.repo_path, function(output, err)
+      if err or not local_state.active then
+        start_workdir_poll_timer()
+        return
+      end
+
+      if output == local_state.last_status_output then
+        start_workdir_poll_timer()
+        return
+      end
+
+      local_state.last_status_output = output
+      render_sidebar()
+
+      if local_state.selected_index == 1 then
+        select_commit(1)
+      end
+
+      start_workdir_poll_timer()
+    end)
+  end))
+end
+
 --- Refresh commits from git (called when HEAD changes)
 local function refresh_commits()
   local count = math.max(local_state.total_loaded, BATCH_SIZE)
+
+  local selected_sha = local_state.commits[local_state.selected_index]
+    and local_state.commits[local_state.selected_index].sha
+
   git.log_all_commits(local_state.repo_path, count, 0, function(new_commits, err)
     if err or not new_commits then return end
 
+    table.insert(new_commits, 1, { sha = nil, message = "Current changes" })
     local_state.commits = new_commits
-    local_state.total_loaded = #new_commits
+    local_state.total_loaded = #new_commits - 1
+    local_state.last_status_output = ""
 
+    if selected_sha then
+      for i, c in ipairs(new_commits) do
+        if c.sha == selected_sha then
+          local_state.selected_index = i
+          break
+        end
+      end
+    end
     if local_state.selected_index > #new_commits then
       local_state.selected_index = math.max(1, #new_commits)
     end
 
     render_sidebar()
     update_sidebar_selection()
-    if #new_commits > 0 then
-      select_commit(local_state.selected_index)
-    end
   end)
 end
 
@@ -435,8 +502,9 @@ local function enter_local_mode()
         return
       end
 
+      table.insert(initial_commits, 1, { sha = nil, message = "Current changes" })
       local_state.commits = initial_commits
-      local_state.total_loaded = #initial_commits
+      local_state.total_loaded = #initial_commits - 1
 
       vim.schedule(function()
         ui.create_grid_layout(local_state, rows, cols)
@@ -444,7 +512,8 @@ local function enter_local_mode()
         setup_keymaps()
         select_commit(1)
         start_poll_timer()
-        vim.notify(string.format("Local commit viewer: %d commits loaded", #initial_commits))
+        start_workdir_poll_timer()
+        vim.notify(string.format("Local commit viewer: %d commits loaded", local_state.total_loaded))
       end)
     end)
   end)
@@ -453,6 +522,7 @@ end
 --- Exit local commit viewer mode
 local function exit_local_mode()
   stop_poll_timer()
+  stop_workdir_poll_timer()
 
   if local_state.focus_augroup then
     pcall(vim.api.nvim_del_augroup_by_id, local_state.focus_augroup)

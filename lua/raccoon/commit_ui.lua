@@ -376,11 +376,15 @@ function M.close_grid(s)
 end
 
 --- Open a maximize floating window for a full-file diff
----@param opts table {ns_id, repo_path, sha, filename, generation, get_generation, state}
+---@param opts table {ns_id, repo_path, sha, filename, generation, get_generation, state, is_working_dir}
 function M.open_maximize(opts)
   local git = require("raccoon.git")
 
-  git.show_commit_file(opts.repo_path, opts.sha, opts.filename, function(patch, err)
+  local fetch_patch = opts.is_working_dir
+    and function(cb) git.diff_working_dir_file(opts.repo_path, opts.filename, cb) end
+    or function(cb) git.show_commit_file(opts.repo_path, opts.sha, opts.filename, cb) end
+
+  fetch_patch(function(patch, err)
     if opts.get_generation() ~= opts.generation then return end
 
     if err or not patch or patch == "" then
@@ -449,17 +453,18 @@ function M.open_maximize(opts)
   end)
 end
 
---- Build and cache a file tree for a commit.
---- Only runs git ls-tree when the commit SHA changes.
+--- Build and cache a file tree for a commit (or working directory when sha is nil).
 ---@param s table State table (needs cached_sha, cached_tree_lines, cached_line_paths, cached_file_count)
 ---@param repo_path string Path to git repository
----@param sha string Commit SHA
+---@param sha string|nil Commit SHA, or nil for working directory
 function M.build_filetree_cache(s, repo_path, sha)
-  if s.cached_sha == sha then return end
+  local cache_key = sha or "WORKDIR"
+  if s.cached_sha == cache_key then return end
 
-  local raw = vim.fn.systemlist(
-    "git -C " .. vim.fn.shellescape(repo_path) .. " ls-tree -r --name-only " .. sha
-  )
+  local cmd = sha
+    and ("git -C " .. vim.fn.shellescape(repo_path) .. " ls-tree -r --name-only " .. sha)
+    or ("git -C " .. vim.fn.shellescape(repo_path) .. " ls-files")
+  local raw = vim.fn.systemlist(cmd)
   if vim.v.shell_error ~= 0 then raw = {} end
   table.sort(raw)
 
@@ -471,7 +476,7 @@ function M.build_filetree_cache(s, repo_path, sha)
     lines = { "  No files" }
   end
 
-  s.cached_sha = sha
+  s.cached_sha = cache_key
   s.cached_tree_lines = lines
   s.cached_line_paths = line_paths
   s.cached_file_count = #raw
