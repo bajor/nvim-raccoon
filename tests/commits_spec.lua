@@ -525,14 +525,15 @@ describe("raccoon.commits error message sanitization", function()
     end
   end)
 
-  it("logs raw errors at DEBUG level for diagnostics", function()
-    local debug_lines = {}
+  it("does not expose raw err in INFO notifications", function()
     for line in source:gmatch("[^\n]+") do
-      if line:match("vim%.notify%(") and line:match("levels%.DEBUG") then
-        table.insert(debug_lines, line)
+      if line:match("vim%.notify%(") and line:match("levels%.INFO") then
+        assert.is_falsy(
+          line:match('%.%.%s*err') or line:match('%.%.%s*fetch_err') or line:match('%.%.%s*unshallow_err'),
+          "INFO notify should not concatenate raw error: " .. line
+        )
       end
     end
-    assert.is_true(#debug_lines >= 4, "expected at least 4 DEBUG log lines, got " .. #debug_lines)
   end)
 end)
 

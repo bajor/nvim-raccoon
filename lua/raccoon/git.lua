@@ -250,6 +250,21 @@ function M.get_remote_url(path, callback)
   })
 end
 
+--- Parse git log output lines into commit tables
+---@param stdout string[] Lines of format "%H %s"
+---@return table[] commits Array of {sha, message}
+local function parse_commit_log(stdout)
+  local commits = {}
+  for _, line in ipairs(stdout) do
+    local sha = line:sub(1, 40)
+    local message = line:sub(42)
+    if #sha == 40 then
+      table.insert(commits, { sha = sha, message = message })
+    end
+  end
+  return commits
+end
+
 --- Parse owner/repo from a git remote URL
 ---@param url string|nil Git remote URL (SSH or HTTPS)
 ---@param host string|nil GitHub host to match (default: "github.com")
@@ -498,15 +513,7 @@ function M.log_commits(path, base_branch, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local commits = {}
-      for _, line in ipairs(stdout) do
-        local sha = line:sub(1, 40)
-        local message = line:sub(42)
-        if #sha == 40 then
-          table.insert(commits, { sha = sha, message = message })
-        end
-      end
-      callback(commits, nil)
+      callback(parse_commit_log(stdout), nil)
     end,
   })
 end
@@ -524,15 +531,7 @@ function M.log_base_commits(path, base_branch, count, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local commits = {}
-      for _, line in ipairs(stdout) do
-        local sha = line:sub(1, 40)
-        local message = line:sub(42)
-        if #sha == 40 then
-          table.insert(commits, { sha = sha, message = message })
-        end
-      end
-      callback(commits, nil)
+      callback(parse_commit_log(stdout), nil)
     end,
   })
 end
@@ -624,15 +623,7 @@ function M.log_all_commits(path, count, skip, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local commits = {}
-      for _, line in ipairs(stdout) do
-        local sha = line:sub(1, 40)
-        local message = line:sub(42)
-        if #sha == 40 then
-          table.insert(commits, { sha = sha, message = message })
-        end
-      end
-      callback(commits, nil)
+      callback(parse_commit_log(stdout), nil)
     end,
   })
 end
