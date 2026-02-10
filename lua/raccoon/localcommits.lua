@@ -15,7 +15,9 @@ local ns_id = vim.api.nvim_create_namespace("raccoon_local_commits")
 
 local BATCH_SIZE = 100
 local POLL_INTERVAL_MS = 10000
-local WORKDIR_POLL_MIN_MS = 333
+local WORKDIR_POLL_FAST_MS = 333
+local WORKDIR_POLL_SLOW_MS = 3000
+local WORKDIR_IDLE_THRESHOLD_MS = 180000
 
 local function make_initial_state()
   return {
@@ -28,6 +30,7 @@ local function make_initial_state()
     last_head_sha = nil,
     workdir_poll_timer = nil,
     last_status_output = "",
+    last_change_time = 0,
     sidebar_win = nil,
     sidebar_buf = nil,
     selected_index = 1,
@@ -346,13 +349,19 @@ end
 -- Forward declaration
 local start_workdir_poll_timer
 
---- Start the fast working directory poll timer (~3x/sec)
+--- Start the adaptive working directory poll timer
+--- Fast (333ms) when changes are recent, slow (3s) after 3 minutes idle
 start_workdir_poll_timer = function()
   stop_workdir_poll_timer()
   if not local_state.active then return end
 
+  local now = vim.uv.now()
+  local idle = local_state.last_change_time == 0
+    or (now - local_state.last_change_time) >= WORKDIR_IDLE_THRESHOLD_MS
+  local interval = idle and WORKDIR_POLL_SLOW_MS or WORKDIR_POLL_FAST_MS
+
   local_state.workdir_poll_timer = vim.uv.new_timer()
-  local_state.workdir_poll_timer:start(WORKDIR_POLL_MIN_MS, 0, vim.schedule_wrap(function()
+  local_state.workdir_poll_timer:start(interval, 0, vim.schedule_wrap(function()
     if not local_state.active then return end
 
     git.status_porcelain(local_state.repo_path, function(output, err)
@@ -367,6 +376,7 @@ start_workdir_poll_timer = function()
       end
 
       local_state.last_status_output = output
+      local_state.last_change_time = vim.uv.now()
       render_sidebar()
 
       if local_state.selected_index == 1 then
@@ -505,6 +515,7 @@ local function enter_local_mode()
       table.insert(initial_commits, 1, { sha = nil, message = "Current changes" })
       local_state.commits = initial_commits
       local_state.total_loaded = #initial_commits - 1
+      local_state.last_change_time = vim.uv.now()
 
       vim.schedule(function()
         ui.create_grid_layout(local_state, rows, cols)
