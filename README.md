@@ -37,6 +37,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 - View PR descriptions and metadata
 - Merge, squash, or rebase PRs
 - Auto-sync to detect new commits pushed to the branch
+- Local commit viewer (`:Raccoon local`) for browsing any git repo's history with live "Current changes" view
 - Statusline integration showing file position and sync status
 
 ## Requirements
@@ -206,6 +207,7 @@ One review session is active at a time. Opening a second PR closes the first.
 | `:Raccoon squash` | Squash and merge |
 | `:Raccoon rebase` | Rebase and merge |
 | `:Raccoon commits` | Toggle commit viewer mode |
+| `:Raccoon local` | Toggle local commit viewer for the current repo |
 | `:Raccoon shortcuts` | Show all keyboard shortcuts in a floating window |
 | `:Raccoon close` | Close the review session |
 | `:Raccoon config` | Open the config file (creates default if missing) |
@@ -256,6 +258,16 @@ Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter s
 Most vim keybindings are disabled in commit mode to prevent breaking the layout. Only the keys listed above work. Exit with `<leader>cm`. Auto-sync is paused while commit viewer mode is active and resumes automatically when you exit.
 
 Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. Close with `q` or `<leader>q`.
+
+## Local Commit Viewer
+
+Run `:Raccoon local` from any git repository to browse its commit history — no GitHub token or PR required. Uses the same grid layout, file tree, and diff rendering as the PR commit viewer.
+
+The first entry in the sidebar is **"Current changes"** — a live view of all uncommitted modifications (staged + unstaged vs HEAD). When selected, the grid updates as files change on disk, polling up to 3 times per second. After 3 minutes of no changes the polling backs off to once every 3 seconds, and snaps back to fast polling the moment new changes appear.
+
+When a new commit is made (e.g. by an AI agent in another terminal), it appears in the sidebar automatically (10-second HEAD poll). Your selection stays on whatever commit you were viewing — new commits just shift the list without stealing focus.
+
+Local mode works alongside an active PR review — entering `:Raccoon local` pauses the PR session, and exiting resumes it.
 
 ## Statusline
 

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8] - 2026-02-10
+
+### Added
+- Local commit viewer mode (`:Raccoon local`) — browse commit history in any git repository without a PR or GitHub token
+- **"Current changes"** live view at the top of the sidebar showing uncommitted modifications (staged + unstaged vs HEAD)
+- Adaptive working directory polling: up to 3x/second when changes are actively happening, backs off to once every 3 seconds after 3 minutes idle
+- Selection preservation — when new commits appear in the sidebar, your current selection stays on the same commit
+- Local mode coexists with PR sessions: entering pauses the active PR review, exiting resumes it
+- New git functions: `diff_working_dir`, `diff_working_dir_file`, `status_porcelain`
+- Extracted `parse_diff_output` helper for shared diff parsing between committed and working directory diffs
+- Working directory file tree via `git ls-files` when viewing current changes
+- Maximize view support for working directory files
+
+### Changed
+- Shared commit UI module (`commit_ui.lua`) now handles nil SHA for working directory mode
+- Commit count in sidebar header excludes the pseudo "Current changes" entry
+
 ## [0.7] - 2026-02-09
 
 ### Added
