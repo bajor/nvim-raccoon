@@ -252,8 +252,6 @@ Commit mode shortcuts live under `shortcuts.commit_mode` in config:
 | `<leader>l` | `commit_mode.next_page_alt` | Next page of diff hunks (alias) |
 | `<leader>f` | `commit_mode.browse_files` | Toggle focus between commit sidebar and file tree |
 | `<leader>m1`..`m9` | `commit_mode.maximize_prefix` | Maximize a grid cell (full file diff) |
-| `<leader>mf` | `commit_mode.maximize_prefix` + `f` | Open file picker (maximized list of changed files) |
-| `<leader>mc` | `commit_mode.maximize_prefix` + `c` | Open commit picker (maximized list of commits) |
 | `<leader>q` / `q` | `close` | Exit maximized view |
 | `<leader>cm` | `commit_mode.exit` | Exit commit viewer mode |
 

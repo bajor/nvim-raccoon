@@ -96,7 +96,7 @@ These shortcuts are nested under `shortcuts.commit_mode` in config and are only 
 | `prev_page` | `<leader>k` | Show the previous page of diff hunks. |
 | `next_page_alt` | `<leader>l` | Alias for `next_page`. Provides an alternative key for forward navigation. |
 | `exit` | `<leader>cm` | Exit commit viewer mode and return to the normal PR review view. |
-| `maximize_prefix` | `<leader>m` | Prefix for maximizing a grid cell. Followed by a cell number (1-9), e.g. `<leader>m1` maximizes cell 1 into a full floating window with the complete file diff. Also used with `f` for the file picker and `c` for the commit picker. Inside the maximized view, normal vim navigation works (scrolling, search). Close with `q` or the `close` shortcut. |
+| `maximize_prefix` | `<leader>m` | Prefix for maximizing a grid cell. Followed by a cell number (1-9), e.g. `<leader>m1` maximizes cell 1 into a full floating window with the complete file diff. Inside the maximized view, normal vim navigation works (scrolling, search). Close with `q` or the `close` shortcut. |
 | `browse_files` | `<leader>f` | Toggle focus between the commit sidebar and the file tree. While in file tree mode, navigate with j/k, jump with gg/G, search with `/`, and press Enter to view a file's content at the current commit state. |
 
 Note: `j`/`k` for navigating commits in the sidebar and `Enter` for selecting a commit are hardcoded and not configurable.

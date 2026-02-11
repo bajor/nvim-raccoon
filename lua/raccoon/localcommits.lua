@@ -334,59 +334,6 @@ local function setup_keymaps()
         desc = "Maximize grid cell " .. i,
       })
     end
-
-    -- Maximize file picker
-    table.insert(local_mode_keymaps, {
-      mode = NORMAL_MODE,
-      lhs = shortcuts.commit_mode.maximize_prefix .. "f",
-      rhs = function()
-        local items = {}
-        for path, _ in pairs(local_state.commit_files) do
-          table.insert(items, { display = "  " .. path, value = path })
-        end
-        table.sort(items, function(a, b) return a.display < b.display end)
-        ui.open_maximize_list({
-          title = "Files (" .. #items .. ")",
-          items = items,
-          state = local_state,
-          on_select = function(path)
-            for i, hd in ipairs(local_state.all_hunks) do
-              if hd.filename == path then
-                local c = local_state.grid_rows * local_state.grid_cols
-                local_state.current_page = math.ceil(i / c)
-                render_grid_page()
-                maximize_cell(((i - 1) % c) + 1)
-                return
-              end
-            end
-          end,
-        })
-      end,
-      desc = "Maximize file picker",
-    })
-
-    -- Maximize commit picker
-    table.insert(local_mode_keymaps, {
-      mode = NORMAL_MODE,
-      lhs = shortcuts.commit_mode.maximize_prefix .. "c",
-      rhs = function()
-        local items = {}
-        for i, c in ipairs(local_state.commits) do
-          table.insert(items, { display = "  " .. c.message, value = i })
-        end
-        ui.open_maximize_list({
-          title = "Commits (" .. #items .. ")",
-          items = items,
-          state = local_state,
-          on_select = function(idx)
-            local_state.selected_index = idx
-            update_sidebar_selection()
-            select_commit(idx)
-          end,
-        })
-      end,
-      desc = "Maximize commit picker",
-    })
   end
 
   -- Browse files toggle
