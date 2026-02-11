@@ -555,7 +555,7 @@ local function exit_local_mode()
   end
 
   -- Restore PR session if it was active
-  if local_state.pr_was_active and state.is_active() then
+  if local_state.pr_was_active then
     keymaps.setup()
     open.resume_sync()
   end
