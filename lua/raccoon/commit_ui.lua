@@ -652,17 +652,20 @@ function M.render_filetree(s)
 
   local win = s.filetree_win
   if win and vim.api.nvim_win_is_valid(win) then
-    local changed = s.commit_files and vim.tbl_count(s.commit_files) or 0
-    vim.wo[win].winbar = " #F " .. changed .. " · " .. (s.cached_file_count or 0) .. " total"
+    local shortcuts = config.load_shortcuts()
+    local key = shortcuts.commit_mode.browse_files or "<leader>f"
+    vim.wo[win].winbar = " Files%=%#Comment# " .. key .. " %*"
   end
 end
 
---- Update sidebar winbar with commit count
+--- Update sidebar winbar with shortcut hint
 ---@param s table State table
 ---@param count number Total commit count
 function M.update_sidebar_winbar(s, count)
   if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
-    vim.wo[s.sidebar_win].winbar = " #C " .. count
+    local shortcuts = config.load_shortcuts()
+    local key = shortcuts.commit_mode.browse_files or "<leader>f"
+    vim.wo[s.sidebar_win].winbar = " Commits (" .. count .. ")%=%#Comment# " .. key .. " %*"
   end
 end
 

@@ -346,7 +346,7 @@ local function setup_keymaps()
         end
         table.sort(items, function(a, b) return a.display < b.display end)
         ui.open_maximize_list({
-          title = "#F " .. #items .. " files",
+          title = "Files (" .. #items .. ")",
           items = items,
           state = local_state,
           on_select = function(path)
@@ -375,7 +375,7 @@ local function setup_keymaps()
           table.insert(items, { display = "  " .. c.message, value = i })
         end
         ui.open_maximize_list({
-          title = "#C " .. #items .. " commits",
+          title = "Commits (" .. #items .. ")",
           items = items,
           state = local_state,
           on_select = function(idx)
