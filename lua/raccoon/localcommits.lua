@@ -419,8 +419,6 @@ local function setup_keymaps()
 
   -- Filetree navigation keymaps
   ui.setup_filetree_nav(local_state, {
-    ns_id = ns_id,
-    render_grid = render_grid_page,
     get_repo_path = function() return local_state.repo_path end,
     get_sha = function()
       local c = local_state.commits[local_state.selected_index]

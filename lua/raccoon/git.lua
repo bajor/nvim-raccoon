@@ -708,6 +708,39 @@ function M.list_files(path, sha, callback)
   })
 end
 
+--- Get file content at a specific commit (git show <sha>:<filepath>)
+--- For working directory, reads the file directly.
+---@param path string Repository path
+---@param sha string|nil Commit SHA, or nil for working directory
+---@param filename string File path relative to repo root
+---@param callback fun(lines: string[]|nil, err: string|nil)
+function M.show_file_content(path, sha, filename, callback)
+  if not sha then
+    local fullpath = path .. "/" .. filename
+    local file = io.open(fullpath, "r")
+    if not file then
+      callback(nil, "File not found: " .. fullpath)
+      return
+    end
+    local content = file:read("*a")
+    file:close()
+    vim.schedule(function()
+      callback(vim.split(content, "\n", { plain = true }), nil)
+    end)
+    return
+  end
+  run_git({ "show", sha .. ":" .. filename }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      callback(stdout, nil)
+    end,
+  })
+end
+
 --- Find the git repository root for a given path
 ---@param path string Starting path
 ---@param callback fun(root: string|nil, err: string|nil)

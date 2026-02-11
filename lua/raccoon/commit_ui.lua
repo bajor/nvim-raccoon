@@ -455,6 +455,63 @@ function M.open_maximize(opts)
   end)
 end
 
+--- Open a maximize floating window showing file content at a commit state
+---@param opts table {repo_path, sha, filename, generation, get_generation, state}
+function M.open_file_content(opts)
+  local git = require("raccoon.git")
+
+  git.show_file_content(opts.repo_path, opts.sha, opts.filename, function(lines, err)
+    if opts.get_generation() ~= opts.generation then return end
+    if err or not lines then
+      vim.notify("Failed to get file content", vim.log.levels.ERROR)
+      return
+    end
+
+    local width = math.floor(vim.o.columns * 0.85)
+    local height = math.floor(vim.o.lines * 0.85)
+    local row = math.floor((vim.o.lines - height) / 2)
+    local col = math.floor((vim.o.columns - width) / 2)
+
+    local buf = M.create_scratch_buf()
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+
+    local ft = vim.filetype.match({ filename = opts.filename })
+    if ft then vim.bo[buf].filetype = ft end
+
+    local win = vim.api.nvim_open_win(buf, true, {
+      relative = "editor",
+      width = width,
+      height = height,
+      row = row,
+      col = col,
+      style = "minimal",
+      border = "rounded",
+    })
+
+    opts.state.maximize_win = win
+    opts.state.maximize_buf = buf
+
+    local shortcuts = config.load_shortcuts()
+    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+    vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
+    vim.wo[win].wrap = true
+    vim.wo[win].number = true
+
+    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
+
+    local buf_opts = { buffer = buf, noremap = true, silent = true }
+    local function close_fn()
+      M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
+    end
+    if config.is_enabled(shortcuts.close) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
+    end
+    vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+  end)
+end
+
 --- Open a maximize floating window with a selectable list (for file/commit pickers)
 ---@param opts table {title, items: {display, value}[], on_select: fun(value), state}
 function M.open_maximize_list(opts)
@@ -765,46 +822,32 @@ function M.setup_focus_lock(s, augroup_name)
   return augroup
 end
 
---- Setup filetree browsing keymaps. j/k navigate changed files, Enter maximizes, gg/G jump.
+--- Setup filetree browsing keymaps. j/k navigate all files, Enter shows file content.
+--- The diff grid stays intact while browsing.
 ---@param s table State table
----@param opts table {ns_id, render_grid, get_repo_path, get_sha}
+---@param opts table {get_repo_path, get_sha}
 function M.setup_filetree_nav(s, opts)
   if not s.filetree_buf or not vim.api.nvim_buf_is_valid(s.filetree_buf) then return end
 
-  local function changed_file_lines()
+  local function all_file_lines()
     local result = {}
-    if not s.cached_line_paths or not s.commit_files then return result end
-    for line_idx, path in pairs(s.cached_line_paths) do
-      if s.commit_files[path] then
-        table.insert(result, line_idx)
-      end
+    if not s.cached_line_paths then return result end
+    for line_idx, _ in pairs(s.cached_line_paths) do
+      table.insert(result, line_idx)
     end
     table.sort(result)
     return result
-  end
-
-  local function page_to_file(filepath)
-    for i, hd in ipairs(s.all_hunks) do
-      if hd.filename == filepath then
-        local cells = s.grid_rows * s.grid_cols
-        s.current_page = math.ceil(i / cells)
-        opts.render_grid()
-        return
-      end
-    end
   end
 
   local function go_to_line(line_idx)
     if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
       pcall(vim.api.nvim_win_set_cursor, s.filetree_win, { line_idx + 1, 0 })
     end
-    local path = s.cached_line_paths and s.cached_line_paths[line_idx]
-    if path then page_to_file(path) end
   end
 
   local function ft_move_down()
     if not s.filetree_win or not vim.api.nvim_win_is_valid(s.filetree_win) then return end
-    local lines = changed_file_lines()
+    local lines = all_file_lines()
     if #lines == 0 then return end
     local cur = vim.api.nvim_win_get_cursor(s.filetree_win)[1] - 1
     for _, idx in ipairs(lines) do
@@ -814,7 +857,7 @@ function M.setup_filetree_nav(s, opts)
 
   local function ft_move_up()
     if not s.filetree_win or not vim.api.nvim_win_is_valid(s.filetree_win) then return end
-    local lines = changed_file_lines()
+    local lines = all_file_lines()
     if #lines == 0 then return end
     local cur = vim.api.nvim_win_get_cursor(s.filetree_win)[1] - 1
     for i = #lines, 1, -1 do
@@ -823,12 +866,12 @@ function M.setup_filetree_nav(s, opts)
   end
 
   local function ft_move_top()
-    local lines = changed_file_lines()
+    local lines = all_file_lines()
     if #lines > 0 then go_to_line(lines[1]) end
   end
 
   local function ft_move_bottom()
-    local lines = changed_file_lines()
+    local lines = all_file_lines()
     if #lines > 0 then go_to_line(lines[#lines]) end
   end
 
@@ -836,19 +879,17 @@ function M.setup_filetree_nav(s, opts)
     if not s.filetree_win or not vim.api.nvim_win_is_valid(s.filetree_win) then return end
     local cur = vim.api.nvim_win_get_cursor(s.filetree_win)[1] - 1
     local path = s.cached_line_paths and s.cached_line_paths[cur]
-    if not path or not s.commit_files[path] then return end
+    if not path then return end
     local repo_path = opts.get_repo_path()
     local sha = opts.get_sha()
     if not repo_path then return end
-    M.open_maximize({
-      ns_id = opts.ns_id,
+    M.open_file_content({
       repo_path = repo_path,
       sha = sha,
       filename = path,
       generation = s.select_generation,
       get_generation = function() return s.select_generation end,
       state = s,
-      is_working_dir = sha == nil,
     })
   end
 

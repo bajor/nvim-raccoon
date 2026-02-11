@@ -473,8 +473,6 @@ local function setup_keymaps()
 
   -- Filetree navigation keymaps
   ui.setup_filetree_nav(commit_state, {
-    ns_id = ns_id,
-    render_grid = render_grid_page,
     get_repo_path = function() return state.get_clone_path() end,
     get_sha = function()
       local c = get_commit(commit_state.selected_index)
