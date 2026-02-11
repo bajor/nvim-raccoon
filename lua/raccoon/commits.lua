@@ -311,6 +311,33 @@ local function move_down()
   end
 end
 
+local function move_to_top()
+  if total_commits() > 0 then
+    commit_state.selected_index = 1
+    update_sidebar_selection()
+    select_commit(1)
+  end
+end
+
+local function move_to_bottom()
+  if total_commits() > 0 then
+    commit_state.selected_index = total_commits()
+    update_sidebar_selection()
+    select_commit(commit_state.selected_index)
+  end
+end
+
+local function select_at_cursor()
+  if not commit_state.sidebar_win or not vim.api.nvim_win_is_valid(commit_state.sidebar_win) then return end
+  local cursor_line = vim.api.nvim_win_get_cursor(commit_state.sidebar_win)[1]
+  local index = cursor_line - 1
+  if index >= 1 and index <= total_commits() then
+    commit_state.selected_index = index
+    update_sidebar_selection()
+    select_commit(index)
+  end
+end
+
 --- Build and cache the file tree structure for the selected commit.
 build_filetree_cache = function()
   local clone_path = state.get_clone_path()
@@ -375,7 +402,9 @@ local function setup_keymaps()
     vim.keymap.set(NORMAL_MODE, "k", move_up, buf_opts)
     vim.keymap.set(NORMAL_MODE, "<Down>", move_down, buf_opts)
     vim.keymap.set(NORMAL_MODE, "<Up>", move_up, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "<CR>", function() select_commit(commit_state.selected_index) end, buf_opts)
+    vim.keymap.set(NORMAL_MODE, "gg", move_to_top, buf_opts)
+    vim.keymap.set(NORMAL_MODE, "G", move_to_bottom, buf_opts)
+    vim.keymap.set(NORMAL_MODE, "<CR>", select_at_cursor, buf_opts)
     ui.lock_buf(commit_state.sidebar_buf)
   end
 
