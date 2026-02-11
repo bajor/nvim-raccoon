@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Extracted shared `setup_sidebar_nav` into `commit_ui.lua`, reducing duplication between PR and local commit viewers
 
 ### Changed
-- File tree and sidebar winbars now show the `browse_files` shortcut dynamically instead of static `#F`/`#C` counters
+- File tree and sidebar winbars now show descriptive labels with the `browse_files` shortcut hint instead of raw file/commit counters
 - Diff grid stays intact while browsing files in the file tree (no auto-paging)
 
 ## [0.8] - 2026-02-10
