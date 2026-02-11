@@ -23,8 +23,12 @@ local function make_initial_state()
   return {
     active = false,
     repo_path = nil,
-    commits = {},
-    total_loaded = 0,
+    branch_commits = {},
+    base_commits = {},
+    current_branch = nil,
+    base_branch = nil,
+    merge_base_sha = nil,
+    total_base_loaded = 0,
     loading_more = false,
     poll_timer = nil,
     last_head_sha = nil,
@@ -67,6 +71,21 @@ local local_mode_keymaps = {}
 local load_more_commits
 local build_filetree_cache
 
+--- Total navigable commits (branch + base)
+local function total_commits()
+  return #local_state.branch_commits + #local_state.base_commits
+end
+
+--- Get commit by combined index (branch first, then base)
+local function get_commit(index)
+  local branch_count = #local_state.branch_commits
+  if index <= branch_count then
+    return local_state.branch_commits[index]
+  else
+    return local_state.base_commits[index - branch_count]
+  end
+end
+
 local function total_pages()
   local cells = local_state.grid_rows * local_state.grid_cols
   if cells == 0 then return 1 end
@@ -75,7 +94,7 @@ end
 
 local function render_grid_page()
   ui.render_grid_page(local_state, ns_id, function()
-    return local_state.commits[local_state.selected_index]
+    return get_commit(local_state.selected_index)
   end, total_pages())
 end
 
@@ -103,7 +122,7 @@ local function maximize_cell(cell_num)
 
   local filename = hunk_data.filename
   if filename == "dev/null" then return end
-  local commit = local_state.commits[local_state.selected_index]
+  local commit = get_commit(local_state.selected_index)
   if not commit or not local_state.repo_path then return end
 
   ui.open_maximize({
@@ -120,14 +139,14 @@ end
 
 --- Select a commit and load its hunks into the grid
 local function select_commit(index)
-  if index < 1 or index > #local_state.commits then return end
+  if index < 1 or index > total_commits() then return end
 
   local_state.selected_index = index
   local_state.current_page = 1
   local_state.select_generation = local_state.select_generation + 1
   local generation = local_state.select_generation
 
-  local commit = local_state.commits[index]
+  local commit = get_commit(index)
   if not local_state.repo_path then return end
 
   local fetch_diff = commit.sha
@@ -169,7 +188,7 @@ local function select_commit(index)
           vim.wo[win].winbar = "%=#" .. i
         end
       end
-      ui.update_header(local_state, local_state.commits[local_state.selected_index], total_pages())
+      ui.update_header(local_state, get_commit(local_state.selected_index), total_pages())
       ui.render_filetree(local_state)
       return
     end
@@ -180,20 +199,25 @@ end
 
 --- Update sidebar selection highlight
 local function update_sidebar_selection()
-  local buf = local_state.sidebar_buf
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-
-  local sel_ns = vim.api.nvim_create_namespace("raccoon_local_commit_sel")
-  vim.api.nvim_buf_clear_namespace(buf, sel_ns, 0, -1)
-
   local idx = local_state.selected_index
-  if idx < 1 or idx > #local_state.commits then return end
+  if idx < 1 or idx > total_commits() then return end
 
-  -- Line 0 = header, commits start at line 1
-  pcall(vim.api.nvim_buf_add_highlight, buf, sel_ns, "Visual", idx, 0, -1)
-
-  if local_state.sidebar_win and vim.api.nvim_win_is_valid(local_state.sidebar_win) then
-    pcall(vim.api.nvim_win_set_cursor, local_state.sidebar_win, { idx + 1, 0 })
+  if local_state.base_branch then
+    -- Branch mode: two-section sidebar
+    ui.update_split_selection(
+      local_state.sidebar_buf, local_state.sidebar_win,
+      idx, #local_state.branch_commits
+    )
+  else
+    -- Flat mode: simple offset (line 0 = header, commits start at line 1)
+    local buf = local_state.sidebar_buf
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+    local sel_ns = vim.api.nvim_create_namespace("raccoon_local_commit_sel")
+    vim.api.nvim_buf_clear_namespace(buf, sel_ns, 0, -1)
+    pcall(vim.api.nvim_buf_add_highlight, buf, sel_ns, "Visual", idx, 0, -1)
+    if local_state.sidebar_win and vim.api.nvim_win_is_valid(local_state.sidebar_win) then
+      pcall(vim.api.nvim_win_set_cursor, local_state.sidebar_win, { idx + 1, 0 })
+    end
   end
 end
 
@@ -202,41 +226,57 @@ local function render_sidebar()
   local buf = local_state.sidebar_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
-  local lines = {}
-  local highlights = {}
+  if local_state.base_branch then
+    -- Branch mode: two-section sidebar using shared function
+    local branch_label = local_state.current_branch or "branch"
+    ui.render_split_sidebar(buf, {
+      section1_header = "── " .. branch_label .. " ──",
+      section1_commits = local_state.branch_commits,
+      section2_header = "── " .. local_state.base_branch .. " ──",
+      section2_commits = local_state.base_commits,
+      commit_hl_fn = function(commit)
+        if commit.sha == nil then return "DiagnosticInfo" end
+      end,
+      loading = local_state.loading_more,
+    })
+  else
+    -- Flat mode: single section
+    local lines = {}
+    local highlights = {}
 
-  local commit_count = math.max(0, #local_state.commits - 1)
-  table.insert(lines, "── Commits (" .. commit_count .. ") ──")
-  table.insert(highlights, { line = #lines - 1, hl = "Title" })
+    local commit_count = math.max(0, total_commits() - 1)
+    table.insert(lines, "── Commits (" .. commit_count .. ") ──")
+    table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
-  for i, commit in ipairs(local_state.commits) do
-    local msg = commit.message
-    if #msg > ui.SIDEBAR_WIDTH - 2 then
-      msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
+    for i, commit in ipairs(local_state.branch_commits) do
+      local msg = commit.message
+      if #msg > ui.SIDEBAR_WIDTH - 2 then
+        msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
+      end
+      table.insert(lines, "  " .. msg)
+      if commit.sha == nil then
+        table.insert(highlights, { line = i, hl = "DiagnosticInfo" })
+      end
     end
-    table.insert(lines, "  " .. msg)
-    if commit.sha == nil then
-      table.insert(highlights, { line = i, hl = "DiagnosticInfo" })
+
+    if local_state.loading_more then
+      table.insert(lines, "")
+      table.insert(lines, "  Loading...")
+      table.insert(highlights, { line = #lines - 1, hl = "Comment" })
+    end
+
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+
+    local hl_ns = vim.api.nvim_create_namespace("raccoon_local_commit_hl")
+    vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
+    for _, hl in ipairs(highlights) do
+      pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl.hl, hl.line, 0, -1)
     end
   end
 
-  if local_state.loading_more then
-    table.insert(lines, "")
-    table.insert(lines, "  Loading...")
-    table.insert(highlights, { line = #lines - 1, hl = "Comment" })
-  end
-
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-
-  local hl_ns = vim.api.nvim_create_namespace("raccoon_local_commit_hl")
-  vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
-  for _, hl in ipairs(highlights) do
-    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl.hl, hl.line, 0, -1)
-  end
-
-  ui.update_sidebar_winbar(local_state, #local_state.commits)
+  ui.update_sidebar_winbar(local_state, total_commits())
   update_sidebar_selection()
 end
 
@@ -249,7 +289,7 @@ local function move_up()
 end
 
 local function move_to_top()
-  if #local_state.commits > 0 then
+  if total_commits() > 0 then
     local_state.selected_index = 1
     update_sidebar_selection()
     select_commit(1)
@@ -257,8 +297,8 @@ local function move_to_top()
 end
 
 local function move_to_bottom()
-  if #local_state.commits > 0 then
-    local_state.selected_index = #local_state.commits
+  if total_commits() > 0 then
+    local_state.selected_index = total_commits()
     update_sidebar_selection()
     select_commit(local_state.selected_index)
     load_more_commits()
@@ -268,8 +308,15 @@ end
 local function select_at_cursor()
   if not local_state.sidebar_win or not vim.api.nvim_win_is_valid(local_state.sidebar_win) then return end
   local cursor_line = vim.api.nvim_win_get_cursor(local_state.sidebar_win)[1]
-  local index = cursor_line - 1
-  if index >= 1 and index <= #local_state.commits then
+
+  local index
+  if local_state.base_branch then
+    index = ui.split_sidebar_cursor_to_index(cursor_line, #local_state.branch_commits)
+  else
+    index = cursor_line - 1
+  end
+
+  if index and index >= 1 and index <= total_commits() then
     local_state.selected_index = index
     update_sidebar_selection()
     select_commit(index)
@@ -277,13 +324,13 @@ local function select_at_cursor()
 end
 
 local function move_down()
-  if local_state.selected_index < #local_state.commits then
+  if local_state.selected_index < total_commits() then
     local_state.selected_index = local_state.selected_index + 1
     update_sidebar_selection()
     select_commit(local_state.selected_index)
 
     -- Trigger loading more when within 10 commits of the end
-    if #local_state.commits - local_state.selected_index < 10 then
+    if total_commits() - local_state.selected_index < 10 then
       load_more_commits()
     end
   end
@@ -292,7 +339,7 @@ end
 --- Build and cache the file tree for the selected commit
 build_filetree_cache = function()
   if not local_state.repo_path then return end
-  local commit = local_state.commits[local_state.selected_index]
+  local commit = get_commit(local_state.selected_index)
   local sha = (commit and commit.sha) or nil
   ui.build_filetree_cache(local_state, local_state.repo_path, sha)
 end
@@ -334,6 +381,60 @@ local function setup_keymaps()
         desc = "Maximize grid cell " .. i,
       })
     end
+
+    -- Maximize file picker
+    table.insert(local_mode_keymaps, {
+      mode = NORMAL_MODE,
+      lhs = shortcuts.commit_mode.maximize_prefix .. "f",
+      rhs = function()
+        local items = {}
+        for path, _ in pairs(local_state.commit_files) do
+          table.insert(items, { display = "  " .. path, value = path })
+        end
+        table.sort(items, function(a, b) return a.display < b.display end)
+        ui.open_maximize_list({
+          title = "Files (" .. #items .. ")",
+          items = items,
+          state = local_state,
+          on_select = function(path)
+            for i, hd in ipairs(local_state.all_hunks) do
+              if hd.filename == path then
+                local c = local_state.grid_rows * local_state.grid_cols
+                local_state.current_page = math.ceil(i / c)
+                render_grid_page()
+                maximize_cell(((i - 1) % c) + 1)
+                return
+              end
+            end
+          end,
+        })
+      end,
+      desc = "Maximize file picker",
+    })
+
+    -- Maximize commit picker
+    table.insert(local_mode_keymaps, {
+      mode = NORMAL_MODE,
+      lhs = shortcuts.commit_mode.maximize_prefix .. "c",
+      rhs = function()
+        local items = {}
+        for i = 1, total_commits() do
+          local c = get_commit(i)
+          if c then table.insert(items, { display = "  " .. c.message, value = i }) end
+        end
+        ui.open_maximize_list({
+          title = "Commits (" .. #items .. ")",
+          items = items,
+          state = local_state,
+          on_select = function(idx)
+            local_state.selected_index = idx
+            update_sidebar_selection()
+            select_commit(idx)
+          end,
+        })
+      end,
+      desc = "Maximize commit picker",
+    })
   end
 
   -- Browse files toggle
@@ -366,9 +467,10 @@ local function setup_keymaps()
 
   -- Filetree navigation keymaps
   ui.setup_filetree_nav(local_state, {
+    ns_id = ns_id,
     get_repo_path = function() return local_state.repo_path end,
     get_sha = function()
-      local c = local_state.commits[local_state.selected_index]
+      local c = get_commit(local_state.selected_index)
       return c and c.sha
     end,
   })
@@ -399,7 +501,7 @@ end
 local start_workdir_poll_timer
 
 --- Start the adaptive working directory poll timer
---- Fast (333ms) when changes are recent, slow (3s) after 3 minutes idle
+--- Fast (3s) when changes are recent, slow (30s) after 3 minutes idle
 start_workdir_poll_timer = function()
   stop_workdir_poll_timer()
   if not local_state.active then return end
@@ -437,36 +539,49 @@ start_workdir_poll_timer = function()
   end))
 end
 
---- Refresh commits from git (called when HEAD changes)
-local function refresh_commits()
-  local count = math.max(local_state.total_loaded, BATCH_SIZE)
-
-  local selected_sha = local_state.commits[local_state.selected_index]
-    and local_state.commits[local_state.selected_index].sha
-
-  git.log_all_commits(local_state.repo_path, count, 0, function(new_commits, err)
-    if err or not new_commits then return end
-
-    table.insert(new_commits, 1, { sha = nil, message = "Current changes" })
-    local_state.commits = new_commits
-    local_state.total_loaded = #new_commits - 1
-    local_state.last_status_output = ""
-
-    if selected_sha then
-      for i, c in ipairs(new_commits) do
-        if c.sha == selected_sha then
-          local_state.selected_index = i
-          break
-        end
+--- Preserve selected commit across a refresh
+local function restore_selection_by_sha(selected_sha)
+  if selected_sha then
+    for i = 1, total_commits() do
+      local c = get_commit(i)
+      if c and c.sha == selected_sha then
+        local_state.selected_index = i
+        return
       end
     end
-    if local_state.selected_index > #new_commits then
-      local_state.selected_index = math.max(1, #new_commits)
-    end
+  end
+  if local_state.selected_index > total_commits() then
+    local_state.selected_index = math.max(1, total_commits())
+  end
+end
 
-    render_sidebar()
-    update_sidebar_selection()
-  end)
+--- Refresh commits from git (called when HEAD changes)
+local function refresh_commits()
+  local selected_sha = get_commit(local_state.selected_index)
+    and get_commit(local_state.selected_index).sha
+
+  if local_state.base_branch and local_state.merge_base_sha then
+    -- Branch mode: refresh branch commits only (base stays static)
+    git.log_branch_commits(local_state.repo_path, local_state.merge_base_sha, function(new_branch, err)
+      if err or not new_branch then return end
+      table.insert(new_branch, 1, { sha = nil, message = "Current changes" })
+      local_state.branch_commits = new_branch
+      local_state.last_status_output = ""
+      restore_selection_by_sha(selected_sha)
+      render_sidebar()
+    end)
+  else
+    -- Flat mode: refresh all commits
+    local count = math.max(total_commits() - 1, BATCH_SIZE)
+    git.log_all_commits(local_state.repo_path, count, 0, function(new_commits, err)
+      if err or not new_commits then return end
+      table.insert(new_commits, 1, { sha = nil, message = "Current changes" })
+      local_state.branch_commits = new_commits
+      local_state.last_status_output = ""
+      restore_selection_by_sha(selected_sha)
+      render_sidebar()
+    end)
+  end
 end
 
 --- Start the 10-second HEAD polling timer
@@ -496,19 +611,58 @@ end
 --- Load more commits (triggered by approaching end of list)
 load_more_commits = function()
   if local_state.loading_more then return end
-  local_state.loading_more = true
 
-  git.log_all_commits(local_state.repo_path, BATCH_SIZE, local_state.total_loaded, function(new_commits, err)
-    local_state.loading_more = false
-    if err or not new_commits or #new_commits == 0 then return end
+  if local_state.base_branch and local_state.merge_base_sha then
+    -- Branch mode: load more base commits
+    local_state.loading_more = true
+    git.log_from_ref(local_state.repo_path, local_state.merge_base_sha,
+      BATCH_SIZE, local_state.total_base_loaded,
+      function(new_commits, err)
+        local_state.loading_more = false
+        if err or not new_commits or #new_commits == 0 then return end
+        for _, commit in ipairs(new_commits) do
+          table.insert(local_state.base_commits, commit)
+        end
+        local_state.total_base_loaded = local_state.total_base_loaded + #new_commits
+        render_sidebar()
+      end)
+  else
+    -- Flat mode: load more into branch_commits
+    local_state.loading_more = true
+    local skip = #local_state.branch_commits - 1 -- -1 for "Current changes"
+    git.log_all_commits(local_state.repo_path, BATCH_SIZE, skip, function(new_commits, err)
+      local_state.loading_more = false
+      if err or not new_commits or #new_commits == 0 then return end
+      for _, commit in ipairs(new_commits) do
+        table.insert(local_state.branch_commits, commit)
+      end
+      render_sidebar()
+    end)
+  end
+end
 
-    for _, commit in ipairs(new_commits) do
-      table.insert(local_state.commits, commit)
-    end
-    local_state.total_loaded = local_state.total_loaded + #new_commits
+--- Activate local mode with the given state
+local function activate_mode(repo_root, rows, cols, notify_msg)
+  local_state.saved_buf = vim.api.nvim_get_current_buf()
+  local_state.saved_laststatus = vim.o.laststatus
+  local_state.pr_was_active = state.is_active()
+  if local_state.pr_was_active then
+    keymaps.clear()
+    open.pause_sync()
+  end
+  vim.o.laststatus = 3
+  local_state.active = true
+  local_state.repo_path = repo_root
+  local_state.last_change_time = vim.uv.now()
 
+  vim.schedule(function()
+    ui.create_grid_layout(local_state, rows, cols)
     render_sidebar()
-    update_sidebar_selection()
+    setup_keymaps()
+    select_commit(1)
+    start_poll_timer()
+    start_workdir_poll_timer()
+    vim.notify(notify_msg)
   end)
 end
 
@@ -517,11 +671,13 @@ local function enter_local_mode()
   local cfg = config.load()
   local rows = 2
   local cols = 2
+  local base_count = 20
   if cfg and cfg.commit_viewer then
     if cfg.commit_viewer.grid then
       rows = ui.clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
       cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
     end
+    base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
   end
 
   vim.notify("Loading commits...", vim.log.levels.INFO)
@@ -532,42 +688,93 @@ local function enter_local_mode()
       return
     end
 
-    git.log_all_commits(repo_root, BATCH_SIZE, 0, function(initial_commits, err)
-      if err or not initial_commits then
-        vim.notify("Failed to load commits: " .. (err or "unknown error"), vim.log.levels.ERROR)
+    -- Detect current branch
+    git.get_current_branch(repo_root, function(current_branch, _)
+      if not current_branch or current_branch == "HEAD" then
+        -- Detached HEAD or error: flat mode
+        git.log_all_commits(repo_root, BATCH_SIZE, 0, function(commits, err)
+          if err or not commits or #commits == 0 then
+            vim.notify("No commits found", vim.log.levels.WARN)
+            return
+          end
+          table.insert(commits, 1, { sha = nil, message = "Current changes" })
+          local_state.branch_commits = commits
+          activate_mode(repo_root, rows, cols,
+            string.format("Local commit viewer: %d commits loaded", #commits - 1))
+        end)
         return
       end
 
-      if #initial_commits == 0 then
-        vim.notify("No commits found in repository", vim.log.levels.WARN)
-        return
-      end
+      -- Detect default branch
+      git.find_default_branch(repo_root, function(default_branch, _)
+        if not default_branch or current_branch == default_branch then
+          -- On default branch or detection failed: flat mode
+          git.log_all_commits(repo_root, BATCH_SIZE, 0, function(commits, err)
+            if err or not commits or #commits == 0 then
+              vim.notify("No commits found", vim.log.levels.WARN)
+              return
+            end
+            local_state.current_branch = current_branch
+            table.insert(commits, 1, { sha = nil, message = "Current changes" })
+            local_state.branch_commits = commits
+            activate_mode(repo_root, rows, cols,
+              string.format("Local commit viewer: %d commits loaded", #commits - 1))
+          end)
+          return
+        end
 
-      -- All checks passed — now commit to entering local mode
-      local_state.saved_buf = vim.api.nvim_get_current_buf()
-      local_state.saved_laststatus = vim.o.laststatus
-      local_state.pr_was_active = state.is_active()
-      if local_state.pr_was_active then
-        keymaps.clear()
-        open.pause_sync()
-      end
-      vim.o.laststatus = 3
-      local_state.active = true
-      local_state.repo_path = repo_root
+        -- Feature branch: find merge-base and split
+        git.merge_base(repo_root, "HEAD", default_branch, function(merge_sha, merge_err)
+          if merge_err or not merge_sha then
+            -- Merge-base failed: flat mode fallback
+            git.log_all_commits(repo_root, BATCH_SIZE, 0, function(commits, err)
+              if err or not commits or #commits == 0 then
+                vim.notify("No commits found", vim.log.levels.WARN)
+                return
+              end
+              local_state.current_branch = current_branch
+              table.insert(commits, 1, { sha = nil, message = "Current changes" })
+              local_state.branch_commits = commits
+              activate_mode(repo_root, rows, cols,
+                string.format("Local commit viewer: %d commits loaded", #commits - 1))
+            end)
+            return
+          end
 
-      table.insert(initial_commits, 1, { sha = nil, message = "Current changes" })
-      local_state.commits = initial_commits
-      local_state.total_loaded = #initial_commits - 1
-      local_state.last_change_time = vim.uv.now()
+          -- Branch mode: load branch commits and base commits in parallel
+          local pending = 2
+          local branch_result, base_result
 
-      vim.schedule(function()
-        ui.create_grid_layout(local_state, rows, cols)
-        render_sidebar()
-        setup_keymaps()
-        select_commit(1)
-        start_poll_timer()
-        start_workdir_poll_timer()
-        vim.notify(string.format("Local commit viewer: %d commits loaded", local_state.total_loaded))
+          local function on_both_ready()
+            local branch_commits = branch_result or {}
+            local base_commits = base_result or {}
+            table.insert(branch_commits, 1, { sha = nil, message = "Current changes" })
+            local_state.current_branch = current_branch
+            local_state.base_branch = default_branch
+            local_state.merge_base_sha = merge_sha
+            local_state.branch_commits = branch_commits
+            local_state.base_commits = base_commits
+            local_state.total_base_loaded = #base_commits
+            activate_mode(repo_root, rows, cols,
+              string.format("Local commit viewer: %d branch + %d base commits",
+                #branch_commits - 1, #base_commits))
+          end
+
+          local function check_done()
+            pending = pending - 1
+            if pending == 0 then on_both_ready() end
+          end
+
+          git.log_branch_commits(repo_root, merge_sha, function(commits, _)
+            branch_result = commits
+            check_done()
+          end)
+
+          git.log_from_ref(repo_root, merge_sha, base_count, 0, function(commits, _)
+            base_result = commits
+            check_done()
+          end)
+        end)
       end)
     end)
   end)

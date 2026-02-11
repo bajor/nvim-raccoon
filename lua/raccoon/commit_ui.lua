@@ -453,63 +453,6 @@ function M.open_maximize(opts)
   end)
 end
 
---- Open a maximize floating window showing file content at a commit state
----@param opts table {repo_path, sha, filename, generation, get_generation, state}
-function M.open_file_content(opts)
-  local git = require("raccoon.git")
-
-  git.show_file_content(opts.repo_path, opts.sha, opts.filename, function(lines, err)
-    if opts.get_generation() ~= opts.generation then return end
-    if err or not lines then
-      vim.notify("Failed to get file content", vim.log.levels.ERROR)
-      return
-    end
-
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
-    local row = math.floor((vim.o.lines - height) / 2)
-    local col = math.floor((vim.o.columns - width) / 2)
-
-    local buf = M.create_scratch_buf()
-    vim.bo[buf].modifiable = true
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].modifiable = false
-
-    local ft = vim.filetype.match({ filename = opts.filename })
-    if ft then vim.bo[buf].filetype = ft end
-
-    local win = vim.api.nvim_open_win(buf, true, {
-      relative = "editor",
-      width = width,
-      height = height,
-      row = row,
-      col = col,
-      style = "minimal",
-      border = "rounded",
-    })
-
-    opts.state.maximize_win = win
-    opts.state.maximize_buf = buf
-
-    local shortcuts = config.load_shortcuts()
-    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
-    vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
-    vim.wo[win].wrap = true
-    vim.wo[win].number = true
-
-    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
-
-    local buf_opts = { buffer = buf, noremap = true, silent = true }
-    local function close_fn()
-      M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
-    end
-    if config.is_enabled(shortcuts.close) then
-      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
-    end
-    vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
-  end)
-end
-
 
 --- Build and cache a file tree for a commit (or working directory when sha is nil).
 --- Async: fetches file list via git, populates cache, then re-renders filetree.
@@ -758,10 +701,10 @@ function M.setup_focus_lock(s, augroup_name)
   return augroup
 end
 
---- Setup filetree browsing keymaps. j/k navigate all files, Enter shows file content.
+--- Setup filetree browsing keymaps. j/k navigate all files, Enter shows file diff.
 --- The diff grid stays intact while browsing.
 ---@param s table State table
----@param opts table {get_repo_path, get_sha}
+---@param opts table {get_repo_path, get_sha, ns_id}
 function M.setup_filetree_nav(s, opts)
   if not s.filetree_buf or not vim.api.nvim_buf_is_valid(s.filetree_buf) then return end
 
@@ -819,13 +762,15 @@ function M.setup_filetree_nav(s, opts)
     local repo_path = opts.get_repo_path()
     local sha = opts.get_sha()
     if not repo_path then return end
-    M.open_file_content({
+    M.open_maximize({
+      ns_id = opts.ns_id,
       repo_path = repo_path,
       sha = sha,
       filename = path,
       generation = s.select_generation,
       get_generation = function() return s.select_generation end,
       state = s,
+      is_working_dir = sha == nil,
     })
   end
 
@@ -856,6 +801,111 @@ function M.toggle_filetree_focus(s)
       vim.api.nvim_set_current_win(s.filetree_win)
     end
   end
+end
+
+--- Render a two-section sidebar (section1 commits + separator + section2 commits dimmed).
+--- Works for both PR viewer ("PR Branch"/"Base Branch") and local viewer ("feat-xyz"/"main").
+---@param buf number Buffer ID
+---@param opts table {section1_header, section1_commits, section2_header, section2_commits, commit_hl_fn?, loading?}
+---@return table highlights Array of {line, hl} used for highlight application
+function M.render_split_sidebar(buf, opts)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  local lines = {}
+  local highlights = {}
+
+  -- Section 1 header
+  table.insert(lines, opts.section1_header)
+  table.insert(highlights, { line = #lines - 1, hl = "Title" })
+
+  -- Section 1 commits
+  for _, commit in ipairs(opts.section1_commits) do
+    local msg = commit.message
+    if #msg > M.SIDEBAR_WIDTH - 2 then
+      msg = msg:sub(1, M.SIDEBAR_WIDTH - 5) .. "..."
+    end
+    table.insert(lines, "  " .. msg)
+    if opts.commit_hl_fn then
+      local hl = opts.commit_hl_fn(commit)
+      if hl then
+        table.insert(highlights, { line = #lines - 1, hl = hl })
+      end
+    end
+  end
+
+  -- Separator + section 2 header
+  table.insert(lines, "")
+  table.insert(lines, opts.section2_header)
+  table.insert(highlights, { line = #lines - 1, hl = "Title" })
+
+  -- Section 2 commits (dimmed)
+  for _, commit in ipairs(opts.section2_commits) do
+    local msg = commit.message
+    if #msg > M.SIDEBAR_WIDTH - 2 then
+      msg = msg:sub(1, M.SIDEBAR_WIDTH - 5) .. "..."
+    end
+    table.insert(lines, "  " .. msg)
+    table.insert(highlights, { line = #lines - 1, hl = "Comment" })
+  end
+
+  if opts.loading then
+    table.insert(lines, "")
+    table.insert(lines, "  Loading...")
+    table.insert(highlights, { line = #lines - 1, hl = "Comment" })
+  end
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  local hl_ns = vim.api.nvim_create_namespace("raccoon_split_sidebar_hl")
+  vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
+  for _, hl in ipairs(highlights) do
+    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl.hl, hl.line, 0, -1)
+  end
+end
+
+--- Update selection highlight in a two-section sidebar.
+--- Accounts for the blank separator + section2 header (+2 offset) when in section2.
+---@param buf number Buffer ID
+---@param win number Window ID
+---@param index number 1-based combined index
+---@param section1_count number Number of commits in section 1
+function M.update_split_selection(buf, win, index, section1_count)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  local sel_ns = vim.api.nvim_create_namespace("raccoon_split_sidebar_sel")
+  vim.api.nvim_buf_clear_namespace(buf, sel_ns, 0, -1)
+
+  -- Line layout: header(0), s1 commits(1..N), blank(N+1), s2 header(N+2), s2 commits(N+3..)
+  local line_idx = index
+  if index > section1_count then
+    line_idx = index + 2 -- skip blank separator + section2 header
+  end
+  pcall(vim.api.nvim_buf_add_highlight, buf, sel_ns, "Visual", line_idx, 0, -1)
+
+  if win and vim.api.nvim_win_is_valid(win) then
+    pcall(vim.api.nvim_win_set_cursor, win, { line_idx + 1, 0 })
+  end
+end
+
+--- Map a cursor line in a two-section sidebar back to a combined commit index.
+---@param cursor_line number 1-based cursor line from nvim_win_get_cursor
+---@param section1_count number Number of commits in section 1
+---@return number|nil index 1-based combined index, or nil if on a non-commit line
+function M.split_sidebar_cursor_to_index(cursor_line, section1_count)
+  local line_0 = cursor_line - 1 -- 0-based
+  if line_0 == 0 then return nil end -- header
+
+  local section1_end = section1_count -- last s1 commit at line section1_count
+  if line_0 <= section1_end then
+    return line_0 -- directly maps to s1 index
+  end
+
+  -- blank at section1_count+1, s2 header at section1_count+2
+  if line_0 <= section1_end + 2 then return nil end -- on separator or header
+
+  return line_0 - 2 -- subtract blank + header to get combined index
 end
 
 return M

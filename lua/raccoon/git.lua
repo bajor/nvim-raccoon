@@ -629,6 +629,100 @@ function M.log_all_commits(path, count, skip, callback)
   })
 end
 
+--- Log commits starting from a specific ref (for lazy-loading base commits)
+---@param path string Repository path
+---@param ref string Git ref to start from (SHA or branch name)
+---@param count number Number of commits to fetch
+---@param skip number Number of commits to skip
+---@param callback fun(commits: table[]|nil, err: string|nil)
+function M.log_from_ref(path, ref, count, skip, callback)
+  run_git({ "log", "--format=%H %s", "-n", tostring(count), "--skip=" .. tostring(skip), ref }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      callback(parse_commit_log(stdout), nil)
+    end,
+  })
+end
+
+--- Log commits between a base ref and HEAD (branch-specific commits)
+---@param path string Repository path
+---@param base_ref string Base ref (SHA or branch name)
+---@param callback fun(commits: table[]|nil, err: string|nil)
+function M.log_branch_commits(path, base_ref, callback)
+  run_git({ "log", "--format=%H %s", "--reverse", base_ref .. "..HEAD" }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      callback(parse_commit_log(stdout), nil)
+    end,
+  })
+end
+
+--- Find the merge-base (common ancestor) between two refs
+---@param path string Repository path
+---@param ref1 string First ref
+---@param ref2 string Second ref
+---@param callback fun(sha: string|nil, err: string|nil)
+function M.merge_base(path, ref1, ref2, callback)
+  run_git({ "merge-base", ref1, ref2 }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code == 0 and #stdout > 0 then
+        callback(stdout[1], nil)
+      else
+        callback(nil, table.concat(stderr, "\n"))
+      end
+    end,
+  })
+end
+
+--- Detect the repository's default branch name (main, master, etc.)
+---@param path string Repository path
+---@param callback fun(branch: string|nil, err: string|nil)
+function M.find_default_branch(path, callback)
+  -- Try: git symbolic-ref refs/remotes/origin/HEAD
+  run_git({ "symbolic-ref", "refs/remotes/origin/HEAD" }, {
+    cwd = path,
+    on_exit = function(code, stdout, _)
+      if code == 0 and #stdout > 0 then
+        local branch = stdout[1]:match("refs/remotes/origin/(.+)")
+        if branch then
+          callback(branch, nil)
+          return
+        end
+      end
+      -- Fallback: check if "main" exists locally
+      run_git({ "rev-parse", "--verify", "--quiet", "main" }, {
+        cwd = path,
+        on_exit = function(code2, _, _)
+          if code2 == 0 then
+            callback("main", nil)
+            return
+          end
+          -- Fallback: check if "master" exists locally
+          run_git({ "rev-parse", "--verify", "--quiet", "master" }, {
+            cwd = path,
+            on_exit = function(code3, _, _)
+              if code3 == 0 then
+                callback("master", nil)
+              else
+                callback(nil, "no default branch found")
+              end
+            end,
+          })
+        end,
+      })
+    end,
+  })
+end
+
 --- Get diff of working directory vs HEAD, split into per-file patches
 ---@param path string Repository path
 ---@param callback fun(files: table[]|nil, err: string|nil)
@@ -708,38 +802,6 @@ function M.list_files(path, sha, callback)
   })
 end
 
---- Get file content at a specific commit (git show <sha>:<filepath>)
---- For working directory, reads the file directly.
----@param path string Repository path
----@param sha string|nil Commit SHA, or nil for working directory
----@param filename string File path relative to repo root
----@param callback fun(lines: string[]|nil, err: string|nil)
-function M.show_file_content(path, sha, filename, callback)
-  if not sha then
-    local fullpath = path .. "/" .. filename
-    local file = io.open(fullpath, "r")
-    if not file then
-      callback(nil, "File not found: " .. fullpath)
-      return
-    end
-    local content = file:read("*a")
-    file:close()
-    vim.schedule(function()
-      callback(vim.split(content, "\n", { plain = true }), nil)
-    end)
-    return
-  end
-  run_git({ "show", sha .. ":" .. filename }, {
-    cwd = path,
-    on_exit = function(code, stdout, stderr)
-      if code ~= 0 then
-        callback(nil, table.concat(stderr, "\n"))
-        return
-      end
-      callback(stdout, nil)
-    end,
-  })
-end
 
 --- Find the git repository root for a given path
 ---@param path string Starting path
