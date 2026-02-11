@@ -397,7 +397,9 @@ function M.open_maximize(opts)
 
     local lines = {}
     local hl_lines = {}
+    local hunk_starts = {}
     for _, hunk in ipairs(hunks) do
+      table.insert(hunk_starts, #lines + 1)
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
         table.insert(hl_lines, { type = line_data.type })
@@ -450,6 +452,31 @@ function M.open_maximize(opts)
       vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
     end
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+
+    if #hunk_starts > 1 then
+      if config.is_enabled(shortcuts.commit_mode.next_page) then
+        vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.next_page, function()
+          local cur = vim.api.nvim_win_get_cursor(win)[1]
+          for _, start in ipairs(hunk_starts) do
+            if start > cur then
+              vim.api.nvim_win_set_cursor(win, { start, 0 })
+              return
+            end
+          end
+        end, buf_opts)
+      end
+      if config.is_enabled(shortcuts.commit_mode.prev_page) then
+        vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.prev_page, function()
+          local cur = vim.api.nvim_win_get_cursor(win)[1]
+          for i = #hunk_starts, 1, -1 do
+            if hunk_starts[i] < cur then
+              vim.api.nvim_win_set_cursor(win, { hunk_starts[i], 0 })
+              return
+            end
+          end
+        end, buf_opts)
+      end
+    end
   end)
 end
 
