@@ -290,6 +290,7 @@ local function render_sidebar()
     pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl.hl, hl.line, 0, -1)
   end
 
+  ui.update_sidebar_winbar(commit_state, total_commits())
   update_sidebar_selection()
 end
 

@@ -527,7 +527,17 @@ function M.render_filetree(s)
 
   local win = s.filetree_win
   if win and vim.api.nvim_win_is_valid(win) then
-    vim.wo[win].winbar = " Files (" .. (s.cached_file_count or 0) .. ")"
+    local changed = s.commit_files and vim.tbl_count(s.commit_files) or 0
+    vim.wo[win].winbar = " #F " .. changed .. " · " .. (s.cached_file_count or 0) .. " total"
+  end
+end
+
+--- Update sidebar winbar with commit count
+---@param s table State table
+---@param count number Total commit count
+function M.update_sidebar_winbar(s, count)
+  if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
+    vim.wo[s.sidebar_win].winbar = " #C " .. count
   end
 end
 
