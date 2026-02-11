@@ -15,8 +15,8 @@ local ns_id = vim.api.nvim_create_namespace("raccoon_local_commits")
 
 local BATCH_SIZE = 100
 local POLL_INTERVAL_MS = 10000
-local WORKDIR_POLL_FAST_MS = 1000
-local WORKDIR_POLL_SLOW_MS = 3000
+local WORKDIR_POLL_FAST_MS = 3000
+local WORKDIR_POLL_SLOW_MS = 30000
 local WORKDIR_IDLE_THRESHOLD_MS = 180000
 
 local function make_initial_state()

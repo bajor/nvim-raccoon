@@ -263,7 +263,7 @@ Press `<leader>m<N>` to maximize a cell — this opens a floating window with th
 
 Run `:Raccoon local` from any git repository to browse its commit history — no GitHub token or PR required. Uses the same grid layout, file tree, and diff rendering as the PR commit viewer.
 
-The first entry in the sidebar is **"Current changes"** — a live view of all uncommitted modifications (staged + unstaged vs HEAD). When selected, the grid updates as files change on disk, polling once per second. After 3 minutes of no changes the polling backs off to once every 3 seconds, and snaps back to fast polling the moment new changes appear.
+The first entry in the sidebar is **"Current changes"** — a live view of all uncommitted modifications (staged + unstaged vs HEAD). When selected, the grid updates as files change on disk, polling once every 3 seconds. After 3 minutes of no changes the polling backs off to once every 30 seconds, and snaps back to fast polling the moment new changes appear.
 
 When a new commit is made (e.g. by an AI agent in another terminal), it appears in the sidebar automatically (10-second HEAD poll). Your selection stays on whatever commit you were viewing — new commits just shift the list without stealing focus.
 
