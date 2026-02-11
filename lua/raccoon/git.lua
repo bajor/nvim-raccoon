@@ -694,7 +694,17 @@ function M.find_default_branch(path, callback)
       if code == 0 and #stdout > 0 then
         local branch = stdout[1]:match("refs/remotes/origin/(.+)")
         if branch then
-          callback(branch, nil)
+          -- Verify the local branch exists; if not, use the remote tracking ref
+          run_git({ "rev-parse", "--verify", "--quiet", branch }, {
+            cwd = path,
+            on_exit = function(code_local, _, _)
+              if code_local == 0 then
+                callback(branch, nil)
+              else
+                callback("origin/" .. branch, nil)
+              end
+            end,
+          })
           return
         end
       end
@@ -804,14 +814,23 @@ end
 
 
 --- Get file content at a specific commit (git show <sha>:<filepath>)
---- For working directory, reads the file from disk.
+--- When sha is nil, reads the file from disk (working directory).
 ---@param path string Repository path
----@param sha string|nil Commit SHA, or nil for working directory (reads HEAD)
+---@param sha string|nil Commit SHA, or nil for working directory (reads from disk)
 ---@param filename string File path relative to repo root
 ---@param callback fun(lines: string[]|nil, err: string|nil)
 function M.show_file_content(path, sha, filename, callback)
-  local ref = sha or "HEAD"
-  run_git({ "show", ref .. ":" .. filename }, {
+  if not sha then
+    local filepath = path .. "/" .. filename
+    local ok, lines = pcall(vim.fn.readfile, filepath)
+    if not ok then
+      callback(nil, "Failed to read file: " .. filepath)
+      return
+    end
+    callback(lines, nil)
+    return
+  end
+  run_git({ "show", sha .. ":" .. filename }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
