@@ -54,6 +54,7 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols)
     "<C-z>",
   }
   for _, key in ipairs({
+    shortcuts.commit_mode.next_page, shortcuts.commit_mode.prev_page,
     shortcuts.commit_mode.next_page_alt, shortcuts.commit_mode.exit,
   }) do
     if config.is_enabled(key) then
@@ -396,12 +397,20 @@ function M.open_maximize(opts)
 
     local lines = {}
     local hl_lines = {}
-    local hunk_starts = {}
     for _, hunk in ipairs(hunks) do
-      table.insert(hunk_starts, #lines + 1)
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
         table.insert(hl_lines, { type = line_data.type })
+      end
+    end
+
+    -- Find the start of each change group (consecutive add/del lines)
+    local change_starts = {}
+    for i, hl in ipairs(hl_lines) do
+      local is_change = hl.type == "add" or hl.type == "del"
+      local prev_is_change = i > 1 and (hl_lines[i - 1].type == "add" or hl_lines[i - 1].type == "del")
+      if is_change and not prev_is_change then
+        table.insert(change_starts, i)
       end
     end
 
@@ -452,23 +461,25 @@ function M.open_maximize(opts)
     end
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
 
-    if config.is_enabled(shortcuts.commit_mode.next_page) then
+    if #change_starts > 0 and config.is_enabled(shortcuts.commit_mode.next_page) then
+      pcall(vim.keymap.del, NORMAL_MODE, shortcuts.commit_mode.next_page, { buffer = buf })
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.next_page, function()
-        local cur = vim.api.nvim_win_get_cursor(win)[1]
-        for _, start in ipairs(hunk_starts) do
+        local cur = vim.api.nvim_win_get_cursor(0)[1]
+        for _, start in ipairs(change_starts) do
           if start > cur then
-            vim.api.nvim_win_set_cursor(win, { start, 0 })
+            vim.api.nvim_win_set_cursor(0, { start, 0 })
             return
           end
         end
       end, buf_opts)
     end
-    if config.is_enabled(shortcuts.commit_mode.prev_page) then
+    if #change_starts > 0 and config.is_enabled(shortcuts.commit_mode.prev_page) then
+      pcall(vim.keymap.del, NORMAL_MODE, shortcuts.commit_mode.prev_page, { buffer = buf })
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.prev_page, function()
-        local cur = vim.api.nvim_win_get_cursor(win)[1]
-        for i = #hunk_starts, 1, -1 do
-          if hunk_starts[i] < cur then
-            vim.api.nvim_win_set_cursor(win, { hunk_starts[i], 0 })
+        local cur = vim.api.nvim_win_get_cursor(0)[1]
+        for i = #change_starts, 1, -1 do
+          if change_starts[i] < cur then
+            vim.api.nvim_win_set_cursor(0, { change_starts[i], 0 })
             return
           end
         end
