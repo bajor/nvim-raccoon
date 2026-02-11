@@ -663,8 +663,9 @@ function M.setup_sidebar_nav(buf, callbacks)
   M.lock_buf(buf)
 end
 
---- Setup the focus-lock autocmd that keeps cursor in sidebar (or maximize window)
----@param s table State table (needs active, maximize_win, sidebar_win)
+--- Setup the focus-lock autocmd that keeps cursor in the active panel (or maximize window).
+--- Respects s.focus_target: "sidebar" (default) or "filetree".
+---@param s table State table (needs active, maximize_win, sidebar_win, filetree_win, focus_target)
 ---@param augroup_name string Name for the augroup
 ---@return number augroup_id
 function M.setup_focus_lock(s, augroup_name)
@@ -683,16 +684,133 @@ function M.setup_focus_lock(s, augroup_name)
         end)
         return
       end
-      if cur_win ~= s.sidebar_win then
+      local target = (s.focus_target == "filetree" and s.filetree_win) or s.sidebar_win
+      if cur_win ~= target then
         vim.schedule(function()
-          if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
-            vim.api.nvim_set_current_win(s.sidebar_win)
+          if target and vim.api.nvim_win_is_valid(target) then
+            vim.api.nvim_set_current_win(target)
           end
         end)
       end
     end,
   })
   return augroup
+end
+
+--- Setup filetree browsing keymaps. j/k navigate changed files, Enter maximizes, gg/G jump.
+---@param s table State table
+---@param opts table {ns_id, render_grid, get_repo_path, get_sha}
+function M.setup_filetree_nav(s, opts)
+  if not s.filetree_buf or not vim.api.nvim_buf_is_valid(s.filetree_buf) then return end
+
+  local function changed_file_lines()
+    local result = {}
+    if not s.cached_line_paths or not s.commit_files then return result end
+    for line_idx, path in pairs(s.cached_line_paths) do
+      if s.commit_files[path] then
+        table.insert(result, line_idx)
+      end
+    end
+    table.sort(result)
+    return result
+  end
+
+  local function page_to_file(filepath)
+    for i, hd in ipairs(s.all_hunks) do
+      if hd.filename == filepath then
+        local cells = s.grid_rows * s.grid_cols
+        s.current_page = math.ceil(i / cells)
+        opts.render_grid()
+        return
+      end
+    end
+  end
+
+  local function go_to_line(line_idx)
+    if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
+      pcall(vim.api.nvim_win_set_cursor, s.filetree_win, { line_idx + 1, 0 })
+    end
+    local path = s.cached_line_paths and s.cached_line_paths[line_idx]
+    if path then page_to_file(path) end
+  end
+
+  local function ft_move_down()
+    if not s.filetree_win or not vim.api.nvim_win_is_valid(s.filetree_win) then return end
+    local lines = changed_file_lines()
+    if #lines == 0 then return end
+    local cur = vim.api.nvim_win_get_cursor(s.filetree_win)[1] - 1
+    for _, idx in ipairs(lines) do
+      if idx > cur then go_to_line(idx); return end
+    end
+  end
+
+  local function ft_move_up()
+    if not s.filetree_win or not vim.api.nvim_win_is_valid(s.filetree_win) then return end
+    local lines = changed_file_lines()
+    if #lines == 0 then return end
+    local cur = vim.api.nvim_win_get_cursor(s.filetree_win)[1] - 1
+    for i = #lines, 1, -1 do
+      if lines[i] < cur then go_to_line(lines[i]); return end
+    end
+  end
+
+  local function ft_move_top()
+    local lines = changed_file_lines()
+    if #lines > 0 then go_to_line(lines[1]) end
+  end
+
+  local function ft_move_bottom()
+    local lines = changed_file_lines()
+    if #lines > 0 then go_to_line(lines[#lines]) end
+  end
+
+  local function ft_select()
+    if not s.filetree_win or not vim.api.nvim_win_is_valid(s.filetree_win) then return end
+    local cur = vim.api.nvim_win_get_cursor(s.filetree_win)[1] - 1
+    local path = s.cached_line_paths and s.cached_line_paths[cur]
+    if not path or not s.commit_files[path] then return end
+    local repo_path = opts.get_repo_path()
+    local sha = opts.get_sha()
+    if not repo_path then return end
+    M.open_maximize({
+      ns_id = opts.ns_id,
+      repo_path = repo_path,
+      sha = sha,
+      filename = path,
+      generation = s.select_generation,
+      get_generation = function() return s.select_generation end,
+      state = s,
+      is_working_dir = sha == nil,
+    })
+  end
+
+  M.setup_sidebar_nav(s.filetree_buf, {
+    move_down = ft_move_down,
+    move_up = ft_move_up,
+    move_to_top = ft_move_top,
+    move_to_bottom = ft_move_bottom,
+    select_at_cursor = ft_select,
+  })
+end
+
+--- Toggle focus between sidebar and filetree panels
+---@param s table State table
+function M.toggle_filetree_focus(s)
+  if s.focus_target == "filetree" then
+    s.focus_target = "sidebar"
+    if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
+      vim.wo[s.filetree_win].cursorline = false
+    end
+    if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
+      vim.api.nvim_set_current_win(s.sidebar_win)
+    end
+  else
+    s.focus_target = "filetree"
+    if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
+      vim.wo[s.filetree_win].cursorline = true
+      vim.api.nvim_set_current_win(s.filetree_win)
+    end
+  end
 end
 
 return M

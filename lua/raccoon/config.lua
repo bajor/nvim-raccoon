@@ -60,6 +60,7 @@ M.defaults = {
       next_page_alt = "<leader>l",
       exit = "<leader>cm",
       maximize_prefix = "<leader>m",
+      browse_files = "<leader>f",
     },
   },
 }

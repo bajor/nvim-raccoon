@@ -43,6 +43,7 @@ local commit_state = {
   cached_tree_lines = nil,
   cached_line_paths = nil,
   cached_file_count = nil,
+  focus_target = "sidebar",
 }
 
 --- Commit mode keymaps (global)
@@ -78,6 +79,7 @@ local function reset_state()
     cached_tree_lines = nil,
     cached_line_paths = nil,
     cached_file_count = nil,
+    focus_target = "sidebar",
   }
 end
 
@@ -387,6 +389,16 @@ local function setup_keymaps()
     end
   end
 
+  -- Browse files toggle
+  if config.is_enabled(shortcuts.commit_mode.browse_files) then
+    table.insert(commit_mode_keymaps, {
+      mode = NORMAL_MODE,
+      lhs = shortcuts.commit_mode.browse_files,
+      rhs = function() ui.toggle_filetree_focus(commit_state) end,
+      desc = "Toggle file tree browsing",
+    })
+  end
+
   -- Apply keymaps buffer-locally
   local commit_bufs = ui.collect_bufs(commit_state)
   for _, buf in ipairs(commit_bufs) do
@@ -403,6 +415,17 @@ local function setup_keymaps()
     move_to_top = move_to_top,
     move_to_bottom = move_to_bottom,
     select_at_cursor = select_at_cursor,
+  })
+
+  -- Filetree navigation keymaps
+  ui.setup_filetree_nav(commit_state, {
+    ns_id = ns_id,
+    render_grid = render_grid_page,
+    get_repo_path = function() return state.get_clone_path() end,
+    get_sha = function()
+      local c = get_commit(commit_state.selected_index)
+      return c and c.sha
+    end,
   })
 
   -- Focus lock autocmd
