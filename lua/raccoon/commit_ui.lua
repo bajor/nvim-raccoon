@@ -637,7 +637,10 @@ function M.update_sidebar_winbar(s, count)
   if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
     local shortcuts = config.load_shortcuts()
     local key = config.is_enabled(shortcuts.commit_mode.browse_files) and shortcuts.commit_mode.browse_files or nil
-    vim.wo[s.sidebar_win].winbar = key and (" Commits (" .. count .. ")%=%#Comment# " .. key .. " %*") or (" Commits (" .. count .. ")")
+    local label = " Commits (" .. count .. ")"
+    vim.wo[s.sidebar_win].winbar = key
+        and (label .. "%=%#Comment# " .. key .. " %*")
+      or label
   end
 end
 
