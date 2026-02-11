@@ -41,7 +41,7 @@ end
 ---@param buf number Buffer ID
 ---@param grid_rows number Grid row count (for maximize prefix blocking)
 ---@param grid_cols number Grid column count
-function M.lock_maximize_buf(buf, grid_rows, grid_cols)
+function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
@@ -57,7 +57,7 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols)
     shortcuts.commit_mode.next_page, shortcuts.commit_mode.prev_page,
     shortcuts.commit_mode.next_page_alt, shortcuts.commit_mode.exit,
   }) do
-    if config.is_enabled(key) then
+    if config.is_enabled(key) and not (skip_keys and skip_keys[key]) then
       table.insert(blocked, key)
     end
   end
@@ -450,7 +450,14 @@ function M.open_maximize(opts)
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
 
-    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
+    local skip_keys = nil
+    if #change_starts > 0 then
+      skip_keys = {
+        [shortcuts.commit_mode.next_page] = true,
+        [shortcuts.commit_mode.prev_page] = true,
+      }
+    end
+    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols, skip_keys)
 
     local buf_opts = { buffer = buf, noremap = true, silent = true }
     local function close_fn()
@@ -462,7 +469,6 @@ function M.open_maximize(opts)
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
 
     if #change_starts > 0 and config.is_enabled(shortcuts.commit_mode.next_page) then
-      pcall(vim.keymap.del, NORMAL_MODE, shortcuts.commit_mode.next_page, { buffer = buf })
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.next_page, function()
         local cur = vim.api.nvim_win_get_cursor(0)[1]
         for _, start in ipairs(change_starts) do
@@ -474,7 +480,6 @@ function M.open_maximize(opts)
       end, buf_opts)
     end
     if #change_starts > 0 and config.is_enabled(shortcuts.commit_mode.prev_page) then
-      pcall(vim.keymap.del, NORMAL_MODE, shortcuts.commit_mode.prev_page, { buffer = buf })
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.prev_page, function()
         local cur = vim.api.nvim_win_get_cursor(0)[1]
         for i = #change_starts, 1, -1 do
