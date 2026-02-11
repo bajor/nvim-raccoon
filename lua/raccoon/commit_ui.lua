@@ -6,7 +6,7 @@ local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 
-M.SIDEBAR_WIDTH = 40
+M.SIDEBAR_WIDTH = 50
 
 --- Create a scratch buffer (nofile, wipe on hide)
 ---@return number buf
