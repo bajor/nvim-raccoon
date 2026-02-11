@@ -37,6 +37,13 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          # Patch versions have two dots (e.g., 0.9.1), major/minor have one (e.g., 0.9)
+          if echo "$version" | grep -q '^[0-9]\+\.[0-9]\+$'; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "Patch version detected — will tag but skip GitHub Release."
+          fi
           echo "Extracted version: $version (tag: v$version)"
 
       - name: Check if tag already exists
@@ -66,18 +73,22 @@ jobs:
             git push
           fi
 
-      - name: Extract release notes
+      - name: Create and push tag
         if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false'
-        run: |
-          awk '/^## \[/{if(found) exit; found=1; next} found' CHANGELOG.md > /tmp/release_notes.md
-
-      - name: Create tag and GitHub release
-        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           git tag "${{ steps.version.outputs.tag }}"
           git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Extract release notes
+        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false' && steps.version.outputs.is_release == 'true'
+        run: |
+          awk '/^## \[/{if(found) exit; found=1; next} found' CHANGELOG.md > /tmp/release_notes.md
+
+      - name: Create GitHub release
+        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false' && steps.version.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --notes-file /tmp/release_notes.md
