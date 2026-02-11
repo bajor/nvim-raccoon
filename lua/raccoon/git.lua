@@ -250,6 +250,21 @@ function M.get_remote_url(path, callback)
   })
 end
 
+--- Parse git log output lines into commit tables
+---@param stdout string[] Lines of format "%H %s"
+---@return table[] commits Array of {sha, message}
+local function parse_commit_log(stdout)
+  local commits = {}
+  for _, line in ipairs(stdout) do
+    local sha = line:sub(1, 40)
+    local message = line:sub(42)
+    if #sha == 40 then
+      table.insert(commits, { sha = sha, message = message })
+    end
+  end
+  return commits
+end
+
 --- Parse owner/repo from a git remote URL
 ---@param url string|nil Git remote URL (SSH or HTTPS)
 ---@param host string|nil GitHub host to match (default: "github.com")
@@ -498,15 +513,7 @@ function M.log_commits(path, base_branch, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local commits = {}
-      for _, line in ipairs(stdout) do
-        local sha = line:sub(1, 40)
-        local message = line:sub(42)
-        if #sha == 40 then
-          table.insert(commits, { sha = sha, message = message })
-        end
-      end
-      callback(commits, nil)
+      callback(parse_commit_log(stdout), nil)
     end,
   })
 end
@@ -524,17 +531,39 @@ function M.log_base_commits(path, base_branch, count, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local commits = {}
-      for _, line in ipairs(stdout) do
-        local sha = line:sub(1, 40)
-        local message = line:sub(42)
-        if #sha == 40 then
-          table.insert(commits, { sha = sha, message = message })
-        end
-      end
-      callback(commits, nil)
+      callback(parse_commit_log(stdout), nil)
     end,
   })
+end
+
+--- Parse raw diff output into per-file patches
+---@param stdout string[] Lines of unified diff output
+---@return table[] files Array of {filename, patch}
+local function parse_diff_output(stdout)
+  local files = {}
+  local current_file = nil
+  local current_lines = {}
+
+  for _, line in ipairs(stdout) do
+    if line:match("^diff %-%-git ") then
+      if current_file then
+        table.insert(files, { filename = current_file, patch = table.concat(current_lines, "\n") })
+      end
+      local a_path, b_path = line:match("^diff %-%-git a/(.+) b/(.+)$")
+      current_file = (b_path ~= "dev/null" and b_path) or a_path
+      current_lines = {}
+    elseif current_file and line:match("^@@") then
+      table.insert(current_lines, line)
+    elseif current_file and #current_lines > 0 then
+      table.insert(current_lines, line)
+    end
+  end
+
+  if current_file then
+    table.insert(files, { filename = current_file, patch = table.concat(current_lines, "\n") })
+  end
+
+  return files
 end
 
 --- Get diff for a single commit, split into per-file patches
@@ -542,8 +571,6 @@ end
 ---@param sha string Commit SHA
 ---@param callback fun(files: table[]|nil, err: string|nil)
 function M.show_commit(path, sha, callback)
-  -- Use diff-tree instead of show: -m --first-parent handles merge commits
-  -- (git show produces empty combined diff for clean merges)
   run_git({ "diff-tree", "-p", "-m", "--first-parent", "--no-commit-id", sha }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
@@ -551,34 +578,7 @@ function M.show_commit(path, sha, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local files = {}
-      local current_file = nil
-      local current_lines = {}
-
-      for _, line in ipairs(stdout) do
-        if line:match("^diff %-%-git ") then
-          -- Save previous file
-          if current_file then
-            table.insert(files, { filename = current_file, patch = table.concat(current_lines, "\n") })
-          end
-          -- Extract filename from "diff --git a/path b/path"
-          -- For deletions b-path is dev/null, so fall back to a-path
-          local a_path, b_path = line:match("^diff %-%-git a/(.+) b/(.+)$")
-          current_file = (b_path ~= "dev/null" and b_path) or a_path
-          current_lines = {}
-        elseif current_file and line:match("^@@") then
-          table.insert(current_lines, line)
-        elseif current_file and #current_lines > 0 then
-          table.insert(current_lines, line)
-        end
-      end
-
-      -- Save last file
-      if current_file then
-        table.insert(files, { filename = current_file, patch = table.concat(current_lines, "\n") })
-      end
-
-      callback(files, nil)
+      callback(parse_diff_output(stdout), nil)
     end,
   })
 end
@@ -607,6 +607,119 @@ function M.show_commit_file(path, sha, filename, callback)
         end
       end
       callback(table.concat(lines, "\n"), nil)
+    end,
+  })
+end
+
+--- Get paginated commit log (all commits, not branch-filtered)
+---@param path string Repository path
+---@param count number Number of commits to fetch
+---@param skip number Number of commits to skip
+---@param callback fun(commits: table[]|nil, err: string|nil)
+function M.log_all_commits(path, count, skip, callback)
+  run_git({ "log", "--format=%H %s", "-n", tostring(count), "--skip=" .. tostring(skip) }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      callback(parse_commit_log(stdout), nil)
+    end,
+  })
+end
+
+--- Get diff of working directory vs HEAD, split into per-file patches
+---@param path string Repository path
+---@param callback fun(files: table[]|nil, err: string|nil)
+function M.diff_working_dir(path, callback)
+  run_git({ "diff", "HEAD" }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      callback(parse_diff_output(stdout), nil)
+    end,
+  })
+end
+
+--- Get full-context diff of a single working directory file vs HEAD
+---@param path string Repository path
+---@param filename string File path within the repo
+---@param callback fun(patch: string|nil, err: string|nil)
+function M.diff_working_dir_file(path, filename, callback)
+  run_git({ "diff", "HEAD", "-U99999", "--", filename }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      local lines = {}
+      local in_patch = false
+      for _, line in ipairs(stdout) do
+        if line:match("^@@") then
+          in_patch = true
+        end
+        if in_patch then
+          table.insert(lines, line)
+        end
+      end
+      callback(table.concat(lines, "\n"), nil)
+    end,
+  })
+end
+
+--- Get git status in porcelain format (cheap change detection)
+---@param path string Repository path
+---@param callback fun(output: string, err: string|nil)
+function M.status_porcelain(path, callback)
+  run_git({ "status", "--porcelain" }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback("", table.concat(stderr, "\n"))
+        return
+      end
+      callback(table.concat(stdout, "\n"), nil)
+    end,
+  })
+end
+
+--- List files in a commit (or working directory when sha is nil)
+---@param path string Repository path
+---@param sha string|nil Commit SHA, or nil for working directory
+---@param callback fun(files: string[], err: string|nil)
+function M.list_files(path, sha, callback)
+  local args = sha
+    and { "ls-tree", "-r", "--name-only", sha }
+    or { "ls-files" }
+  run_git(args, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback({}, table.concat(stderr, "\n"))
+        return
+      end
+      callback(stdout, nil)
+    end,
+  })
+end
+
+--- Find the git repository root for a given path
+---@param path string Starting path
+---@param callback fun(root: string|nil, err: string|nil)
+function M.find_repo_root(path, callback)
+  run_git({ "rev-parse", "--show-toplevel" }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code == 0 and #stdout > 0 then
+        callback(stdout[1], nil)
+      else
+        callback(nil, table.concat(stderr, "\n"))
+      end
     end,
   })
 end

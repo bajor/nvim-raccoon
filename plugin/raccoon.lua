@@ -10,7 +10,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   local subcommand = args[1]
 
   if not subcommand then
-    vim.notify("Usage: :Raccoon <prs|list|description|sync|merge|close>", vim.log.levels.WARN)
+    vim.notify("Usage: :Raccoon <prs|list|description|sync|merge|local|close>", vim.log.levels.WARN)
     return
   end
 
@@ -119,6 +119,9 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   elseif subcommand == "commits" then
     local commits_mod = require("raccoon.commits")
     commits_mod.toggle()
+  elseif subcommand == "local" then
+    local localcommits = require("raccoon.localcommits")
+    localcommits.toggle()
   elseif subcommand == "config" then
     -- Open config file in current buffer
     local config_path = vim.fn.expand("~/.config/raccoon/config.json")
@@ -189,7 +192,7 @@ end, {
       -- Complete subcommands
       return {
         "prs", "list", "description", "sync", "merge", "squash",
-        "rebase", "commits", "shortcuts", "close", "config",
+        "rebase", "commits", "local", "shortcuts", "close", "config",
       }
     end
     return {}
