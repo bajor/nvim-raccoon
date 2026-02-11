@@ -637,6 +637,22 @@ function M.collect_bufs(s)
   return bufs
 end
 
+--- Setup sidebar navigation keymaps (j/k/gg/G/Enter/arrows) and lock the buffer
+---@param buf number Buffer ID
+---@param callbacks table {move_down, move_up, move_to_top, move_to_bottom, select_at_cursor}
+function M.setup_sidebar_nav(buf, callbacks)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local o = { buffer = buf, noremap = true, silent = true }
+  vim.keymap.set(NORMAL_MODE, "j", callbacks.move_down, o)
+  vim.keymap.set(NORMAL_MODE, "k", callbacks.move_up, o)
+  vim.keymap.set(NORMAL_MODE, "<Down>", callbacks.move_down, o)
+  vim.keymap.set(NORMAL_MODE, "<Up>", callbacks.move_up, o)
+  vim.keymap.set(NORMAL_MODE, "gg", callbacks.move_to_top, o)
+  vim.keymap.set(NORMAL_MODE, "G", callbacks.move_to_bottom, o)
+  vim.keymap.set(NORMAL_MODE, "<CR>", callbacks.select_at_cursor, o)
+  M.lock_buf(buf)
+end
+
 --- Setup the focus-lock autocmd that keeps cursor in sidebar (or maximize window)
 ---@param s table State table (needs active, maximize_win, sidebar_win)
 ---@param augroup_name string Name for the augroup

@@ -344,17 +344,13 @@ local function setup_keymaps()
   end
 
   -- Sidebar-local keymaps
-  if local_state.sidebar_buf and vim.api.nvim_buf_is_valid(local_state.sidebar_buf) then
-    local buf_opts = { buffer = local_state.sidebar_buf, noremap = true, silent = true }
-    vim.keymap.set(NORMAL_MODE, "j", move_down, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "k", move_up, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "<Down>", move_down, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "<Up>", move_up, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "gg", move_to_top, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "G", move_to_bottom, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "<CR>", select_at_cursor, buf_opts)
-    ui.lock_buf(local_state.sidebar_buf)
-  end
+  ui.setup_sidebar_nav(local_state.sidebar_buf, {
+    move_down = move_down,
+    move_up = move_up,
+    move_to_top = move_to_top,
+    move_to_bottom = move_to_bottom,
+    select_at_cursor = select_at_cursor,
+  })
 
   -- Focus lock autocmd
   local_state.focus_augroup = ui.setup_focus_lock(local_state, "RaccoonLocalCommitFocus")
