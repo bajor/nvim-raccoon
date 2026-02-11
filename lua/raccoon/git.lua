@@ -803,6 +803,26 @@ function M.list_files(path, sha, callback)
 end
 
 
+--- Get file content at a specific commit (git show <sha>:<filepath>)
+--- For working directory, reads the file from disk.
+---@param path string Repository path
+---@param sha string|nil Commit SHA, or nil for working directory (reads HEAD)
+---@param filename string File path relative to repo root
+---@param callback fun(lines: string[]|nil, err: string|nil)
+function M.show_file_content(path, sha, filename, callback)
+  local ref = sha or "HEAD"
+  run_git({ "show", ref .. ":" .. filename }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      callback(stdout, nil)
+    end,
+  })
+end
+
 --- Find the git repository root for a given path
 ---@param path string Starting path
 ---@param callback fun(root: string|nil, err: string|nil)

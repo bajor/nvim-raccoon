@@ -454,6 +454,62 @@ function M.open_maximize(opts)
 end
 
 
+--- Open a maximize floating window showing raw file content at a commit state
+---@param opts table {repo_path, sha, filename, generation, get_generation, state}
+function M.open_file_content(opts)
+  local git = require("raccoon.git")
+
+  git.show_file_content(opts.repo_path, opts.sha, opts.filename, function(lines, err)
+    if opts.get_generation() ~= opts.generation then return end
+    if err or not lines then
+      vim.notify("Failed to get file content", vim.log.levels.ERROR)
+      return
+    end
+
+    local width = math.floor(vim.o.columns * 0.85)
+    local height = math.floor(vim.o.lines * 0.85)
+    local row = math.floor((vim.o.lines - height) / 2)
+    local col = math.floor((vim.o.columns - width) / 2)
+
+    local buf = M.create_scratch_buf()
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+
+    local ft = vim.filetype.match({ filename = opts.filename })
+    if ft then vim.bo[buf].filetype = ft end
+
+    local win = vim.api.nvim_open_win(buf, true, {
+      relative = "editor",
+      width = width,
+      height = height,
+      row = row,
+      col = col,
+      style = "minimal",
+      border = "rounded",
+    })
+
+    opts.state.maximize_win = win
+    opts.state.maximize_buf = buf
+
+    local shortcuts = config.load_shortcuts()
+    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+    vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
+    vim.wo[win].wrap = true
+
+    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
+
+    local buf_opts = { buffer = buf, noremap = true, silent = true }
+    local function close_fn()
+      M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
+    end
+    if config.is_enabled(shortcuts.close) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
+    end
+    vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+  end)
+end
+
 --- Build and cache a file tree for a commit (or working directory when sha is nil).
 --- Async: fetches file list via git, populates cache, then re-renders filetree.
 ---@param s table State table (needs cached_sha, cached_tree_lines, cached_line_paths, cached_file_count)
@@ -762,16 +818,28 @@ function M.setup_filetree_nav(s, opts)
     local repo_path = opts.get_repo_path()
     local sha = opts.get_sha()
     if not repo_path then return end
-    M.open_maximize({
-      ns_id = opts.ns_id,
-      repo_path = repo_path,
-      sha = sha,
-      filename = path,
-      generation = s.select_generation,
-      get_generation = function() return s.select_generation end,
-      state = s,
-      is_working_dir = sha == nil,
-    })
+    local is_changed = s.commit_files and s.commit_files[path]
+    if is_changed then
+      M.open_maximize({
+        ns_id = opts.ns_id,
+        repo_path = repo_path,
+        sha = sha,
+        filename = path,
+        generation = s.select_generation,
+        get_generation = function() return s.select_generation end,
+        state = s,
+        is_working_dir = sha == nil,
+      })
+    else
+      M.open_file_content({
+        repo_path = repo_path,
+        sha = sha,
+        filename = path,
+        generation = s.select_generation,
+        get_generation = function() return s.select_generation end,
+        state = s,
+      })
+    end
   end
 
   M.setup_sidebar_nav(s.filetree_buf, {
