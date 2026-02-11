@@ -54,7 +54,6 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols)
     "<C-z>",
   }
   for _, key in ipairs({
-    shortcuts.commit_mode.next_page, shortcuts.commit_mode.prev_page,
     shortcuts.commit_mode.next_page_alt, shortcuts.commit_mode.exit,
   }) do
     if config.is_enabled(key) then
@@ -453,29 +452,27 @@ function M.open_maximize(opts)
     end
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
 
-    if #hunk_starts > 1 then
-      if config.is_enabled(shortcuts.commit_mode.next_page) then
-        vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.next_page, function()
-          local cur = vim.api.nvim_win_get_cursor(win)[1]
-          for _, start in ipairs(hunk_starts) do
-            if start > cur then
-              vim.api.nvim_win_set_cursor(win, { start, 0 })
-              return
-            end
+    if config.is_enabled(shortcuts.commit_mode.next_page) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.next_page, function()
+        local cur = vim.api.nvim_win_get_cursor(win)[1]
+        for _, start in ipairs(hunk_starts) do
+          if start > cur then
+            vim.api.nvim_win_set_cursor(win, { start, 0 })
+            return
           end
-        end, buf_opts)
-      end
-      if config.is_enabled(shortcuts.commit_mode.prev_page) then
-        vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.prev_page, function()
-          local cur = vim.api.nvim_win_get_cursor(win)[1]
-          for i = #hunk_starts, 1, -1 do
-            if hunk_starts[i] < cur then
-              vim.api.nvim_win_set_cursor(win, { hunk_starts[i], 0 })
-              return
-            end
+        end
+      end, buf_opts)
+    end
+    if config.is_enabled(shortcuts.commit_mode.prev_page) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.prev_page, function()
+        local cur = vim.api.nvim_win_get_cursor(win)[1]
+        for i = #hunk_starts, 1, -1 do
+          if hunk_starts[i] < cur then
+            vim.api.nvim_win_set_cursor(win, { hunk_starts[i], 0 })
+            return
           end
-        end, buf_opts)
-      end
+        end
+      end, buf_opts)
     end
   end)
 end
