@@ -170,7 +170,8 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
       "prev_page": "<leader>k",
       "next_page_alt": "<leader>l",
       "exit": "<leader>cm",
-      "maximize_prefix": "<leader>m"
+      "maximize_prefix": "<leader>m",
+      "browse_files": "<leader>f"
     }
   }
 }]], clone_root)

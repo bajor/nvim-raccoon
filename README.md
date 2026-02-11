@@ -154,7 +154,8 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 22 co
       "prev_page": "<leader>k",
       "next_page_alt": "<leader>l",
       "exit": "<leader>cm",
-      "maximize_prefix": "<leader>m"
+      "maximize_prefix": "<leader>m",
+      "browse_files": "<leader>f"
     }
   }
 }
@@ -249,6 +250,7 @@ Commit mode shortcuts live under `shortcuts.commit_mode` in config:
 | `<leader>j` | `commit_mode.next_page` | Next page of diff hunks |
 | `<leader>k` | `commit_mode.prev_page` | Previous page of diff hunks |
 | `<leader>l` | `commit_mode.next_page_alt` | Next page of diff hunks (alias) |
+| `<leader>f` | `commit_mode.browse_files` | Toggle focus between commit sidebar and file tree |
 | `<leader>m1`..`m9` | `commit_mode.maximize_prefix` | Maximize a grid cell (full file diff) |
 | `<leader>q` / `q` | `close` | Exit maximized view |
 | `<leader>cm` | `commit_mode.exit` | Exit commit viewer mode |
@@ -258,6 +260,18 @@ Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter s
 Most vim keybindings are disabled in commit mode to prevent breaking the layout. Only the keys listed above work. Exit with `<leader>cm`. Auto-sync is paused while commit viewer mode is active and resumes automatically when you exit.
 
 Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. Close with `q` or `<leader>q`.
+
+### File tree browsing
+
+Press `<leader>f` to move focus from the commit sidebar to the file tree on the left. While in file tree mode:
+
+- `j` / `k` — navigate between files
+- `gg` / `G` — jump to first / last file
+- `/` — search (vim's built-in search)
+- `Enter` — view the file's content at the current commit state in a maximized floating window
+- `<leader>f` — return focus to the commit sidebar
+
+The diff grid in the center stays intact while browsing files. The active shortcut is shown in the winbar of both the file tree and commit sidebar panels.
 
 ## Local Commit Viewer
 

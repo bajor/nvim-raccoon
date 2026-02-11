@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9] - 2026-02-11
+
+### Added
+- File tree browsing in commit viewer — press `<leader>f` (configurable via `commit_mode.browse_files`) to toggle focus between the commit sidebar and file tree
+- Navigate all repo files with j/k, gg/G, and `/` search while in file tree mode
+- Press Enter on any file to view its content at the current commit state in a maximized floating window
+- Extracted shared `setup_sidebar_nav` into `commit_ui.lua`, reducing duplication between PR and local commit viewers
+
+### Changed
+- File tree and sidebar winbars now show descriptive labels with the `browse_files` shortcut hint instead of raw file/commit counters
+- Diff grid stays intact while browsing files in the file tree (no auto-paging)
+
 ## [0.8] - 2026-02-10
 
 ### Added

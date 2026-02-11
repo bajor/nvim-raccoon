@@ -43,6 +43,7 @@ local commit_state = {
   cached_tree_lines = nil,
   cached_line_paths = nil,
   cached_file_count = nil,
+  focus_target = "sidebar",
 }
 
 --- Commit mode keymaps (global)
@@ -78,6 +79,7 @@ local function reset_state()
     cached_tree_lines = nil,
     cached_line_paths = nil,
     cached_file_count = nil,
+    focus_target = "sidebar",
   }
 end
 
@@ -223,73 +225,23 @@ end
 
 --- Update sidebar selection highlight
 local function update_sidebar_selection()
-  local buf = commit_state.sidebar_buf
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-
-  local sel_ns = vim.api.nvim_create_namespace("raccoon_commit_sel")
-  vim.api.nvim_buf_clear_namespace(buf, sel_ns, 0, -1)
-
   local idx = commit_state.selected_index
   if idx < 1 or idx > total_commits() then return end
-
-  -- Sidebar layout: header at 0, PR commits at 1..N,
-  -- blank at N+1, base header at N+2, base commits at N+3..
-  local pr_count = #commit_state.pr_commits
-  local line_idx = idx
-  if idx > pr_count then
-    line_idx = idx + 2 -- skip blank separator + base header
-  end
-  pcall(vim.api.nvim_buf_add_highlight, buf, sel_ns, "Visual", line_idx, 0, -1)
-
-  if commit_state.sidebar_win and vim.api.nvim_win_is_valid(commit_state.sidebar_win) then
-    pcall(vim.api.nvim_win_set_cursor, commit_state.sidebar_win, { line_idx + 1, 0 })
-  end
+  ui.update_split_selection(
+    commit_state.sidebar_buf, commit_state.sidebar_win,
+    idx, #commit_state.pr_commits
+  )
 end
 
 --- Render the sidebar with commit lists
 local function render_sidebar()
-  local buf = commit_state.sidebar_buf
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-
-  local lines = {}
-  local highlights = {}
-
-  -- PR branch commits header
-  table.insert(lines, "── PR Branch ──")
-  table.insert(highlights, { line = #lines - 1, hl = "Title" })
-
-  for _, commit in ipairs(commit_state.pr_commits) do
-    local msg = commit.message
-    if #msg > ui.SIDEBAR_WIDTH - 2 then
-      msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
-    end
-    table.insert(lines, "  " .. msg)
-  end
-
-  -- Separator
-  table.insert(lines, "")
-  table.insert(lines, "── Base Branch ──")
-  table.insert(highlights, { line = #lines - 1, hl = "Title" })
-
-  for _, commit in ipairs(commit_state.base_commits) do
-    local msg = commit.message
-    if #msg > ui.SIDEBAR_WIDTH - 2 then
-      msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
-    end
-    table.insert(lines, "  " .. msg)
-    table.insert(highlights, { line = #lines - 1, hl = "Comment" })
-  end
-
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-
-  local hl_ns = vim.api.nvim_create_namespace("raccoon_commit_hl")
-  vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
-  for _, hl in ipairs(highlights) do
-    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl.hl, hl.line, 0, -1)
-  end
-
+  ui.render_split_sidebar(commit_state.sidebar_buf, {
+    section1_header = "── PR Branch ──",
+    section1_commits = commit_state.pr_commits,
+    section2_header = "── Base Branch ──",
+    section2_commits = commit_state.base_commits,
+  })
+  ui.update_sidebar_winbar(commit_state, total_commits())
   update_sidebar_selection()
 end
 
@@ -330,8 +282,8 @@ end
 local function select_at_cursor()
   if not commit_state.sidebar_win or not vim.api.nvim_win_is_valid(commit_state.sidebar_win) then return end
   local cursor_line = vim.api.nvim_win_get_cursor(commit_state.sidebar_win)[1]
-  local index = cursor_line - 1
-  if index >= 1 and index <= total_commits() then
+  local index = ui.split_sidebar_cursor_to_index(cursor_line, #commit_state.pr_commits)
+  if index and index >= 1 and index <= total_commits() then
     commit_state.selected_index = index
     update_sidebar_selection()
     select_commit(index)
@@ -386,6 +338,16 @@ local function setup_keymaps()
     end
   end
 
+  -- Browse files toggle
+  if config.is_enabled(shortcuts.commit_mode.browse_files) then
+    table.insert(commit_mode_keymaps, {
+      mode = NORMAL_MODE,
+      lhs = shortcuts.commit_mode.browse_files,
+      rhs = function() ui.toggle_filetree_focus(commit_state) end,
+      desc = "Toggle file tree browsing",
+    })
+  end
+
   -- Apply keymaps buffer-locally
   local commit_bufs = ui.collect_bufs(commit_state)
   for _, buf in ipairs(commit_bufs) do
@@ -396,17 +358,23 @@ local function setup_keymaps()
   end
 
   -- Sidebar-local keymaps
-  if commit_state.sidebar_buf and vim.api.nvim_buf_is_valid(commit_state.sidebar_buf) then
-    local buf_opts = { buffer = commit_state.sidebar_buf, noremap = true, silent = true }
-    vim.keymap.set(NORMAL_MODE, "j", move_down, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "k", move_up, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "<Down>", move_down, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "<Up>", move_up, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "gg", move_to_top, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "G", move_to_bottom, buf_opts)
-    vim.keymap.set(NORMAL_MODE, "<CR>", select_at_cursor, buf_opts)
-    ui.lock_buf(commit_state.sidebar_buf)
-  end
+  ui.setup_sidebar_nav(commit_state.sidebar_buf, {
+    move_down = move_down,
+    move_up = move_up,
+    move_to_top = move_to_top,
+    move_to_bottom = move_to_bottom,
+    select_at_cursor = select_at_cursor,
+  })
+
+  -- Filetree navigation keymaps
+  ui.setup_filetree_nav(commit_state, {
+    ns_id = ns_id,
+    get_repo_path = function() return state.get_clone_path() end,
+    get_sha = function()
+      local c = get_commit(commit_state.selected_index)
+      return c and c.sha
+    end,
+  })
 
   -- Focus lock autocmd
   commit_state.focus_augroup = ui.setup_focus_lock(commit_state, "RaccoonCommitFocus")
