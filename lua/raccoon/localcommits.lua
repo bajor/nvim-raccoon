@@ -465,19 +465,6 @@ end
 
 --- Enter local commit viewer mode
 local function enter_local_mode()
-  local_state.saved_buf = vim.api.nvim_get_current_buf()
-  local_state.saved_laststatus = vim.o.laststatus
-
-  -- If PR session is active, pause it
-  local_state.pr_was_active = state.is_active()
-  if local_state.pr_was_active then
-    keymaps.clear()
-    open.pause_sync()
-  end
-
-  vim.o.laststatus = 3
-  local_state.active = true
-
   local cfg = config.load()
   local rows = 2
   local cols = 2
@@ -493,24 +480,31 @@ local function enter_local_mode()
   git.find_repo_root(vim.fn.getcwd(), function(repo_root, root_err)
     if root_err or not repo_root then
       vim.notify("Not a git repository", vim.log.levels.ERROR)
-      local_state.active = false
       return
     end
-
-    local_state.repo_path = repo_root
 
     git.log_all_commits(repo_root, BATCH_SIZE, 0, function(initial_commits, err)
       if err or not initial_commits then
         vim.notify("Failed to load commits: " .. (err or "unknown error"), vim.log.levels.ERROR)
-        local_state.active = false
         return
       end
 
       if #initial_commits == 0 then
         vim.notify("No commits found in repository", vim.log.levels.WARN)
-        local_state.active = false
         return
       end
+
+      -- All checks passed — now commit to entering local mode
+      local_state.saved_buf = vim.api.nvim_get_current_buf()
+      local_state.saved_laststatus = vim.o.laststatus
+      local_state.pr_was_active = state.is_active()
+      if local_state.pr_was_active then
+        keymaps.clear()
+        open.pause_sync()
+      end
+      vim.o.laststatus = 3
+      local_state.active = true
+      local_state.repo_path = repo_root
 
       table.insert(initial_commits, 1, { sha = nil, message = "Current changes" })
       local_state.commits = initial_commits
