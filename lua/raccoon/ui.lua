@@ -595,7 +595,8 @@ local commit_mode_descriptions = {
   prev_page = "Previous page of hunks",
   next_page_alt = "Next page (alt)",
   exit = "Exit commit viewer",
-  maximize_prefix = "Maximize cell (+ number)",
+  maximize_prefix = "Maximize cell (+ number, f=files, c=commits)",
+  browse_files = "Browse commit files",
 }
 
 --- Display groups for the shortcuts help window
@@ -612,7 +613,7 @@ local shortcut_groups = {
   { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
   {
     title = "Commit Viewer", nested = "commit_mode",
-    keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" },
+    keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix", "browse_files" },
   },
   { title = "Common", keys = { "close" } },
 }
