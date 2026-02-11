@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Check if CHANGELOG.md was modified
         id: check
@@ -76,13 +76,14 @@ jobs:
       - name: Create and push tag
         if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false'
         run: |
+          git pull --ff-only
           git tag "${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
+          git push --force origin "${{ steps.version.outputs.tag }}"
 
       - name: Extract release notes
         if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false' && steps.version.outputs.is_release == 'true'
         run: |
-          awk '/^## \[/{if(found) exit; found=1; next} found' CHANGELOG.md > /tmp/release_notes.md
+          awk '/^## \[/{if(found) exit; found=1; next} found && /^## /{exit} found' CHANGELOG.md > /tmp/release_notes.md
 
       - name: Create GitHub release
         if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false' && steps.version.outputs.is_release == 'true'
