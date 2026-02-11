@@ -69,6 +69,8 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols)
     for i = 1, cells do
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.maximize_prefix .. i, nop, opts)
     end
+    vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.maximize_prefix .. "f", nop, opts)
+    vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.maximize_prefix .. "c", nop, opts)
   end
 end
 
@@ -451,6 +453,72 @@ function M.open_maximize(opts)
     end
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
   end)
+end
+
+--- Open a maximize floating window with a selectable list (for file/commit pickers)
+---@param opts table {title, items: {display, value}[], on_select: fun(value), state}
+function M.open_maximize_list(opts)
+  local items = opts.items
+  if #items == 0 then return end
+
+  local lines = {}
+  for _, item in ipairs(items) do
+    table.insert(lines, item.display)
+  end
+
+  local width = math.floor(vim.o.columns * 0.85)
+  local height = math.floor(vim.o.lines * 0.85)
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local buf = M.create_scratch_buf()
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+  })
+
+  opts.state.maximize_win = win
+  opts.state.maximize_buf = buf
+
+  local shortcuts = config.load_shortcuts()
+  local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+  vim.wo[win].winbar = " " .. opts.title .. "%=%#Comment# " .. close_hint .. " to exit %*"
+  vim.wo[win].cursorline = true
+
+  M.lock_buf(buf)
+
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+  local function close_fn()
+    M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
+  end
+
+  vim.keymap.set(NORMAL_MODE, "<CR>", function()
+    local cur = vim.api.nvim_win_get_cursor(win)[1]
+    local item = items[cur]
+    close_fn()
+    if item then opts.on_select(item.value) end
+  end, buf_opts)
+
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
+  end
+  vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+
+  if opts.highlights then
+    local hl_ns = vim.api.nvim_create_namespace("raccoon_maximize_list_hl")
+    for _, hl in ipairs(opts.highlights) do
+      pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl.hl, hl.line, 0, -1)
+    end
+  end
 end
 
 --- Build and cache a file tree for a commit (or working directory when sha is nil).
