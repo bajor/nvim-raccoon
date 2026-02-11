@@ -620,8 +620,8 @@ function M.render_filetree(s)
   local win = s.filetree_win
   if win and vim.api.nvim_win_is_valid(win) then
     local shortcuts = config.load_shortcuts()
-    local key = shortcuts.commit_mode.browse_files or "<leader>f"
-    vim.wo[win].winbar = " Files%=%#Comment# " .. key .. " %*"
+    local key = config.is_enabled(shortcuts.commit_mode.browse_files) and shortcuts.commit_mode.browse_files or nil
+    vim.wo[win].winbar = key and (" Files%=%#Comment# " .. key .. " %*") or " Files"
   end
 end
 
@@ -631,8 +631,8 @@ end
 function M.update_sidebar_winbar(s, count)
   if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
     local shortcuts = config.load_shortcuts()
-    local key = shortcuts.commit_mode.browse_files or "<leader>f"
-    vim.wo[s.sidebar_win].winbar = " Commits (" .. count .. ")%=%#Comment# " .. key .. " %*"
+    local key = config.is_enabled(shortcuts.commit_mode.browse_files) and shortcuts.commit_mode.browse_files or nil
+    vim.wo[s.sidebar_win].winbar = key and (" Commits (" .. count .. ")%=%#Comment# " .. key .. " %*") or (" Commits (" .. count .. ")")
   end
 end
 
