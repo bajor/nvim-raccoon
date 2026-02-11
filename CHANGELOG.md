@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Shortened the tree display in the commit mode file explorer.
 - Made the exploration and commit tabs slightly wider.
+- Made the exploration and commit tabs slightly wider.
 
 ## [0.9] - 2026-02-11
 
