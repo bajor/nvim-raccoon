@@ -29,7 +29,8 @@ describe("raccoon.localcommits", function()
 
     it("has empty commits", function()
       local ls = localcommits._get_state()
-      assert.equals(0, #ls.commits)
+      assert.equals(0, #ls.branch_commits)
+      assert.equals(0, #ls.base_commits)
     end)
 
     it("has nil repo_path", function()
