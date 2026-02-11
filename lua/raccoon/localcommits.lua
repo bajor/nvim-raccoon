@@ -62,8 +62,9 @@ end
 local local_state = make_initial_state()
 local local_mode_keymaps = {}
 
--- Forward declaration
+-- Forward declarations
 local load_more_commits
+local build_filetree_cache
 
 local function total_pages()
   local cells = local_state.grid_rows * local_state.grid_cols
@@ -147,6 +148,7 @@ local function select_commit(index)
 
     local_state.all_hunks = {}
     local_state.cached_sha = nil
+    build_filetree_cache()
     for _, file in ipairs(files or {}) do
       local hunks = diff.parse_patch(file.patch)
       for _, hunk in ipairs(hunks) do
@@ -258,7 +260,7 @@ local function move_down()
 end
 
 --- Build and cache the file tree for the selected commit
-local function build_filetree_cache()
+build_filetree_cache = function()
   if not local_state.repo_path then return end
   local commit = local_state.commits[local_state.selected_index]
   local sha = (commit and commit.sha) or nil

@@ -688,6 +688,26 @@ function M.status_porcelain(path, callback)
   })
 end
 
+--- List files in a commit (or working directory when sha is nil)
+---@param path string Repository path
+---@param sha string|nil Commit SHA, or nil for working directory
+---@param callback fun(files: string[], err: string|nil)
+function M.list_files(path, sha, callback)
+  local args = sha
+    and { "ls-tree", "-r", "--name-only", sha }
+    or { "ls-files" }
+  run_git(args, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback({}, table.concat(stderr, "\n"))
+        return
+      end
+      callback(stdout, nil)
+    end,
+  })
+end
+
 --- Find the git repository root for a given path
 ---@param path string Starting path
 ---@param callback fun(root: string|nil, err: string|nil)

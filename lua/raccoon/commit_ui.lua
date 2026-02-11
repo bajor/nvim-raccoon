@@ -454,32 +454,34 @@ function M.open_maximize(opts)
 end
 
 --- Build and cache a file tree for a commit (or working directory when sha is nil).
+--- Async: fetches file list via git, populates cache, then re-renders filetree.
 ---@param s table State table (needs cached_sha, cached_tree_lines, cached_line_paths, cached_file_count)
 ---@param repo_path string Path to git repository
 ---@param sha string|nil Commit SHA, or nil for working directory
 function M.build_filetree_cache(s, repo_path, sha)
+  local git = require("raccoon.git")
   local cache_key = sha or "WORKDIR"
   if s.cached_sha == cache_key then return end
 
-  local cmd = sha
-    and ("git -C " .. vim.fn.shellescape(repo_path) .. " ls-tree -r --name-only " .. sha)
-    or ("git -C " .. vim.fn.shellescape(repo_path) .. " ls-files")
-  local raw = vim.fn.systemlist(cmd)
-  if vim.v.shell_error ~= 0 then raw = {} end
-  table.sort(raw)
-
-  local tree = M.build_file_tree(raw)
-  local lines = {}
-  local line_paths = {}
-  M.render_tree_node(tree, "", lines, line_paths)
-  if #lines == 0 then
-    lines = { "  No files" }
-  end
-
   s.cached_sha = cache_key
-  s.cached_tree_lines = lines
-  s.cached_line_paths = line_paths
-  s.cached_file_count = #raw
+
+  git.list_files(repo_path, sha, function(raw, _)
+    if s.cached_sha ~= cache_key then return end
+
+    table.sort(raw)
+    local tree = M.build_file_tree(raw)
+    local lines = {}
+    local line_paths = {}
+    M.render_tree_node(tree, "", lines, line_paths)
+    if #lines == 0 then
+      lines = { "  No files" }
+    end
+
+    s.cached_tree_lines = lines
+    s.cached_line_paths = line_paths
+    s.cached_file_count = #raw
+    M.render_filetree(s)
+  end)
 end
 
 --- Render the file tree panel with three-tier highlighting

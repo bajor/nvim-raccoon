@@ -156,6 +156,9 @@ local function maximize_cell(cell_num)
   })
 end
 
+-- Forward declaration
+local build_filetree_cache
+
 --- Select a commit and load its hunks into the grid
 ---@param index number Index into the combined commit list (1-based)
 local function select_commit(index)
@@ -189,6 +192,7 @@ local function select_commit(index)
     -- Parse all files into flat hunk list
     commit_state.all_hunks = {}
     commit_state.cached_sha = nil
+    build_filetree_cache()
     for _, file in ipairs(files or {}) do
       local hunks = diff.parse_patch(file.patch)
       for _, hunk in ipairs(hunks) do
@@ -308,7 +312,7 @@ local function move_down()
 end
 
 --- Build and cache the file tree structure for the selected commit.
-local function build_filetree_cache()
+build_filetree_cache = function()
   local clone_path = state.get_clone_path()
   if not clone_path then return end
   local commit = get_commit(commit_state.selected_index)

@@ -435,13 +435,16 @@ describe("raccoon.commits select_generation guard", function()
 
   describe("stale callback handling", function()
     local original_show_commit
+    local original_list_files
     local captured_callback
 
     before_each(function()
       original_show_commit = git.show_commit
+      original_list_files = git.list_files
       git.show_commit = function(_, _, cb)
         captured_callback = cb
       end
+      git.list_files = function(_, _, cb) cb({}, nil) end
       local cs = commits._get_state()
       cs.pr_commits = {
         { sha = "aaaa", message = "commit 1" },
@@ -458,6 +461,7 @@ describe("raccoon.commits select_generation guard", function()
 
     after_each(function()
       git.show_commit = original_show_commit
+      git.list_files = original_list_files
       state.reset()
     end)
 
@@ -950,14 +954,17 @@ end)
 
 describe("raccoon.commits commit_files tracking", function()
   local original_show_commit
+  local original_list_files
   local captured_callback
 
   before_each(function()
     state.reset()
     original_show_commit = git.show_commit
+    original_list_files = git.list_files
     git.show_commit = function(_, _, cb)
       captured_callback = cb
     end
+    git.list_files = function(_, _, cb) cb({}, nil) end
     local cs = commits._get_state()
     cs.pr_commits = {
       { sha = "aaaa", message = "commit with binary" },
@@ -974,6 +981,7 @@ describe("raccoon.commits commit_files tracking", function()
 
   after_each(function()
     git.show_commit = original_show_commit
+    git.list_files = original_list_files
     state.reset()
   end)
 
@@ -1121,6 +1129,7 @@ end)
 
 describe("raccoon.commits render_filetree early return path", function()
   local original_show_commit
+  local original_list_files
   local captured_callback
   local cs
   local filetree_buf
@@ -1141,9 +1150,11 @@ describe("raccoon.commits render_filetree early return path", function()
     state.reset()
     require("raccoon").setup()
     original_show_commit = git.show_commit
+    original_list_files = git.list_files
     git.show_commit = function(_, _, cb)
       captured_callback = cb
     end
+    git.list_files = function(_, _, cb) cb({}, nil) end
 
     cs = commits._get_state()
     cs.pr_commits = { { sha = "empty1", message = "binary-only commit" } }
@@ -1171,6 +1182,7 @@ describe("raccoon.commits render_filetree early return path", function()
 
   after_each(function()
     git.show_commit = original_show_commit
+    git.list_files = original_list_files
     if filetree_buf and vim.api.nvim_buf_is_valid(filetree_buf) then
       vim.api.nvim_buf_delete(filetree_buf, { force = true })
     end
