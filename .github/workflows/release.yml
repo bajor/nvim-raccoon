@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag and release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if CHANGELOG.md was modified
+        id: check
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -q '^CHANGELOG\.md$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "CHANGELOG.md not modified. Skipping release."
+          fi
+
+      - name: Extract version from CHANGELOG.md
+        if: steps.check.outputs.changed == 'true'
+        id: version
+        run: |
+          version=$(grep -m1 '^## \[' CHANGELOG.md | sed 's/^## \[\([0-9][0-9.]*\)\].*/\1/')
+          if [ -z "$version" ]; then
+            echo "::error::Could not extract version from CHANGELOG.md"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          # Patch versions have two dots (e.g., 0.9.1), major/minor have one (e.g., 0.9)
+          if echo "$version" | grep -q '^[0-9]\+\.[0-9]\+$'; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "Patch version detected — will tag but skip GitHub Release."
+          fi
+          echo "Extracted version: $version (tag: v$version)"
+
+      - name: Check if tag already exists
+        if: steps.check.outputs.changed == 'true'
+        id: tag_check
+        run: |
+          if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.version.outputs.tag }} already exists. Skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update VERSION file
+        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false'
+        run: |
+          current=$(tr -d '[:space:]' < VERSION)
+          new="${{ steps.version.outputs.version }}"
+          if [ "$current" = "$new" ]; then
+            echo "VERSION already matches ($current)."
+          else
+            echo "$new" > VERSION
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add VERSION
+            git commit -m "chore: bump VERSION to $new"
+            git push
+          fi
+
+      - name: Create and push tag
+        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false'
+        run: |
+          git pull --ff-only
+          git tag "${{ steps.version.outputs.tag }}"
+          git push --force origin "${{ steps.version.outputs.tag }}"
+
+      - name: Extract release notes
+        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false' && steps.version.outputs.is_release == 'true'
+        run: |
+          awk '/^## \[/{if(found) exit; found=1; next} found && /^## /{exit} found' CHANGELOG.md > /tmp/release_notes.md
+
+      - name: Create GitHub release
+        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false' && steps.version.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --notes-file /tmp/release_notes.md
