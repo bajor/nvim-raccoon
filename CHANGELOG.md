@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.2] - 2026-02-12
+
+### Added
+- Auto-detect GitHub Enterprise Server version via `/meta` endpoint for API compatibility
+- Conditionally omit `X-GitHub-Api-Version` header for GHES < 3.9
+- Graceful degradation for GraphQL thread resolution on older GHES versions
+
 ## [0.9.1] - 2026-02-11
 
 ### Changed
