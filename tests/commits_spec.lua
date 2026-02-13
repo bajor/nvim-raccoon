@@ -906,7 +906,7 @@ describe("raccoon.commits file tree panel", function()
       local lines = {}
       local line_paths = {}
       commits._render_tree_node(tree, "", lines, line_paths)
-      -- a/ not last -> child gets "│   " prefix; b/ is last -> child gets "    " prefix
+      -- a/ not last -> child gets "│  " prefix; b/ is last -> child gets "   " prefix
       assert.equals(4, #lines)
       assert.is_truthy(lines[2]:match("^│  └ nested.lua"))
       assert.is_truthy(lines[4]:match("^   └ nested.lua"))
@@ -1053,7 +1053,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
 
   it("applies RaccoonFileVisible to files on current page", function()
     cs.cached_sha = "test1"
-    cs.cached_tree_lines = { "├── visible.lua", "├── in_commit.lua", "└── normal.lua" }
+    cs.cached_tree_lines = { "├ visible.lua", "├ in_commit.lua", "└ normal.lua" }
     cs.cached_line_paths = { [0] = "visible.lua", [1] = "in_commit.lua", [2] = "normal.lua" }
     cs.cached_file_count = 3
 
@@ -1073,7 +1073,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     cs.grid_cols = 1
 
     cs.cached_sha = "test2"
-    cs.cached_tree_lines = { "├── file1.lua", "├── file2.lua", "└── file3.lua" }
+    cs.cached_tree_lines = { "├ file1.lua", "├ file2.lua", "└ file3.lua" }
     cs.cached_line_paths = { [0] = "file1.lua", [1] = "file2.lua", [2] = "file3.lua" }
     cs.cached_file_count = 3
 
@@ -1094,7 +1094,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
 
   it("applies RaccoonFileNormal to directory lines", function()
     cs.cached_sha = "test3"
-    cs.cached_tree_lines = { "└── src/", "    └── main.lua" }
+    cs.cached_tree_lines = { "└ src/", "   └ main.lua" }
     cs.cached_line_paths = { [1] = "src/main.lua" }
     cs.cached_file_count = 1
 
@@ -1110,7 +1110,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
 
   it("highlights empty-patch files as RaccoonFileInCommit", function()
     cs.cached_sha = "test4"
-    cs.cached_tree_lines = { "├── changed.lua", "├── binary.bin", "└── renamed.txt" }
+    cs.cached_tree_lines = { "├ changed.lua", "├ binary.bin", "└ renamed.txt" }
     cs.cached_line_paths = { [0] = "changed.lua", [1] = "binary.bin", [2] = "renamed.txt" }
     cs.cached_file_count = 3
 
