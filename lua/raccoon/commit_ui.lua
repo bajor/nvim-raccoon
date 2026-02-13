@@ -186,14 +186,14 @@ function M.render_tree_node(node, prefix, lines, line_paths)
 
   for i, child in ipairs(sorted) do
     local is_last = (i == #sorted)
-    local connector = is_last and "└── " or "├── "
+    local connector = is_last and "└ " or "├ "
     local display = child.children and (child.name .. "/") or child.name
     table.insert(lines, prefix .. connector .. display)
     if child.path then
       line_paths[#lines - 1] = child.path
     end
     if child.children then
-      local next_prefix = prefix .. (is_last and "    " or "│   ")
+      local next_prefix = prefix .. (is_last and "   " or "│  ")
       M.render_tree_node(child, next_prefix, lines, line_paths)
     end
   end
