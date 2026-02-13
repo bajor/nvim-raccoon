@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.3] - 2026-02-13
+
+### Fixed
+- Normalize backslash paths to forward slashes in `get_current_file_path()` before sending to GitHub API, fixing 422 errors when creating PR review comments on Windows
+- Use `vim.fs.joinpath` for file content reading path construction in `show_file_content()`
+- Deduplicate config path using centralized `config.config_path` instead of hardcoded `~/.config/raccoon/config.json`
+
 ## [0.9.2] - 2026-02-12
 
 ### Added
