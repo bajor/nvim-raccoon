@@ -180,7 +180,7 @@ Number of recent base branch commits shown in the commit viewer sidebar. These a
 |------|---------|
 | object | see [shortcuts_docs.md](shortcuts_docs.md) |
 
-Custom keyboard shortcuts. See [shortcuts_docs.md](shortcuts_docs.md) for the full reference of all 22 configurable shortcuts with descriptions and examples.
+Custom keyboard shortcuts. See [shortcuts_docs.md](shortcuts_docs.md) for the full reference of all 23 configurable shortcuts with descriptions and examples.
 
 Partial overrides are merged with defaults — you only need to specify keys you want to change. Set any shortcut to `false` to disable it.
 

@@ -113,7 +113,7 @@ The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for R
 
 ### Shortcut defaults
 
-See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 22 configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
+See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
 
 ### Full config example
 
