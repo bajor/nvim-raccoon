@@ -112,7 +112,7 @@ local function get_current_file_path()
   local current_file = vim.fn.expand("%:p")
   if current_file:sub(1, #clone_path) == clone_path then
     local relative_path = current_file:sub(#clone_path + 2) -- +2 to skip the trailing separator
-    return relative_path:gsub("\\", "/")
+    return (relative_path:gsub("\\", "/"))
   end
   return nil
 end
