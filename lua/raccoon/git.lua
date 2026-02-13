@@ -821,7 +821,7 @@ end
 ---@param callback fun(lines: string[]|nil, err: string|nil)
 function M.show_file_content(path, sha, filename, callback)
   if not sha then
-    local filepath = path .. "/" .. filename
+    local filepath = vim.fs.joinpath(path, filename)
     local ok, lines = pcall(vim.fn.readfile, filepath)
     if not ok then
       callback(nil, "Failed to read file: " .. filepath)
