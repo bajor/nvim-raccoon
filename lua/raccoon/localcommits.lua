@@ -149,6 +149,14 @@ local function select_commit(index)
   local commit = get_commit(index)
   if not local_state.repo_path then return end
 
+  if commit.sha then
+    git.commit_message(local_state.repo_path, commit.sha, function(msg)
+      if generation ~= local_state.select_generation then return end
+      if msg then commit.full_message = msg end
+      ui.update_header(local_state, get_commit(local_state.selected_index), total_pages())
+    end)
+  end
+
   local fetch_diff = commit.sha
     and function(cb) git.show_commit(local_state.repo_path, commit.sha, cb) end
     or function(cb) git.diff_working_dir(local_state.repo_path, cb) end
