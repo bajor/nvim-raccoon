@@ -665,7 +665,7 @@ function M.update_header(s, commit, pages)
     return
   end
 
-  local msg = commit.message or ""
+  local msg = commit.full_message or commit.message or ""
   local msg_lines = vim.split(msg, "\n", { trimempty = true })
   if #msg_lines == 0 then msg_lines = { "" } end
 

@@ -177,6 +177,12 @@ local function select_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
+  git.commit_message(clone_path, commit.sha, function(msg)
+    if generation ~= commit_state.select_generation then return end
+    if msg then commit.full_message = msg end
+    ui.update_header(commit_state, get_commit(commit_state.selected_index), total_pages())
+  end)
+
   git.show_commit(clone_path, commit.sha, function(files, err)
     if generation ~= commit_state.select_generation then return end
 
