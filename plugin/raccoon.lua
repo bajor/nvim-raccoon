@@ -124,8 +124,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     localcommits.toggle()
   elseif subcommand == "config" then
     -- Open config file in current buffer
-    local cfg = require("raccoon.config")
-    local config_path = cfg.config_path
+    local config_path = require("raccoon.config").config_path
     -- Create directory if it doesn't exist
     local config_dir = vim.fn.fnamemodify(config_path, ":h")
     if vim.fn.isdirectory(config_dir) == 0 then
