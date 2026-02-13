@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.4] - 2026-02-13
+
+### Changed
+- Compact tree connectors in commit mode file explorer: `├──` → `├`, `└──` → `└`, saving horizontal space for deeply nested paths
+
 ## [0.9.3] - 2026-02-13
 
 ### Fixed
