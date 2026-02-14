@@ -27,6 +27,8 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 
 > GitHub only. GitLab/Bitbucket are not supported.
 
+## [Blog post with demo](https://bajor.dev/raccoon-nvim-pr-reviews-in-neovim/)
+
 ## Features
 
 - Browse open PRs with a floating picker
