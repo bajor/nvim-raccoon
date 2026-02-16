@@ -442,7 +442,7 @@ function M.fetch_all_prs(callback)
     return
   end
 
-  api.init(cfg.github_host)
+  api.init(cfg.github_host, { ghes_api_version_header = cfg.ghes_api_version_header })
 
   -- Collect unique tokens: {key, token} pairs
   local token_entries = {}

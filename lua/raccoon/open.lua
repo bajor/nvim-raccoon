@@ -312,7 +312,7 @@ local function sync_pr(silent, force)
   end
 
   -- Initialize API URLs for this host
-  api.init(cfg.github_host)
+  api.init(cfg.github_host, { ghes_api_version_header = cfg.ghes_api_version_header })
 
   local owner = state.get_owner()
   local repo = state.get_repo()
@@ -553,7 +553,7 @@ function M.open_pr(url)
   end
 
   -- Initialize API URLs for this host
-  api.init(cfg.github_host)
+  api.init(cfg.github_host, { ghes_api_version_header = cfg.ghes_api_version_header })
 
   -- Set sync interval from config (clamped to 10s minimum)
   local interval_s = math.max(10, cfg.pull_changes_interval or 300)

@@ -353,4 +353,71 @@ describe("raccoon.api edge cases", function()
       assert.is_boolean(api.server_info.detected)
     end)
   end)
+
+  describe("_should_send_api_version", function()
+    after_each(function()
+      api.server_info = { is_ghes = false, version = nil, detected = true }
+      api.ghes_api_version_header = nil
+    end)
+
+    it("returns true for github.com", function()
+      api.server_info = { is_ghes = false, version = nil, detected = true }
+      assert.is_true(api._should_send_api_version())
+    end)
+
+    it("returns true for GHES with version >= 3.9", function()
+      api.server_info = { is_ghes = true, version = "3.12.0", detected = true }
+      assert.is_true(api._should_send_api_version())
+    end)
+
+    it("returns true for GHES with version exactly 3.9", function()
+      api.server_info = { is_ghes = true, version = "3.9.0", detected = true }
+      assert.is_true(api._should_send_api_version())
+    end)
+
+    it("returns false for GHES with version < 3.9", function()
+      api.server_info = { is_ghes = true, version = "3.8.0", detected = true }
+      assert.is_false(api._should_send_api_version())
+    end)
+
+    it("returns false for GHES with unknown version", function()
+      api.server_info = { is_ghes = true, version = nil, detected = false }
+      assert.is_false(api._should_send_api_version())
+    end)
+
+    it("returns true when override is true regardless of version", function()
+      api.server_info = { is_ghes = true, version = nil, detected = false }
+      api.ghes_api_version_header = true
+      assert.is_true(api._should_send_api_version())
+    end)
+
+    it("returns false when override is false regardless of version", function()
+      api.server_info = { is_ghes = true, version = "3.12.0", detected = true }
+      api.ghes_api_version_header = false
+      assert.is_false(api._should_send_api_version())
+    end)
+
+    it("override has no effect on github.com", function()
+      api.server_info = { is_ghes = false, version = nil, detected = true }
+      api.ghes_api_version_header = false
+      assert.is_true(api._should_send_api_version())
+    end)
+  end)
+
+  describe("init opts", function()
+    after_each(function()
+      api.init("github.com")
+    end)
+
+    it("stores ghes_api_version_header from opts", function()
+      api.init("github.com", { ghes_api_version_header = true })
+      assert.is_true(api.ghes_api_version_header)
+    end)
+
+    it("clears ghes_api_version_header when opts not provided", function()
+      api.ghes_api_version_header = true
+      api.init("github.com")
+      assert.is_nil(api.ghes_api_version_header)
+    end)
+  end)
 end)

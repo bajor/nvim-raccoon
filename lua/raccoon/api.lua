@@ -14,6 +14,10 @@ M.graphql_url = "https://api.github.com/graphql"
 ---@type { is_ghes: boolean, version: string|nil, detected: boolean }
 M.server_info = { is_ghes = false, version = nil, detected = true }
 
+--- User override for sending X-GitHub-Api-Version on GHES (nil = auto-detect)
+---@type boolean|nil
+M.ghes_api_version_header = nil
+
 --- Compare version string against a minimum (major.minor only)
 ---@param version string|nil Version string like "3.12.0"
 ---@param min_version string Minimum version like "3.9"
@@ -93,13 +97,30 @@ end
 
 --- Initialize API URLs from a GitHub host and detect server version
 ---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
-function M.init(host)
+---@param opts table|nil Options: { ghes_api_version_header: boolean|nil }
+function M.init(host, opts)
+  opts = opts or {}
+  M.ghes_api_version_header = opts.ghes_api_version_header
   M.base_url, M.graphql_url = compute_api_urls(host)
   if host ~= "github.com" then
     detect_server_version(M.base_url)
   else
     M.server_info = { is_ghes = false, version = nil, detected = true }
   end
+end
+
+--- Whether to send the X-GitHub-Api-Version header for the current server.
+--- Always true for github.com. For GHES, respects the user override if set,
+--- otherwise only sends when version is detected and >= 3.9.
+---@return boolean
+function M._should_send_api_version()
+  if not M.server_info.is_ghes then
+    return true
+  end
+  if M.ghes_api_version_header ~= nil then
+    return M.ghes_api_version_header
+  end
+  return version_gte(M.server_info.version, "3.9")
 end
 
 --- Default headers for API requests
@@ -111,7 +132,7 @@ local function default_headers(token)
     ["Accept"] = "application/vnd.github+json",
     ["User-Agent"] = "raccoon-nvim",
   }
-  if not M.server_info.is_ghes or not M.server_info.version or version_gte(M.server_info.version, "3.9") then
+  if M._should_send_api_version() then
     headers["X-GitHub-Api-Version"] = "2022-11-28"
   end
   return headers

@@ -4,6 +4,7 @@
 ---@field tokens table<string, string> Per-owner/org tokens (owner -> token)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field pull_changes_interval number Auto-sync interval in seconds (default: 300)
+---@field ghes_api_version_header boolean|nil Override X-GitHub-Api-Version header for GHES (nil = auto)
 
 local M = {}
 
