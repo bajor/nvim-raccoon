@@ -11,8 +11,8 @@ M.base_url = "https://api.github.com"
 M.graphql_url = "https://api.github.com/graphql"
 
 --- Server version info (detected on init via /meta endpoint)
----@type { is_ghes: boolean, version: string|nil }
-M.server_info = { is_ghes = false, version = nil }
+---@type { is_ghes: boolean, version: string|nil, detected: boolean }
+M.server_info = { is_ghes = false, version = nil, detected = true }
 
 --- Compare version string against a minimum (major.minor only)
 ---@param version string|nil Version string like "3.12.0"
@@ -79,15 +79,15 @@ local function detect_server_version(base_url)
   end)
 
   if not ok or not response or response.status >= 400 then
-    M.server_info = { is_ghes = true, version = nil }
+    M.server_info = { is_ghes = true, version = nil, detected = false }
     return
   end
 
   local body = vim.json.decode(response.body or "{}")
   if body and body.installed_version then
-    M.server_info = { is_ghes = true, version = body.installed_version }
+    M.server_info = { is_ghes = true, version = body.installed_version, detected = true }
   else
-    M.server_info = { is_ghes = true, version = nil }
+    M.server_info = { is_ghes = true, version = nil, detected = false }
   end
 end
 
@@ -98,7 +98,7 @@ function M.init(host)
   if host ~= "github.com" then
     detect_server_version(M.base_url)
   else
-    M.server_info = { is_ghes = false, version = nil }
+    M.server_info = { is_ghes = false, version = nil, detected = true }
   end
 end
 
@@ -612,7 +612,10 @@ function M.get_pr_review_threads(owner, repo, number, token, callback)
 
     local data, err = graphql_request(query, variables, token)
     if err then
-      if M.server_info.is_ghes then
+      -- Only swallow errors when we know the GHES version lacks this feature;
+      -- unknown version (detected=false) could be auth/network issues
+      if M.server_info.is_ghes and M.server_info.detected and M.server_info.version
+          and not version_gte(M.server_info.version, "3.6") then
         callback({}, nil)
         return
       end
@@ -706,7 +709,8 @@ function M.resolve_review_thread(thread_id, token, callback)
     }
 
     local _, err = graphql_request(query, variables, token)
-    if err and M.server_info.is_ghes then
+    if err and M.server_info.is_ghes and M.server_info.detected and M.server_info.version
+        and not version_gte(M.server_info.version, "3.6") then
       callback("Thread resolution not supported on this GitHub Enterprise version")
       return
     end
@@ -733,7 +737,8 @@ function M.unresolve_review_thread(thread_id, token, callback)
     }
 
     local _, err = graphql_request(query, variables, token)
-    if err and M.server_info.is_ghes then
+    if err and M.server_info.is_ghes and M.server_info.detected and M.server_info.version
+        and not version_gte(M.server_info.version, "3.6") then
       callback("Thread resolution not supported on this GitHub Enterprise version")
       return
     end
