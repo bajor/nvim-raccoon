@@ -46,7 +46,7 @@ local function get_header(headers, name)
   end
   local lower_name = name:lower()
   for key, value in pairs(headers) do
-    if key:lower() == lower_name then
+    if type(key) == "string" and key:lower() == lower_name then
       return value
     end
   end
