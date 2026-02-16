@@ -320,6 +320,19 @@ describe("raccoon.api edge cases", function()
       assert.is_false(api.server_info.is_ghes)
       assert.is_nil(api.server_info.version)
     end)
+
+    it("marks non-github.com hosts as GHES even when /meta fails", function()
+      api.init("github.mycompany.com")
+      assert.is_true(api.server_info.is_ghes)
+      -- Version is nil because /meta is unreachable in test
+      assert.is_nil(api.server_info.version)
+    end)
+
+    it("keeps is_ghes true across different GHES hosts", function()
+      api.init("git.corp.example.com")
+      assert.is_true(api.server_info.is_ghes)
+      assert.is_nil(api.server_info.version)
+    end)
   end)
 
   describe("server_info", function()

@@ -32,6 +32,27 @@ local function version_gte(version, min_version)
   return maj > min_maj or (maj == min_maj and min >= min_min)
 end
 
+--- Find a header value by name (case-insensitive)
+--- HTTP/2 headers are lowercase, but HTTP/1.1 (common on GHES) may use mixed case
+---@param headers table|nil Response headers
+---@param name string Header name to find (use lowercase)
+---@return string|nil
+local function get_header(headers, name)
+  if not headers then
+    return nil
+  end
+  if headers[name] then
+    return headers[name]
+  end
+  local lower_name = name:lower()
+  for key, value in pairs(headers) do
+    if key:lower() == lower_name then
+      return value
+    end
+  end
+  return nil
+end
+
 --- Compute REST and GraphQL base URLs from a GitHub host
 ---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
 ---@return string base_url, string graphql_url
@@ -58,7 +79,7 @@ local function detect_server_version(base_url)
   end)
 
   if not ok or not response or response.status >= 400 then
-    M.server_info = { is_ghes = false, version = nil }
+    M.server_info = { is_ghes = true, version = nil }
     return
   end
 
@@ -66,7 +87,7 @@ local function detect_server_version(base_url)
   if body and body.installed_version then
     M.server_info = { is_ghes = true, version = body.installed_version }
   else
-    M.server_info = { is_ghes = false, version = nil }
+    M.server_info = { is_ghes = true, version = nil }
   end
 end
 
@@ -90,7 +111,7 @@ local function default_headers(token)
     ["Accept"] = "application/vnd.github+json",
     ["User-Agent"] = "raccoon-nvim",
   }
-  if not M.server_info.is_ghes or version_gte(M.server_info.version, "3.9") then
+  if not M.server_info.is_ghes or not M.server_info.version or version_gte(M.server_info.version, "3.9") then
     headers["X-GitHub-Api-Version"] = "2022-11-28"
   end
   return headers
@@ -179,7 +200,7 @@ local function fetch_all_pages(url, token)
     end
 
     -- Get next page URL from Link header
-    current_url = parse_link_header(response.headers and response.headers.link)
+    current_url = parse_link_header(get_header(response.headers, "link"))
   end
 
   return all_items, nil
@@ -191,6 +212,16 @@ end
 ---@param callback fun(prs: table[]|nil, err: string|nil)
 function M.search_user_prs(owner, token, callback)
   vim.schedule(function()
+    local function transform_results(data)
+      local prs = {}
+      for _, item in ipairs(data.items or {}) do
+        local repo_name = item.repository_url and item.repository_url:match("/repos/(.+)$") or "unknown"
+        item.base = { repo = { full_name = repo_name } }
+        table.insert(prs, item)
+      end
+      return prs
+    end
+
     local query = string.format("type:pr state:open user:%s", owner)
     local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
       M.base_url, vim.uri_encode(query))
@@ -202,20 +233,33 @@ function M.search_user_prs(owner, token, callback)
     })
 
     if err then
+      -- On GHES, user: qualifier may fail with 422 due to token permissions;
+      -- fall back to org: qualifier which uses organization-scoped search
+      if err:find("422") and M.server_info.is_ghes then
+        local fallback_query = string.format("is:pr is:open org:%s", owner)
+        local fallback_url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
+          M.base_url, vim.uri_encode(fallback_query))
+
+        local fallback_response, fallback_err = request({
+          url = fallback_url,
+          method = "GET",
+          token = token,
+        })
+
+        if fallback_err then
+          callback(nil, fallback_err)
+          return
+        end
+
+        callback(transform_results(fallback_response.data), nil)
+        return
+      end
+
       callback(nil, err)
       return
     end
 
-    -- Transform search results to match list_prs format
-    local prs = {}
-    for _, item in ipairs(response.data.items or {}) do
-      -- Extract "owner/repo" from repository_url
-      local repo_name = item.repository_url and item.repository_url:match("/repos/(.+)$") or "unknown"
-      item.base = { repo = { full_name = repo_name } }
-      table.insert(prs, item)
-    end
-
-    callback(prs, nil)
+    callback(transform_results(response.data), nil)
   end)
 end
 
@@ -429,10 +473,10 @@ function M.submit_review(owner, repo, number, event, body, token, callback)
   vim.schedule(function()
     local url = string.format("%s/repos/%s/%s/pulls/%d/reviews", M.base_url, owner, repo, number)
 
-    local request_body = {
-      event = event,
-      body = body or "",
-    }
+    local request_body = { event = event }
+    if body and body ~= "" then
+      request_body.body = body
+    end
 
     local response, err = request({
       url = url,
@@ -617,15 +661,21 @@ function M.merge_pr(owner, repo, number, opts, token, callback)
   local url = string.format("%s/repos/%s/%s/pulls/%d/merge", M.base_url, owner, repo, number)
 
   vim.schedule(function()
+    local merge_body = {
+      merge_method = opts.merge_method or "merge",
+    }
+    if opts.commit_title then
+      merge_body.commit_title = opts.commit_title
+    end
+    if opts.commit_message then
+      merge_body.commit_message = opts.commit_message
+    end
+
     local result, err = request({
       url = url,
       method = "PUT",
       token = token,
-      body = {
-        merge_method = opts.merge_method or "merge",
-        commit_title = opts.commit_title,
-        commit_message = opts.commit_message,
-      },
+      body = merge_body,
     })
 
     if err then
