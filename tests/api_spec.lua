@@ -264,6 +264,10 @@ describe("raccoon.api edge cases", function()
     it("unresolve_review_thread is a function", function()
       assert.is_function(api.unresolve_review_thread)
     end)
+
+    it("search_user_prs is a function", function()
+      assert.is_function(api.search_user_prs)
+    end)
   end)
 
   describe("base_url configuration", function()

@@ -209,8 +209,12 @@ end
 --- Search for all open PRs owned by a user or org
 ---@param owner string GitHub user or org name (token key)
 ---@param token string GitHub token
+---@param opts {owner_type: "user"|"org"} Options: owner_type determines GHES 422 fallback qualifier
 ---@param callback fun(prs: table[]|nil, err: string|nil)
-function M.search_user_prs(owner, token, callback)
+function M.search_user_prs(owner, token, opts, callback)
+  opts = opts or {}
+  local owner_type = opts.owner_type or "org"
+
   vim.schedule(function()
     local function transform_results(data)
       local prs = {}
@@ -234,9 +238,16 @@ function M.search_user_prs(owner, token, callback)
 
     if err then
       -- On GHES, user: qualifier may fail with 422 due to token permissions;
-      -- fall back to org: qualifier which uses organization-scoped search
+      -- fall back to author: for personal users, org: for organizations
       if err:find("422") and M.server_info.is_ghes then
-        local fallback_query = string.format("is:pr is:open org:%s", owner)
+        local fallback_qualifier = owner_type == "user"
+          and string.format("author:%s", owner)
+          or string.format("org:%s", owner)
+        vim.notify(
+          string.format("[raccoon] GHES: 'user:' query failed, falling back to '%s' for %s", fallback_qualifier, owner),
+          vim.log.levels.WARN
+        )
+        local fallback_query = string.format("is:pr is:open %s", fallback_qualifier)
         local fallback_url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
           M.base_url, vim.uri_encode(fallback_query))
 

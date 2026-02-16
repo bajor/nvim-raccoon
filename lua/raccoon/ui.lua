@@ -468,7 +468,8 @@ function M.fetch_all_prs(callback)
   local seen_pr = {}
 
   for _, entry in ipairs(token_entries) do
-    api.search_user_prs(entry.key, entry.token, function(prs, api_err)
+    local owner_type = entry.key == cfg.github_username and "user" or "org"
+    api.search_user_prs(entry.key, entry.token, { owner_type = owner_type }, function(prs, api_err)
       pending = pending - 1
 
       if api_err then
