@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Fix GHES detection to correctly identify non-github.com hosts even when `/meta` endpoint is unreachable
-- Fix `X-GitHub-Api-Version` header being dropped when GHES version is unknown
+- Skip `X-GitHub-Api-Version` header when GHES version is unknown (conservative default); add `ghes_api_version_header` config flag to override
 - Fix PR listing 422 error on GHES by falling back to `org:` search qualifier when `user:` fails
 - Fix case-sensitive Link header lookup that could break pagination on GHES (HTTP/1.1)
 - Fix `submit_review` sending empty body string for APPROVE events
