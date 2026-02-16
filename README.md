@@ -111,7 +111,7 @@ Set `github_host` to your company's GitHub Enterprise domain:
 }
 ```
 
-The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for REST, `https://<host>/api/graphql` for GraphQL). PR URLs, clone URLs, and remote parsing all use the configured host.
+The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for REST, `https://<host>/api/graphql` for GraphQL). PR URLs, clone URLs, and remote parsing all use the configured host. Tested with GHES 3.18+ and compatible with both classic and fine-grained personal access tokens.
 
 ### Shortcut defaults
 

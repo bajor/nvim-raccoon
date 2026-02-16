@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.5] - 2026-02-16
+
+### Fixed
+- Fix GHES detection to correctly identify non-github.com hosts even when `/meta` endpoint is unreachable
+- Fix `X-GitHub-Api-Version` header being dropped when GHES version is unknown
+- Fix PR listing 422 error on GHES by falling back to `org:` search qualifier when `user:` fails
+- Fix case-sensitive Link header lookup that could break pagination on GHES (HTTP/1.1)
+- Fix `submit_review` sending empty body string for APPROVE events
+- Fix `merge_pr` sending null values for optional fields
+
 ## [0.9.4] - 2026-02-13
 
 ### Changed
