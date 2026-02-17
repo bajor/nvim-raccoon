@@ -120,6 +120,11 @@ function M.load()
   -- Merge with defaults
   local config = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), parsed)
 
+  -- Sanitize optional string fields (JSON null decodes to vim.NIL)
+  if type(config.github_username) ~= "string" then
+    config.github_username = ""
+  end
+
   -- Expand paths
   config.clone_root = expand_path(config.clone_root)
 

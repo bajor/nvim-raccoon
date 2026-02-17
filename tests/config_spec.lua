@@ -105,6 +105,22 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
+    it("sanitizes null github_username to empty string", function()
+      local tmpfile = test_tmp_dir .. "/null_username.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_username": null, "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_not_nil(cfg)
+      assert.is_nil(err)
+      assert.equals("string", type(cfg.github_username))
+      assert.equals("", cfg.github_username)
+
+      os.remove(tmpfile)
+    end)
+
     it("loads valid config successfully", function()
       local tmpfile = test_tmp_dir .. "/valid_config.json"
       local f = io.open(tmpfile, "w")
