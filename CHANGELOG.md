@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.5] - 2026-02-17
+
+### Fixed
+- Fix GHES 422 errors caused by broken unauthenticated `/meta` version detection — GHES is now inferred from hostname
+- Always send `X-GitHub-Api-Version: 2022-11-28` header (supported by both github.com and GHES 3.9+)
+
+### Changed
+- `github_username` is now optional — GHES-only users no longer need to set it
+- Removed runtime GHES version detection in favor of deterministic host-based inference
+
 ## [0.9.4] - 2026-02-13
 
 ### Changed

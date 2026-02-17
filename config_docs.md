@@ -10,16 +10,14 @@ The merge uses a deep merge strategy, so nested objects like `shortcuts` and `co
 
 Validation rules:
 - **`tokens`** is required and must contain at least one entry
-- **`github_username`** is required and must be non-empty
 - Unknown fields are silently ignored
 
 ## Minimal config
 
-The smallest valid config needs just your username and a token:
+The smallest valid config needs just a token:
 
 ```json
 {
-  "github_username": "your-username",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
   }
@@ -29,20 +27,6 @@ The smallest valid config needs just your username and a token:
 This uses `github.com` as the host, auto-discovers PRs from your token's permissions, and uses defaults for everything else.
 
 ## Required fields
-
-### `github_username`
-
-| Type | Default | Required |
-|------|---------|----------|
-| string | `""` | Yes |
-
-Your GitHub username. Used to search for PRs you're involved in (author, reviewer, assignee) when fetching the PR list.
-
-```json
-{
-  "github_username": "octocat"
-}
-```
 
 ### `tokens`
 
@@ -71,13 +55,27 @@ For GitHub Enterprise, create the token on your enterprise instance (e.g. `githu
 
 ## Optional fields
 
+### `github_username`
+
+| Type | Default |
+|------|---------|
+| string | `""` |
+
+Your GitHub username. Used as the display name for optimistic comment rendering (shows your name on new comments before the API responds). If not set, displays "you" as a placeholder.
+
+```json
+{
+  "github_username": "octocat"
+}
+```
+
 ### `github_host`
 
 | Type | Default |
 |------|---------|
 | string | `"github.com"` |
 
-The GitHub host to connect to. Set this to your company's GitHub Enterprise domain to use the plugin with a self-hosted GitHub instance.
+The GitHub host to connect to. Set this to your company's GitHub Enterprise domain to use the plugin with a self-hosted GitHub instance. Requires GHES 3.9 or newer.
 
 The plugin auto-computes the correct API endpoints from the host:
 
@@ -219,9 +217,10 @@ Partial overrides are merged with defaults — you only need to specify keys you
 
 ## GitHub Enterprise example
 
+Requires GHES 3.9 or newer.
+
 ```json
 {
-  "github_username": "jdoe",
   "github_host": "github.acme-corp.com",
   "tokens": {
     "jdoe": "ghp_xxxxxxxxxxxxxxxxxxxx",

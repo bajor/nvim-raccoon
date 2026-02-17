@@ -85,7 +85,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `github_username` | string | `""` | Your GitHub username |
+| `github_username` | string | `""` | Your GitHub username (optional, used for comment display) |
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org, e.g. `{"my-org": "ghp_..."}` |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
@@ -99,11 +99,10 @@ Each owner/org you want to access needs a matching entry in `tokens`. For exampl
 
 ### GitHub Enterprise
 
-Set `github_host` to your company's GitHub Enterprise domain:
+Set `github_host` to your company's GitHub Enterprise domain (requires GHES 3.9+):
 
 ```json
 {
-  "github_username": "your-username",
   "github_host": "github.mycompany.com",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
