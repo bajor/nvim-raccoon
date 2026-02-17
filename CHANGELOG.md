@@ -9,10 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Fix GHES 422 errors caused by broken unauthenticated `/meta` version detection — GHES is now inferred from hostname
 - Always send `X-GitHub-Api-Version: 2022-11-28` header (supported by both github.com and GHES 3.9+)
+- Sanitize `github_username: null` in JSON config (decoded as `vim.NIL`) to empty string
+- Normalize `github_host` (lowercase, strip protocol/whitespace/trailing slashes) to prevent GHES misclassification
+- Append GHES 3.9+ version hint to API error messages when running against enterprise
 
 ### Changed
 - `github_username` is now optional — GHES-only users no longer need to set it
 - Removed runtime GHES version detection in favor of deterministic host-based inference
+- Show one-time info notification when GHES mode is active
 
 ## [0.9.4] - 2026-02-13
 
