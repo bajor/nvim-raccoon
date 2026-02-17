@@ -125,6 +125,10 @@ function M.load()
     config.github_username = ""
   end
 
+  -- Normalize github_host: lowercase, strip whitespace/protocol/trailing slashes
+  config.github_host = config.github_host:lower():gsub("^%s+", ""):gsub("%s+$", "")
+  config.github_host = config.github_host:gsub("^https?://", ""):gsub("/+$", "")
+
   -- Expand paths
   config.clone_root = expand_path(config.clone_root)
 

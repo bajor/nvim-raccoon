@@ -121,6 +121,48 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
+    it("normalizes github_host with protocol prefix", function()
+      local tmpfile = test_tmp_dir .. "/host_proto.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_host": "https://github.mycompany.com", "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.equals("github.mycompany.com", cfg.github_host)
+
+      os.remove(tmpfile)
+    end)
+
+    it("normalizes github_host with uppercase and whitespace", function()
+      local tmpfile = test_tmp_dir .. "/host_case.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_host": "  GitHub.COM  ", "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.equals("github.com", cfg.github_host)
+
+      os.remove(tmpfile)
+    end)
+
+    it("normalizes github_host with trailing slashes", function()
+      local tmpfile = test_tmp_dir .. "/host_slash.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_host": "github.mycompany.com/", "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.equals("github.mycompany.com", cfg.github_host)
+
+      os.remove(tmpfile)
+    end)
+
     it("loads valid config successfully", function()
       local tmpfile = test_tmp_dir .. "/valid_config.json"
       local f = io.open(tmpfile, "w")
