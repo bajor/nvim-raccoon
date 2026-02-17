@@ -31,6 +31,16 @@ function M.init(host)
   M.server_info = { is_ghes = (host ~= "github.com") }
 end
 
+--- Append GHES version hint to error messages when running against enterprise
+---@param err string Original error message
+---@return string
+local function ghes_hint(err)
+  if M.server_info.is_ghes then
+    return err .. " (raccoon requires GHES 3.9+)"
+  end
+  return err
+end
+
 --- Default headers for API requests
 ---@param token string GitHub token
 ---@return table
@@ -88,7 +98,7 @@ local function request(opts)
   if response.status >= 400 then
     local err_body = vim.json.decode(response.body or "{}") or {}
     local message = err_body.message or "Unknown error"
-    return nil, string.format("GitHub API error (%d): %s", response.status, message)
+    return nil, ghes_hint(string.format("GitHub API error (%d): %s", response.status, message))
   end
 
   local body = vim.json.decode(response.body or "[]")
@@ -465,13 +475,13 @@ local function graphql_request(query, variables, token)
   if response.status >= 400 then
     local err_body = vim.json.decode(response.body or "{}") or {}
     local message = err_body.message or "Unknown error"
-    return nil, string.format("GraphQL API error (%d): %s", response.status, message)
+    return nil, ghes_hint(string.format("GraphQL API error (%d): %s", response.status, message))
   end
 
   local body = vim.json.decode(response.body or "{}")
   if body.errors then
     local err_msg = body.errors[1] and body.errors[1].message or "Unknown GraphQL error"
-    return nil, "GraphQL error: " .. err_msg
+    return nil, ghes_hint("GraphQL error: " .. err_msg)
   end
 
   return body.data, nil

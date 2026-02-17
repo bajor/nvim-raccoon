@@ -75,7 +75,9 @@ Your GitHub username. Used as the display name for optimistic comment rendering 
 |------|---------|
 | string | `"github.com"` |
 
-The GitHub host to connect to. Set this to your company's GitHub Enterprise domain to use the plugin with a self-hosted GitHub instance. Requires GHES 3.9 or newer.
+The GitHub host to connect to. Set this to your company's GitHub Enterprise domain to use the plugin with a self-hosted GitHub instance.
+
+> **Requires GHES 3.9 or newer.** The plugin sends the `X-GitHub-Api-Version: 2022-11-28` header which is not supported by older GHES versions. A one-time info message is shown when GHES mode is active.
 
 The plugin auto-computes the correct API endpoints from the host:
 

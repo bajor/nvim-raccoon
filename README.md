@@ -99,7 +99,9 @@ Each owner/org you want to access needs a matching entry in `tokens`. For exampl
 
 ### GitHub Enterprise
 
-Set `github_host` to your company's GitHub Enterprise domain (requires GHES 3.9+):
+> **Requires GHES 3.9 or newer.** Older versions are not supported and will produce API errors.
+
+Set `github_host` to your company's GitHub Enterprise domain:
 
 ```json
 {
