@@ -88,10 +88,6 @@ local function validate_config(config)
     return false, "tokens is required (maps owner/org name to GitHub token)"
   end
 
-  if not config.github_username or config.github_username == "" then
-    return false, "github_username is required"
-  end
-
   return true, nil
 end
 

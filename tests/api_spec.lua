@@ -315,10 +315,14 @@ describe("raccoon.api edge cases", function()
     end)
 
     it("resets server_info to non-GHES for github.com", function()
-      api.server_info = { is_ghes = true, version = "3.12.0" }
+      api.server_info = { is_ghes = true }
       api.init("github.com")
       assert.is_false(api.server_info.is_ghes)
-      assert.is_nil(api.server_info.version)
+    end)
+
+    it("sets is_ghes true for non-github.com host", function()
+      api.init("github.mycompany.com")
+      assert.is_true(api.server_info.is_ghes)
     end)
   end)
 
@@ -326,10 +330,9 @@ describe("raccoon.api edge cases", function()
     it("defaults to non-GHES", function()
       assert.is_not_nil(api.server_info)
       assert.is_false(api.server_info.is_ghes)
-      assert.is_nil(api.server_info.version)
     end)
 
-    it("is a table with is_ghes and version fields", function()
+    it("is a table with is_ghes field", function()
       assert.is_table(api.server_info)
       assert.is_boolean(api.server_info.is_ghes)
     end)

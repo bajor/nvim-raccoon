@@ -558,7 +558,7 @@ function M.show_comment_thread()
           body = body,
           pending = false,
           is_issue_comment = not is_line_comment,
-          user = { login = cfg.github_username or "you" },
+          user = { login = (cfg.github_username ~= "" and cfg.github_username) or "you" },
         }
         table.insert(file_comments, new_comment)
         state.set_comments(path, file_comments)
@@ -905,7 +905,7 @@ function M.create_comment()
         body = body,
         pending = false,
         is_issue_comment = not is_line_comment,
-        user = { login = cfg.github_username or "you" },
+        user = { login = (cfg.github_username ~= "" and cfg.github_username) or "you" },
       }
       local comments = state.get_comments(path)
       table.insert(comments, new_comment)

@@ -10,27 +10,9 @@ M.base_url = "https://api.github.com"
 --- Base URL for GitHub GraphQL API
 M.graphql_url = "https://api.github.com/graphql"
 
---- Server version info (detected on init via /meta endpoint)
----@type { is_ghes: boolean, version: string|nil }
-M.server_info = { is_ghes = false, version = nil }
-
---- Compare version string against a minimum (major.minor only)
----@param version string|nil Version string like "3.12.0"
----@param min_version string Minimum version like "3.9"
----@return boolean
-local function version_gte(version, min_version)
-  if not version then
-    return false
-  end
-  local maj, min = version:match("^(%d+)%.(%d+)")
-  local min_maj, min_min = min_version:match("^(%d+)%.(%d+)")
-  if not maj or not min_maj then
-    return false
-  end
-  maj, min = tonumber(maj), tonumber(min)
-  min_maj, min_min = tonumber(min_maj), tonumber(min_min)
-  return maj > min_maj or (maj == min_maj and min >= min_min)
-end
+--- Server info (inferred from host)
+---@type { is_ghes: boolean }
+M.server_info = { is_ghes = false }
 
 --- Compute REST and GraphQL base URLs from a GitHub host
 ---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
@@ -42,58 +24,23 @@ local function compute_api_urls(host)
   return ("https://%s/api/v3"):format(host), ("https://%s/api/graphql"):format(host)
 end
 
---- Detect GHES version via the /meta endpoint (unauthenticated)
----@param base_url string REST API base URL
-local function detect_server_version(base_url)
-  local ok, response = pcall(function()
-    return curl.request({
-      url = base_url .. "/meta",
-      method = "GET",
-      headers = {
-        ["Accept"] = "application/vnd.github+json",
-        ["User-Agent"] = "raccoon-nvim",
-      },
-      timeout = 5000,
-    })
-  end)
-
-  if not ok or not response or response.status >= 400 then
-    M.server_info = { is_ghes = false, version = nil }
-    return
-  end
-
-  local body = vim.json.decode(response.body or "{}")
-  if body and body.installed_version then
-    M.server_info = { is_ghes = true, version = body.installed_version }
-  else
-    M.server_info = { is_ghes = false, version = nil }
-  end
-end
-
---- Initialize API URLs from a GitHub host and detect server version
+--- Initialize API URLs from a GitHub host
 ---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
 function M.init(host)
   M.base_url, M.graphql_url = compute_api_urls(host)
-  if host ~= "github.com" then
-    detect_server_version(M.base_url)
-  else
-    M.server_info = { is_ghes = false, version = nil }
-  end
+  M.server_info = { is_ghes = (host ~= "github.com") }
 end
 
 --- Default headers for API requests
 ---@param token string GitHub token
 ---@return table
 local function default_headers(token)
-  local headers = {
+  return {
     ["Authorization"] = "Bearer " .. token,
     ["Accept"] = "application/vnd.github+json",
     ["User-Agent"] = "raccoon-nvim",
+    ["X-GitHub-Api-Version"] = "2022-11-28",
   }
-  if not M.server_info.is_ghes or version_gte(M.server_info.version, "3.9") then
-    headers["X-GitHub-Api-Version"] = "2022-11-28"
-  end
-  return headers
 end
 
 --- Parse Link header for pagination

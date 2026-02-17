@@ -90,7 +90,7 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("returns error when github_username is missing", function()
+    it("loads config without github_username", function()
       local tmpfile = test_tmp_dir .. "/no_username.json"
       local f = io.open(tmpfile, "w")
       f:write('{"tokens": {"owner": "ghp_xxx"}}')
@@ -98,9 +98,9 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local cfg, err = config.load()
-      assert.is_nil(cfg)
-      assert.is_not_nil(err)
-      assert.matches("github_username is required", err)
+      assert.is_not_nil(cfg)
+      assert.is_nil(err)
+      assert.equals("", cfg.github_username)
 
       os.remove(tmpfile)
     end)
