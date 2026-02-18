@@ -700,7 +700,8 @@ function M.render_filetree(s)
       end
       if stat.del_chars > 0 then
         local del_start = start + stat.add_chars
-        pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "RaccoonDeleteSign", line_idx, del_start, del_start + stat.del_chars)
+        local del_end = del_start + stat.del_chars
+        pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "RaccoonDeleteSign", line_idx, del_start, del_end)
       end
     end
   end
