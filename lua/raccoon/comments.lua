@@ -524,6 +524,7 @@ function M.show_comment_thread()
       return
     end
 
+    api.init(state.get_github_host() or cfg.github_host)
     local owner = state.get_owner()
     local repo = state.get_repo()
     local number = state.get_number()
@@ -656,6 +657,7 @@ function M.show_comment_thread()
       return
     end
 
+    api.init(state.get_github_host() or cfg.github_host)
     local owner = state.get_owner()
     local token = config.get_token_for_owner(cfg, owner)
     if not token then
@@ -729,6 +731,7 @@ function M.show_comment_thread()
       return
     end
 
+    api.init(state.get_github_host() or cfg.github_host)
     local owner = state.get_owner()
     local token = config.get_token_for_owner(cfg, owner)
     if not token then
@@ -874,6 +877,7 @@ function M.create_comment()
     end
 
     -- Get PR info
+    api.init(state.get_github_host() or cfg.github_host)
     local owner = state.get_owner()
     local repo = state.get_repo()
     local number = state.get_number()
@@ -1226,6 +1230,7 @@ function M.submit_comments(callback)
     return
   end
 
+  api.init(state.get_github_host() or cfg.github_host)
   local owner = state.get_owner()
   local repo = state.get_repo()
   local number = state.get_number()
