@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.7] - 2026-02-18
+
+### Added
+- **Multi-host support** — use both github.com and GitHub Enterprise in the same config by specifying a `host` per token: `"work-org": { "token": "ghp_...", "host": "github.acme.com" }`. String tokens continue to use the `github_host` default. The PR list fetches from all configured hosts, and opening a PR by URL auto-detects the host.
+- `config.get_all_tokens()` helper that returns normalized `{key, token, host}` entries for all tokens
+- `state.get_github_host()` — session state now tracks which GitHub host the current PR belongs to
+- `api.parse_pr_url()` without a host hint now extracts the host from the URL (4th return value)
+
+### Changed
+- `config.get_token_for_owner()` and `config.get_token_for_repo()` now return `(token, host)` tuples (backward compatible — callers capturing one value are unaffected)
+- `open_pr()` extracts the host from the PR URL instead of requiring it to match `github_host`
+- `sync_pr()` uses the host stored in session state instead of re-reading `github_host` from config
+- Review and comment operations (`review.lua`, `comments.lua`) re-initialize the API host from session state before each call, preventing interference from concurrent PR list fetches
+- PR list fetching (`ui.lua`) initializes API URLs per-token host instead of once globally
+
 ## [0.9.6] - 2026-02-18
 
 ### Fixed

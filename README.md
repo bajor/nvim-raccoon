@@ -84,7 +84,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
-| `tokens` | object | `{}` | Token per owner/org, e.g. `{"my-org": "ghp_..."}` |
+| `tokens` | object | `{}` | Token per owner/org — string or `{"token": "...", "host": "..."}` for multi-host |
 | `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `pull_changes_interval` | number | `300` | How often (in seconds) to auto-sync with remote |
@@ -104,7 +104,7 @@ Each key in `tokens` is the **owner or org name from the repo URL** — the firs
 >
 > **Use a Classic token for GHES.** Create one at `https://<your-host>/settings/tokens` with the `repo` scope.
 
-Set `github_host` to your company's GitHub Enterprise domain:
+If all your repos are on one GHES instance, set `github_host`:
 
 ```json
 {
@@ -115,7 +115,20 @@ Set `github_host` to your company's GitHub Enterprise domain:
 }
 ```
 
-The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for REST, `https://<host>/api/graphql` for GraphQL). PR URLs, clone URLs, and remote parsing all use the configured host.
+To use **both github.com and GHES** simultaneously, set the host per token:
+
+```json
+{
+  "tokens": {
+    "personal-user": "ghp_personal_xxxxxxxxxxxx",
+    "work-org": { "token": "ghp_work_xxxxxxxxxxxx", "host": "github.mycompany.com" }
+  }
+}
+```
+
+String tokens use the `github_host` default (`"github.com"`). Table tokens with a `host` field override it. The PR list fetches from all configured hosts, and `:Raccoon open <url>` auto-detects the host from the URL.
+
+The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for REST, `https://<host>/api/graphql` for GraphQL). PR URLs, clone URLs, and remote parsing all use the resolved host.
 
 ### Shortcut defaults
 
@@ -125,10 +138,9 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
 
 ```json
 {
-  "github_host": "github.com",
   "tokens": {
     "your-username": "ghp_personal_token",
-    "work-org": "ghp_work_token"
+    "work-org": { "token": "ghp_work_token", "host": "github.mycompany.com" }
   },
   "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
