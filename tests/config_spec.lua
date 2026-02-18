@@ -20,18 +20,21 @@ describe("raccoon.config", function()
 
   describe("defaults", function()
     it("has all required default fields", function()
-      assert.is_string(config.defaults.github_username)
       assert.is_table(config.defaults.tokens)
+      assert.is_table(config.defaults.repos)
       assert.is_string(config.defaults.clone_root)
       assert.is_number(config.defaults.pull_changes_interval)
       assert.equals(300, config.defaults.pull_changes_interval)
+    end)
+
+    it("repos defaults to empty table", function()
+      assert.same({}, config.defaults.repos)
     end)
 
     it("does not contain dead config fields", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
       assert.is_nil(config.defaults.notifications)
-      assert.is_nil(config.defaults.repos)
       assert.is_nil(config.defaults.poll_interval_seconds)
     end)
   end)
@@ -63,7 +66,7 @@ describe("raccoon.config", function()
     it("returns error when tokens are missing", function()
       local tmpfile = test_tmp_dir .. "/no_token.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"github_username": "user"}')
+      f:write('{}')
       f:close()
 
       config.config_path = tmpfile
@@ -78,7 +81,7 @@ describe("raccoon.config", function()
     it("returns error when tokens is missing", function()
       local tmpfile = test_tmp_dir .. "/no_tokens.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"github_username": "user"}')
+      f:write('{}')
       f:close()
 
       config.config_path = tmpfile
@@ -90,7 +93,7 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("returns error when github_username is missing", function()
+    it("loads config without github_username", function()
       local tmpfile = test_tmp_dir .. "/no_username.json"
       local f = io.open(tmpfile, "w")
       f:write('{"tokens": {"owner": "ghp_xxx"}}')
@@ -98,9 +101,64 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local cfg, err = config.load()
-      assert.is_nil(cfg)
-      assert.is_not_nil(err)
-      assert.matches("github_username is required", err)
+      assert.is_not_nil(cfg)
+      assert.is_nil(err)
+
+      os.remove(tmpfile)
+    end)
+
+    it("silently ignores github_username in config (backward compat)", function()
+      local tmpfile = test_tmp_dir .. "/legacy_username.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_username": "old-user", "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_not_nil(cfg)
+      assert.is_nil(err)
+
+      os.remove(tmpfile)
+    end)
+
+    it("normalizes github_host with protocol prefix", function()
+      local tmpfile = test_tmp_dir .. "/host_proto.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_host": "https://github.mycompany.com", "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.equals("github.mycompany.com", cfg.github_host)
+
+      os.remove(tmpfile)
+    end)
+
+    it("normalizes github_host with uppercase and whitespace", function()
+      local tmpfile = test_tmp_dir .. "/host_case.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_host": "  GitHub.COM  ", "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.equals("github.com", cfg.github_host)
+
+      os.remove(tmpfile)
+    end)
+
+    it("normalizes github_host with trailing slashes", function()
+      local tmpfile = test_tmp_dir .. "/host_slash.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_host": "github.mycompany.com/", "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.equals("github.mycompany.com", cfg.github_host)
 
       os.remove(tmpfile)
     end)
@@ -109,7 +167,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/valid_config.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "testuser",
         "tokens": {"owner": "ghp_test123"},
         "clone_root": "~/test/repos"
       }]])
@@ -120,9 +177,40 @@ describe("raccoon.config", function()
       assert.is_nil(err)
       assert.is_not_nil(cfg)
       assert.equals("ghp_test123", cfg.tokens["owner"])
-      assert.equals("testuser", cfg.github_username)
       -- Check tilde expansion
       assert.is_not_nil(cfg.clone_root:match("^/"))
+
+      os.remove(tmpfile)
+    end)
+
+    it("loads config with repos filter", function()
+      local tmpfile = test_tmp_dir .. "/repos_filter.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"acme": "ghp_xxx"},
+        "repos": ["acme/backend", "acme/frontend"]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.same({"acme/backend", "acme/frontend"}, cfg.repos)
+
+      os.remove(tmpfile)
+    end)
+
+    it("defaults repos to empty table when not specified", function()
+      local tmpfile = test_tmp_dir .. "/no_repos.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.same({}, cfg.repos)
 
       os.remove(tmpfile)
     end)
@@ -131,7 +219,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/partial_config.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "testuser",
         "tokens": {"owner": "ghp_test123"}
       }]])
       f:close()
@@ -279,7 +366,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/tokens_only.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "testuser",
         "tokens": {
           "org1": "token1",
           "org2": "token2"
@@ -302,7 +388,6 @@ describe("raccoon.config", function()
       local f = io.open(tmpfile, "w")
       f:write([[{
         "some_unknown_field": "value",
-        "github_username": "testuser",
         "tokens": {
           "special-org": "special_token"
         }
@@ -325,7 +410,6 @@ describe("raccoon.config", function()
       local f = io.open(tmpfile, "w")
       f:write([[{
         "tokens": {"owner": "ghp_xxx"},
-        "github_username": "user",
         "some_extra_field": "value"
       }]])
       f:close()
@@ -439,7 +523,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/custom_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "user",
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "pr_list": "<leader>pp",
@@ -471,7 +554,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/no_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "user",
         "tokens": {"user": "ghp_xxx"}
       }]])
       f:close()
@@ -498,7 +580,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/disabled_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "user",
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "pr_list": false,
@@ -527,7 +608,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/null_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "user",
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "pr_list": null,
@@ -553,7 +633,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/numeric_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "user",
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "pr_list": 42,
@@ -576,7 +655,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/empty_str_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "user",
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "close": ""
@@ -595,7 +673,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/scalar_commit_mode.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "user",
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "commit_mode": "oops"
@@ -617,7 +694,6 @@ describe("raccoon.config", function()
       local tmpfile = test_tmp_dir .. "/unknown_keys.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
-        "github_username": "user",
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "nonexistent_key": "<leader>z",

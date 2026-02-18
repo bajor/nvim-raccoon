@@ -10,39 +10,23 @@ The merge uses a deep merge strategy, so nested objects like `shortcuts` and `co
 
 Validation rules:
 - **`tokens`** is required and must contain at least one entry
-- **`github_username`** is required and must be non-empty
-- Unknown fields are silently ignored
+- Unknown fields are silently ignored (including legacy `github_username`)
 
 ## Minimal config
 
-The smallest valid config needs just your username and a token:
+The smallest valid config needs just a token:
 
 ```json
 {
-  "github_username": "your-username",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
   }
 }
 ```
 
-This uses `github.com` as the host, auto-discovers PRs from your token's permissions, and uses defaults for everything else.
+This uses `github.com` as the host, shows open PRs involving you (authored, assigned, review-requested, or commented) from all repos accessible by the token, and uses defaults for everything else.
 
 ## Required fields
-
-### `github_username`
-
-| Type | Default | Required |
-|------|---------|----------|
-| string | `""` | Yes |
-
-Your GitHub username. Used to search for PRs you're involved in (author, reviewer, assignee) when fetching the PR list.
-
-```json
-{
-  "github_username": "octocat"
-}
-```
 
 ### `tokens`
 
@@ -50,7 +34,12 @@ Your GitHub username. Used to search for PRs you're involved in (author, reviewe
 |------|---------|----------|
 | object | `{}` | Yes |
 
-A map of owner/org names to GitHub personal access tokens. Each owner/org you want to access needs a matching token entry.
+A map of owner/org names to GitHub personal access tokens. Each key is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
+
+- **github.com**: `github.com/{owner}/repo` — e.g. `github.com/acme-corp/backend` → key is `acme-corp`
+- **GitHub Enterprise**: `github.mycompany.com/{owner}/repo` — e.g. `github.mycompany.com/platform-team/core-api` → key is `platform-team`
+
+Each owner/org you want to access needs a matching token entry.
 
 Tokens are used for both API authentication (`Authorization: Bearer <token>`) and HTTPS git operations (cloning, fetching).
 
@@ -65,11 +54,26 @@ Tokens are used for both API authentication (`Authorization: Bearer <token>`) an
 
 To create a token:
 - **Classic token** ([github.com/settings/tokens](https://github.com/settings/tokens)): enable the `repo` scope
-- **Fine-grained token** ([github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens)): grant read access to metadata, and read/write access to code, issues, and pull requests
 
-For GitHub Enterprise, create the token on your enterprise instance (e.g. `github.mycompany.com/settings/tokens`).
+For GitHub Enterprise, create a **Classic token** on your enterprise instance at `https://<your-host>/settings/tokens` with the `repo` scope. 
 
 ## Optional fields
+
+### `repos`
+
+| Type | Default |
+|------|---------|
+| array | `[]` |
+
+Limit the `:Raccoon prs` list to specific repositories. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). When set, only open PRs from these repos that involve you (authored, assigned, review-requested, or commented) are shown. When empty or omitted, PRs involving you from all repos accessible by each token are shown.
+
+```json
+{
+  "repos": ["acme-corp/backend", "acme-corp/frontend"]
+}
+```
+
+The owner in each repo entry must have a matching token in `tokens`.
 
 ### `github_host`
 
@@ -78,6 +82,8 @@ For GitHub Enterprise, create the token on your enterprise instance (e.g. `githu
 | string | `"github.com"` |
 
 The GitHub host to connect to. Set this to your company's GitHub Enterprise domain to use the plugin with a self-hosted GitHub instance.
+
+> **Requires GHES 3.9 or newer.** The plugin sends the `X-GitHub-Api-Version: 2022-11-28` header which is not supported by older GHES versions. A one-time info message is shown when GHES mode is active.
 
 The plugin auto-computes the correct API endpoints from the host:
 
@@ -197,12 +203,12 @@ Partial overrides are merged with defaults — you only need to specify keys you
 
 ```json
 {
-  "github_username": "your-username",
   "github_host": "github.com",
   "tokens": {
     "your-username": "ghp_personal_token",
     "work-org": "ghp_work_token"
   },
+  "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
   "pull_changes_interval": 120,
   "commit_viewer": {
@@ -219,14 +225,16 @@ Partial overrides are merged with defaults — you only need to specify keys you
 
 ## GitHub Enterprise example
 
+Requires GHES 3.9 or newer. Use a **Classic token** with `repo` scope. Create one at `https://<your-host>/settings/tokens`.
+
 ```json
 {
-  "github_username": "jdoe",
   "github_host": "github.acme-corp.com",
   "tokens": {
     "jdoe": "ghp_xxxxxxxxxxxxxxxxxxxx",
     "platform-team": "ghp_yyyyyyyyyyyyyyyyyyyy"
-  }
+  },
+  "repos": ["platform-team/core-api", "platform-team/infra"]
 }
 ```
 

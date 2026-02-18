@@ -322,6 +322,51 @@ describe("raccoon.ui", function()
       ui.fetch_all_prs = original_fetch
     end)
 
+    it("reorders PRs by repo so selected index matches display order", function()
+      -- PRs arrive in callback order: repo2, repo1, repo1
+      -- Display groups by repo: repo1(#100, #42), repo2(#55)
+      -- After reorder, flat array should match display: #100, #42, #55
+      local mock_prs = {
+        {
+          number = 55,
+          title = "PR from repo2",
+          html_url = "https://github.com/owner/repo2/pull/55",
+          user = { login = "user" },
+          updated_at = "2026-01-01T00:00:00Z",
+          base = { repo = { full_name = "owner/repo2" } },
+        },
+        {
+          number = 100,
+          title = "First PR from repo1",
+          html_url = "https://github.com/owner/repo1/pull/100",
+          user = { login = "user" },
+          updated_at = "2026-01-01T00:00:00Z",
+          base = { repo = { full_name = "owner/repo1" } },
+        },
+        {
+          number = 42,
+          title = "Second PR from repo1",
+          html_url = "https://github.com/owner/repo1/pull/42",
+          user = { login = "user" },
+          updated_at = "2026-01-01T00:00:00Z",
+          base = { repo = { full_name = "owner/repo1" } },
+        },
+      }
+
+      local original_fetch = ui.fetch_all_prs
+      ui.fetch_all_prs = function(callback) callback(mock_prs, nil) end
+
+      ui.show_pr_list()
+
+      -- repo2 is seen first, so display order is: repo2(#55), repo1(#100, #42)
+      assert.equals(3, #ui.state.prs)
+      assert.equals(55, ui.state.prs[1].number)
+      assert.equals(100, ui.state.prs[2].number)
+      assert.equals(42, ui.state.prs[3].number)
+
+      ui.fetch_all_prs = original_fetch
+    end)
+
     it("resets selected to 1 on open", function()
       ui.state.selected = 5
 

@@ -236,7 +236,7 @@ describe("raccoon.open edge cases", function()
     original_config_path = config.config_path
     vim.fn.mkdir("/tmp/claude/raccoon-tests", "p")
     local f = io.open(test_config_path, "w")
-    f:write('{"github_username":"test","tokens":{"test":"ghp_fake"}}')
+    f:write('{"tokens":{"test":"ghp_fake"}}')
     f:close()
     config.config_path = test_config_path
   end)

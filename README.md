@@ -48,7 +48,6 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
 - A GitHub personal access token — either:
   - **Classic token** ([create here](https://github.com/settings/tokens)): with `repo` scope
-  - **Fine-grained token** ([create here](https://github.com/settings/personal-access-tokens)): with these repository permissions:
     - Read access to metadata
     - Read and Write access to code, issues, and pull requests
 
@@ -72,7 +71,6 @@ Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/c
 
 ```json
 {
-  "github_username": "your-username",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
   }
@@ -85,9 +83,9 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `github_username` | string | `""` | Your GitHub username |
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org, e.g. `{"my-org": "ghp_..."}` |
+| `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `pull_changes_interval` | number | `300` | How often (in seconds) to auto-sync with remote |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
@@ -95,15 +93,21 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 
-Each owner/org you want to access needs a matching entry in `tokens`. For example, to review PRs from `my-org`, add `"my-org": "ghp_..."` to `tokens`.
+Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
+
+- **github.com**: `github.com/{owner}/repo` — e.g. `github.com/my-org/backend` → key is `my-org`
+- **GitHub Enterprise**: `github.mycompany.com/{owner}/repo` — e.g. `github.mycompany.com/platform-team/core-api` → key is `platform-team`
 
 ### GitHub Enterprise
+
+> **Requires GHES 3.9 or newer.** Older versions are not supported and will produce API errors.
+>
+> **Use a Classic token for GHES.** Create one at `https://<your-host>/settings/tokens` with the `repo` scope.
 
 Set `github_host` to your company's GitHub Enterprise domain:
 
 ```json
 {
-  "github_username": "your-username",
   "github_host": "github.mycompany.com",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
@@ -121,12 +125,12 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
 
 ```json
 {
-  "github_username": "your-username",
   "github_host": "github.com",
   "tokens": {
     "your-username": "ghp_personal_token",
     "work-org": "ghp_work_token"
   },
+  "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
   "pull_changes_interval": 120,
   "commit_viewer": {
@@ -185,7 +189,7 @@ Disabled shortcuts show as `(disabled)` in `:Raccoon shortcuts`.
 
 1. Install the plugin and restart Neovim
 2. Run `:Raccoon config` to create and edit your config file
-3. Add your username and tokens
+3. Add your tokens
 4. Run `:Raccoon prs` to browse open PRs
 5. Press `Enter` on a PR to start reviewing
 
