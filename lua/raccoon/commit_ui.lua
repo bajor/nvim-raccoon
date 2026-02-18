@@ -222,7 +222,7 @@ end
 ---@param lines string[] Output lines array (mutated)
 ---@param line_paths table<number, string> Output map: line index -> file path (mutated)
 ---@param file_stats? table<string, {additions: number, deletions: number}> Per-file diff stats
----@param stat_lines? table<number, {prefix_len: number, add_chars: number, del_chars: number}> Output stat line metadata (mutated)
+---@param stat_lines? table<number, table> Output stat line metadata (mutated)
 function M.render_tree_node(node, prefix, lines, line_paths, file_stats, stat_lines)
   local dirs = {}
   local files = {}
@@ -699,7 +699,8 @@ function M.render_filetree(s)
         pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "RaccoonAddSign", line_idx, start, start + stat.add_chars)
       end
       if stat.del_chars > 0 then
-        pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "RaccoonDeleteSign", line_idx, start + stat.add_chars, start + stat.add_chars + stat.del_chars)
+        local del_start = start + stat.add_chars
+        pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "RaccoonDeleteSign", line_idx, del_start, del_start + stat.del_chars)
       end
     end
   end
