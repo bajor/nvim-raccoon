@@ -243,6 +243,62 @@ describe("raccoon.git command format", function()
   end)
 end)
 
+-- Long-path error enhancement tests
+describe("raccoon.git long-path error enhancement", function()
+  local mocks = require("tests.helpers.mocks")
+
+  after_each(function()
+    mocks.restore()
+  end)
+
+  it("appends OS-level guidance when stderr contains 'File name too long'", function()
+    mocks.mock_jobstart({
+      ["clone"] = {
+        exit_code = 128,
+        stderr = { "error: unable to create file deep/path: File name too long", "fatal: unable to checkout working tree" },
+      },
+    })
+
+    local done = false
+    local result_err = nil
+
+    git.clone("https://github.com/o/r.git", "/tmp/dest", "main", function(success, err)
+      result_err = err
+      done = true
+    end)
+
+    vim.wait(5000, function() return done end)
+
+    assert.is_true(done)
+    assert.truthy(result_err:match("File name too long"))
+    assert.truthy(result_err:match("Windows long%-path support"))
+    assert.truthy(result_err:match("LongPathsEnabled"))
+  end)
+
+  it("does not modify stderr when no long-path error present", function()
+    mocks.mock_jobstart({
+      ["clone"] = {
+        exit_code = 128,
+        stderr = { "fatal: repository not found" },
+      },
+    })
+
+    local done = false
+    local result_err = nil
+
+    git.clone("https://github.com/o/r.git", "/tmp/dest", "main", function(success, err)
+      result_err = err
+      done = true
+    end)
+
+    vim.wait(5000, function() return done end)
+
+    assert.is_true(done)
+    assert.equals("fatal: repository not found", result_err)
+    assert.is_nil(result_err:match("Windows long%-path support"))
+  end)
+end)
+
 -- Git error handling tests
 describe("raccoon.git error handling", function()
   describe("get_current_branch error cases", function()

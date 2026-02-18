@@ -35,6 +35,15 @@ local function run_git(args, opts)
     on_exit = function(_, code)
       if opts.on_exit then
         vim.schedule(function()
+          for _, line in ipairs(stderr_data) do
+            if line:match("[Ff]ile ?name too long") then
+              table.insert(stderr_data, "")
+              table.insert(stderr_data, "Windows long-path support must also be enabled at the OS level:")
+              table.insert(stderr_data, "  reg add HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f")
+              table.insert(stderr_data, "  (requires admin privileges and a reboot)")
+              break
+            end
+          end
           opts.on_exit(code, stdout_data, stderr_data)
         end)
       end
