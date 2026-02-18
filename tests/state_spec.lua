@@ -409,4 +409,29 @@ describe("raccoon.state", function()
       assert.equals(1, state.get_current_file_index())
     end)
   end)
+
+  describe("github_host", function()
+    it("defaults to nil", function()
+      assert.is_nil(state.get_github_host())
+    end)
+
+    it("is set by start()", function()
+      state.start({
+        owner = "o", repo = "r", number = 1, url = "u",
+        github_host = "github.acme.com",
+        clone_path = "/tmp",
+      })
+      assert.equals("github.acme.com", state.get_github_host())
+    end)
+
+    it("is cleared by reset()", function()
+      state.start({
+        owner = "o", repo = "r", number = 1, url = "u",
+        github_host = "github.acme.com",
+        clone_path = "/tmp",
+      })
+      state.reset()
+      assert.is_nil(state.get_github_host())
+    end)
+  end)
 end)
