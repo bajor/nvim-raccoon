@@ -78,9 +78,6 @@ local function expand_path(path)
   return path
 end
 
---- Whether the GHES version warning has been shown this session
-local ghes_warned = false
-
 --- Validate required fields in config
 ---@param config table
 ---@return boolean, string?
@@ -99,22 +96,6 @@ local function validate_config(config)
       end
     elseif type(value) ~= "string" or value == "" then
       return false, string.format("tokens['%s'] must be a non-empty string or {token, host} table", key)
-    end
-  end
-
-  -- One-time GHES version reminder for any non-github.com host
-  local hosts_seen = {}
-  hosts_seen[config.github_host] = true
-  for _, value in pairs(config.tokens) do
-    if type(value) == "table" and value.host then
-      hosts_seen[value.host] = true
-    end
-  end
-  for host in pairs(hosts_seen) do
-    if host ~= "github.com" and not ghes_warned then
-      ghes_warned = true
-      vim.notify("raccoon: GitHub Enterprise requires GHES 3.9+", vim.log.levels.INFO)
-      break
     end
   end
 
