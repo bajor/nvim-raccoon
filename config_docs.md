@@ -43,6 +43,8 @@ Each owner/org you want to access needs a matching token entry.
 
 Tokens are used for both API authentication (`Authorization: Bearer <token>`) and HTTPS git operations (cloning, fetching).
 
+Each token value can be either a **string** (uses the default `github_host`) or an **object** with `token` and `host` fields (for multi-host setups):
+
 ```json
 {
   "tokens": {
@@ -52,10 +54,23 @@ Tokens are used for both API authentication (`Authorization: Bearer <token>`) an
 }
 ```
 
+**Multi-host example** — access both github.com and a GitHub Enterprise instance:
+
+```json
+{
+  "tokens": {
+    "my-username": "ghp_personal_xxxxxxxxxxxx",
+    "work-org": { "token": "ghp_work_xxxxxxxxxxxx", "host": "github.mycompany.com" }
+  }
+}
+```
+
+String tokens use the `github_host` setting (default `"github.com"`). Table tokens with a `host` field override the default host for that owner/org. The host is normalized the same way as `github_host` (lowercased, protocol stripped).
+
 To create a token:
 - **Classic token** ([github.com/settings/tokens](https://github.com/settings/tokens)): enable the `repo` scope
 
-For GitHub Enterprise, create a **Classic token** on your enterprise instance at `https://<your-host>/settings/tokens` with the `repo` scope. 
+For GitHub Enterprise, create a **Classic token** on your enterprise instance at `https://<your-host>/settings/tokens` with the `repo` scope.
 
 ## Optional fields
 
@@ -81,7 +96,7 @@ The owner in each repo entry must have a matching token in `tokens`.
 |------|---------|
 | string | `"github.com"` |
 
-The GitHub host to connect to. Set this to your company's GitHub Enterprise domain to use the plugin with a self-hosted GitHub instance.
+The default GitHub host for tokens that don't specify their own host. Set this to your company's GitHub Enterprise domain if most of your tokens are for a self-hosted instance. For multi-host setups, you can also specify the host per-token in the `tokens` map (see above).
 
 > **Requires GHES 3.9 or newer.** The plugin sends the `X-GitHub-Api-Version: 2022-11-28` header which is not supported by older GHES versions. A one-time info message is shown when GHES mode is active.
 
@@ -92,7 +107,7 @@ The plugin auto-computes the correct API endpoints from the host:
 | `github.com` | `https://api.github.com` | `https://api.github.com/graphql` |
 | `github.mycompany.com` | `https://github.mycompany.com/api/v3` | `https://github.mycompany.com/api/graphql` |
 
-PR URLs, clone URLs, and git remote parsing all use the configured host. For example, with `"github_host": "github.mycompany.com"`, the plugin expects PR URLs like `https://github.mycompany.com/owner/repo/pull/123`.
+PR URLs, clone URLs, and git remote parsing all use the host. When opening a PR by URL (`:Raccoon open <url>`), the host is extracted from the URL automatically.
 
 ```json
 {
