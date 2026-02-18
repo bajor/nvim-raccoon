@@ -352,6 +352,29 @@ function M.show_pr_list()
   M.refresh_pr_list()
 end
 
+--- Reorder PRs to match the grouped-by-repo display order
+---@param prs table[]
+---@return table[]
+local function reorder_by_repo(prs)
+  local by_repo = {}
+  local repo_order = {}
+  for _, pr in ipairs(prs) do
+    local repo = pr.base.repo and pr.base.repo.full_name or "unknown"
+    if not by_repo[repo] then
+      by_repo[repo] = {}
+      table.insert(repo_order, repo)
+    end
+    table.insert(by_repo[repo], pr)
+  end
+  local ordered = {}
+  for _, repo in ipairs(repo_order) do
+    for _, pr in ipairs(by_repo[repo]) do
+      table.insert(ordered, pr)
+    end
+  end
+  return ordered
+end
+
 --- Refresh the PR list
 function M.refresh_pr_list()
   if not M.state.buf or not vim.api.nvim_buf_is_valid(M.state.buf) then
@@ -368,7 +391,7 @@ function M.refresh_pr_list()
       return
     end
 
-    M.state.prs = prs or {}
+    M.state.prs = reorder_by_repo(prs or {})
     M.state.selected = 1
     M.state.error_line_count = 0
 
