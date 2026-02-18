@@ -1,6 +1,6 @@
 ---@class RaccoonConfig
 ---@field github_host string GitHub host (default: "github.com", set for GitHub Enterprise)
----@field tokens table<string, string> Per-owner/org tokens (owner -> token)
+---@field tokens table<string, string|{token:string, host:string}> Per-owner/org tokens
 ---@field repos string[] Optional list of repos to show PRs from ("owner/repo" format)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field pull_changes_interval number Auto-sync interval in seconds (default: 300)
@@ -78,9 +78,6 @@ local function expand_path(path)
   return path
 end
 
---- Whether the GHES version warning has been shown this session
-local ghes_warned = false
-
 --- Validate required fields in config
 ---@param config table
 ---@return boolean, string?
@@ -91,10 +88,18 @@ local function validate_config(config)
     return false, "tokens is required (maps owner/org name to GitHub token)"
   end
 
-  -- One-time GHES version reminder
-  if config.github_host ~= "github.com" and not ghes_warned then
-    ghes_warned = true
-    vim.notify("raccoon: GitHub Enterprise requires GHES 3.9+", vim.log.levels.INFO)
+  -- Validate each token entry is a string or {token, host} table
+  for key, value in pairs(config.tokens) do
+    if type(value) == "table" then
+      if type(value.token) ~= "string" or value.token == "" then
+        return false, string.format("tokens['%s'].token must be a non-empty string", key)
+      end
+      if value.host ~= nil and (type(value.host) ~= "string" or value.host == "") then
+        return false, string.format("tokens['%s'].host must be a non-empty string", key)
+      end
+    elseif type(value) ~= "string" or value == "" then
+      return false, string.format("tokens['%s'] must be a non-empty string or {token, host} table", key)
+    end
   end
 
   return true, nil
@@ -132,6 +137,17 @@ function M.load()
   -- Normalize github_host: lowercase, strip whitespace/protocol/trailing slashes
   config.github_host = config.github_host:lower():gsub("^%s+", ""):gsub("%s+$", "")
   config.github_host = config.github_host:gsub("^https?://", ""):gsub("/+$", "")
+
+  -- Normalize host in table token entries
+  if config.tokens and type(config.tokens) == "table" then
+    for key, value in pairs(config.tokens) do
+      if type(value) == "table" and value.host then
+        value.host = value.host:lower():gsub("^%s+", ""):gsub("%s+$", "")
+        value.host = value.host:gsub("^https?://", ""):gsub("/+$", "")
+        config.tokens[key] = value
+      end
+    end
+  end
 
   -- Expand paths
   config.clone_root = expand_path(config.clone_root)
@@ -237,28 +253,50 @@ function M.load_shortcuts()
   return sanitize_shortcuts(merged, M.defaults.shortcuts)
 end
 
---- Get the token for a given owner/org from the tokens table
+--- Get the token and host for a given owner/org from the tokens table
 ---@param config RaccoonConfig
 ---@param owner string
----@return string?
+---@return string? token, string? host
 function M.get_token_for_owner(config, owner)
-  if config.tokens and config.tokens[owner] then
-    return config.tokens[owner]
+  if not config.tokens or not config.tokens[owner] then
+    return nil, nil
   end
-  return nil
+  local value = config.tokens[owner]
+  if type(value) == "table" then
+    return value.token, value.host or config.github_host
+  end
+  return value, config.github_host
 end
 
---- Get the token for a repo string ("owner/repo")
+--- Get the token and host for a repo string ("owner/repo")
 --- Extracts owner from the repo string and resolves the token
 ---@param config RaccoonConfig
 ---@param repo string Repository in "owner/repo" format
----@return string?
+---@return string? token, string? host
 function M.get_token_for_repo(config, repo)
   local owner = repo:match("^([^/]+)/")
   if not owner then
-    return nil
+    return nil, nil
   end
   return M.get_token_for_owner(config, owner)
+end
+
+--- Get all token entries normalized as {key, token, host}
+---@param config RaccoonConfig
+---@return {key: string, token: string, host: string}[]
+function M.get_all_tokens(config)
+  local entries = {}
+  if not config.tokens or type(config.tokens) ~= "table" then
+    return entries
+  end
+  for key, value in pairs(config.tokens) do
+    if type(value) == "table" and value.token then
+      table.insert(entries, { key = key, token = value.token, host = value.host or config.github_host })
+    elseif type(value) == "string" then
+      table.insert(entries, { key = key, token = value, host = config.github_host })
+    end
+  end
+  return entries
 end
 
 return M

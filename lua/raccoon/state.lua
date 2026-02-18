@@ -16,6 +16,8 @@ M.session = {
   number = nil,
   --- PR URL
   url = nil,
+  --- GitHub host for this PR's repository
+  github_host = nil,
   --- Local clone path
   clone_path = nil,
   --- List of changed files
@@ -45,6 +47,7 @@ function M.reset()
     repo = nil,
     number = nil,
     url = nil,
+    github_host = nil,
     clone_path = nil,
     files = {},
     current_file = 1,
@@ -61,7 +64,7 @@ function M.reset()
 end
 
 --- Start a new review session
----@param opts table Session options: owner, repo, number, url, clone_path
+---@param opts table Session options: owner, repo, number, url, github_host, clone_path
 function M.start(opts)
   M.reset()
   M.session.active = true
@@ -69,6 +72,7 @@ function M.start(opts)
   M.session.repo = opts.repo
   M.session.number = opts.number
   M.session.url = opts.url
+  M.session.github_host = opts.github_host
   M.session.clone_path = opts.clone_path
 end
 
@@ -201,6 +205,12 @@ end
 ---@return number|nil
 function M.get_number()
   return M.session.number
+end
+
+--- Get the GitHub host for this session
+---@return string|nil
+function M.get_github_host()
+  return M.session.github_host
 end
 
 --- Get sync status

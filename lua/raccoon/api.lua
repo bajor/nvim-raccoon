@@ -149,15 +149,17 @@ end
 --- Get the authenticated user's login for a token
 ---@param token string GitHub token
 ---@param callback fun(login: string|nil, err: string|nil)
-function M.get_viewer(token, callback)
+---@param host string|nil GitHub host (captures base URL before vim.schedule to avoid race)
+function M.get_viewer(token, callback, host)
   local cache_key = token:sub(1, 8)
   if viewer_cache[cache_key] then
     callback(viewer_cache[cache_key], nil)
     return
   end
 
+  local base_url = host and compute_api_urls(host) or M.base_url
   vim.schedule(function()
-    local url = string.format("%s/user", M.base_url)
+    local url = string.format("%s/user", base_url)
     local response, err = request({
       url = url,
       method = "GET",
@@ -189,11 +191,13 @@ end
 ---@param token string GitHub token
 ---@param username string Authenticated user's login
 ---@param callback fun(prs: table[]|nil, err: string|nil)
-function M.search_user_prs(token, username, callback)
+---@param host string|nil GitHub host (captures base URL before vim.schedule to avoid race)
+function M.search_user_prs(token, username, callback, host)
+  local base_url = host and compute_api_urls(host) or M.base_url
   vim.schedule(function()
     local query = string.format("type:pr state:open involves:%s", username)
     local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
-      M.base_url, vim.uri_encode(query))
+      base_url, vim.uri_encode(query))
 
     local response, err = request({
       url = url,
@@ -225,11 +229,13 @@ end
 ---@param token string GitHub token
 ---@param username string Authenticated user's login
 ---@param callback fun(prs: table[]|nil, err: string|nil)
-function M.search_repo_prs(owner, repo, token, username, callback)
+---@param host string|nil GitHub host (captures base URL before vim.schedule to avoid race)
+function M.search_repo_prs(owner, repo, token, username, callback, host)
+  local base_url = host and compute_api_urls(host) or M.base_url
   vim.schedule(function()
     local query = string.format("type:pr state:open repo:%s/%s involves:%s", owner, repo, username)
     local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
-      M.base_url, vim.uri_encode(query))
+      base_url, vim.uri_encode(query))
 
     local response, err = request({
       url = url,
@@ -484,21 +490,30 @@ function M.submit_review(owner, repo, number, event, body, token, callback)
   end)
 end
 
---- Parse a GitHub PR URL to extract owner, repo, and number
+--- Parse a GitHub PR URL to extract owner, repo, number, and host.
+--- When host is provided, validates the URL against that host.
+--- When host is nil, extracts the host from the URL.
 ---@param url string|nil GitHub PR URL
----@param host string|nil GitHub host to match (default: "github.com")
----@return string|nil owner, string|nil repo, number|nil number
+---@param host string|nil GitHub host to match (nil = extract from URL)
+---@return string|nil owner, string|nil repo, number|nil number, string|nil host
 function M.parse_pr_url(url, host)
   if not url then
-    return nil, nil, nil
+    return nil, nil, nil, nil
   end
-  host = host or "github.com"
-  local escaped_host = host:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
-  local owner, repo, num = url:match(escaped_host .. "/([^/]+)/([^/]+)/pull/(%d+)")
-  if owner and repo and num then
-    return owner, repo, tonumber(num)
+  if host then
+    local escaped_host = host:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+    local owner, repo, num = url:match(escaped_host .. "/([^/]+)/([^/]+)/pull/(%d+)")
+    if owner and repo and num then
+      return owner, repo, tonumber(num), host
+    end
+    return nil, nil, nil, nil
   end
-  return nil, nil, nil
+  -- Extract host from URL
+  local matched_host, owner, repo, num = url:match("https?://([^/]+)/([^/]+)/([^/]+)/pull/(%d+)")
+  if matched_host and owner and repo and num then
+    return owner, repo, tonumber(num), matched_host:lower()
+  end
+  return nil, nil, nil, nil
 end
 
 --- Get check runs for a commit (CI status)

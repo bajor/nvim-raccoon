@@ -371,6 +371,7 @@ function M.merge_picker()
     vim.notify("Config error: " .. cfg_err, vim.log.levels.ERROR)
     return
   end
+  api.init(state.get_github_host() or cfg.github_host)
   local token = config.get_token_for_owner(cfg, owner)
   if not token then
     vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)

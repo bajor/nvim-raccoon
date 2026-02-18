@@ -710,4 +710,176 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
   end)
+
+  describe("multi-host tokens", function()
+    it("get_token_for_owner returns token and default host for string token", function()
+      local cfg = {
+        github_host = "github.com",
+        tokens = { ["my-user"] = "ghp_xxx" },
+      }
+      local token, host = config.get_token_for_owner(cfg, "my-user")
+      assert.equals("ghp_xxx", token)
+      assert.equals("github.com", host)
+    end)
+
+    it("get_token_for_owner returns token and custom host for table token", function()
+      local cfg = {
+        github_host = "github.com",
+        tokens = { ["work-org"] = { token = "ghp_yyy", host = "github.acme.com" } },
+      }
+      local token, host = config.get_token_for_owner(cfg, "work-org")
+      assert.equals("ghp_yyy", token)
+      assert.equals("github.acme.com", host)
+    end)
+
+    it("get_token_for_owner uses default host when table token has no host", function()
+      local cfg = {
+        github_host = "github.mycompany.com",
+        tokens = { ["org"] = { token = "ghp_zzz" } },
+      }
+      local token, host = config.get_token_for_owner(cfg, "org")
+      assert.equals("ghp_zzz", token)
+      assert.equals("github.mycompany.com", host)
+    end)
+
+    it("get_token_for_owner returns nil, nil for missing owner", function()
+      local cfg = {
+        github_host = "github.com",
+        tokens = { ["other"] = "ghp_xxx" },
+      }
+      local token, host = config.get_token_for_owner(cfg, "missing")
+      assert.is_nil(token)
+      assert.is_nil(host)
+    end)
+
+    it("get_token_for_repo returns token and host for table token", function()
+      local cfg = {
+        github_host = "github.com",
+        tokens = { ["work-org"] = { token = "ghp_yyy", host = "github.acme.com" } },
+      }
+      local token, host = config.get_token_for_repo(cfg, "work-org/backend")
+      assert.equals("ghp_yyy", token)
+      assert.equals("github.acme.com", host)
+    end)
+
+    it("get_all_tokens normalizes mixed string and table tokens", function()
+      local cfg = {
+        github_host = "github.com",
+        tokens = {
+          ["personal"] = "ghp_aaa",
+          ["work"] = { token = "ghp_bbb", host = "github.acme.com" },
+        },
+      }
+      local entries = config.get_all_tokens(cfg)
+      assert.equals(2, #entries)
+
+      -- Sort by key for deterministic assertion
+      table.sort(entries, function(a, b) return a.key < b.key end)
+      assert.equals("personal", entries[1].key)
+      assert.equals("ghp_aaa", entries[1].token)
+      assert.equals("github.com", entries[1].host)
+      assert.equals("work", entries[2].key)
+      assert.equals("ghp_bbb", entries[2].token)
+      assert.equals("github.acme.com", entries[2].host)
+    end)
+
+    it("loads config with table token and normalizes host", function()
+      local tmpfile = test_tmp_dir .. "/multi_host.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {
+          "personal": "ghp_aaa",
+          "work": {"token": "ghp_bbb", "host": "https://GitHub.Acme.COM/"}
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+
+      local token, host = config.get_token_for_owner(cfg, "work")
+      assert.equals("ghp_bbb", token)
+      assert.equals("github.acme.com", host)
+
+      os.remove(tmpfile)
+    end)
+
+    it("rejects table token with empty host", function()
+      local tmpfile = test_tmp_dir .. "/empty_host.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {
+          "org": {"token": "ghp_xxx", "host": ""}
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(cfg)
+      assert.is_not_nil(err)
+      assert.truthy(err:find("host"))
+
+      os.remove(tmpfile)
+    end)
+
+    it("rejects table token with whitespace-only host", function()
+      local tmpfile = test_tmp_dir .. "/whitespace_host.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {
+          "org": {"token": "ghp_xxx", "host": "   "}
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(cfg)
+      assert.is_not_nil(err)
+      assert.truthy(err:find("host"))
+
+      os.remove(tmpfile)
+    end)
+
+    it("rejects table token with protocol-only host", function()
+      local tmpfile = test_tmp_dir .. "/proto_only_host.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {
+          "org": {"token": "ghp_xxx", "host": "https://"}
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(cfg)
+      assert.is_not_nil(err)
+      assert.truthy(err:find("host"))
+
+      os.remove(tmpfile)
+    end)
+
+    it("rejects table token with missing token field", function()
+      local tmpfile = test_tmp_dir .. "/bad_table_token.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {
+          "bad": {"host": "github.acme.com"}
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(cfg)
+      assert.is_not_nil(err)
+      assert.truthy(err:find("token"))
+
+      os.remove(tmpfile)
+    end)
+  end)
 end)

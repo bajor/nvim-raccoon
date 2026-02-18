@@ -35,6 +35,7 @@ function M.submit_review(event, body, callback)
   local owner = state.get_owner()
   local repo = state.get_repo()
   local number = state.get_number()
+  api.init(state.get_github_host() or cfg.github_host)
   local token = config.get_token_for_owner(cfg, owner)
   if not token then
     callback(string.format("No token configured for '%s'", owner))

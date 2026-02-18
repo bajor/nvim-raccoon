@@ -311,18 +311,19 @@ local function sync_pr(silent, force)
     return
   end
 
-  -- Initialize API URLs for this host
-  api.init(cfg.github_host)
-
   local owner = state.get_owner()
   local repo = state.get_repo()
   local number = state.get_number()
   local clone_path = state.get_clone_path()
   local pr = state.get_pr()
+  local github_host = state.get_github_host() or cfg.github_host
 
   if not owner or not repo or not number or not clone_path or not pr then
     return
   end
+
+  -- Initialize API URLs for this session's host
+  api.init(github_host)
 
   local branch = pr.head.ref
   local token = config.get_token_for_owner(cfg, owner)
@@ -330,7 +331,7 @@ local function sync_pr(silent, force)
     vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
     return
   end
-  local repo_url = string.format("https://%s@%s/%s/%s.git", token, cfg.github_host, owner, repo)
+  local repo_url = string.format("https://%s@%s/%s/%s.git", token, github_host, owner, repo)
 
   -- Check remote for updates first
   api.get_pr(owner, repo, number, token, function(new_pr, pr_err)
@@ -552,19 +553,19 @@ function M.open_pr(url)
     return
   end
 
-  -- Initialize API URLs for this host
-  api.init(cfg.github_host)
+  -- Parse URL (extract host from URL for multi-host support)
+  local owner, repo, number, url_host = api.parse_pr_url(url)
+  if not owner or not repo or not number or not url_host then
+    notify_error("Invalid PR URL: " .. url)
+    return
+  end
+
+  -- Initialize API URLs for the host from the URL
+  api.init(url_host)
 
   -- Set sync interval from config (clamped to 10s minimum)
   local interval_s = math.max(10, cfg.pull_changes_interval or 300)
   sync_interval_ms = interval_s * 1000
-
-  -- Parse URL
-  local owner, repo, number = api.parse_pr_url(url, cfg.github_host)
-  if not owner or not repo or not number then
-    notify_error("Invalid PR URL: " .. url)
-    return
-  end
 
   -- Build clone path
   local clone_path = git.build_pr_path(cfg.clone_root, owner, repo, number)
@@ -575,6 +576,7 @@ function M.open_pr(url)
     repo = repo,
     number = number,
     url = url,
+    github_host = url_host,
     clone_path = clone_path,
   })
 
@@ -599,7 +601,7 @@ function M.open_pr(url)
 
     local branch = pr.head.ref
     -- Use token in URL for HTTPS authentication
-    local repo_url = string.format("https://%s@%s/%s/%s.git", token, cfg.github_host, owner, repo)
+    local repo_url = string.format("https://%s@%s/%s/%s.git", token, url_host, owner, repo)
 
     -- Clone or update the repo
     prepare_repo(clone_path, repo_url, branch, function(repo_err)
