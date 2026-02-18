@@ -26,6 +26,7 @@ local commit_state = {
   grid_bufs = {},
   all_hunks = {},
   commit_files = {},
+  file_stats = {},
   current_page = 1,
   saved_buf = nil,
   saved_laststatus = nil,
@@ -42,6 +43,7 @@ local commit_state = {
   cached_sha = nil,
   cached_tree_lines = nil,
   cached_line_paths = nil,
+  cached_stat_lines = nil,
   cached_file_count = nil,
   focus_target = "sidebar",
 }
@@ -62,6 +64,7 @@ local function reset_state()
     grid_bufs = {},
     all_hunks = {},
     commit_files = {},
+    file_stats = {},
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
@@ -78,6 +81,7 @@ local function reset_state()
     cached_sha = nil,
     cached_tree_lines = nil,
     cached_line_paths = nil,
+    cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
   }
@@ -185,11 +189,12 @@ local function select_commit(index)
       return
     end
 
-    -- Track all files in commit
+    -- Track all files in commit and compute per-file diff stats
     commit_state.commit_files = {}
     for _, file in ipairs(files or {}) do
       commit_state.commit_files[file.filename] = true
     end
+    commit_state.file_stats = ui.compute_file_stats(files)
 
     -- Parse all files into flat hunk list
     commit_state.all_hunks = {}
@@ -531,6 +536,8 @@ M._setup_keymaps = setup_keymaps
 M._render_filetree = function() ui.render_filetree(commit_state) end
 M._build_file_tree = ui.build_file_tree
 M._render_tree_node = ui.render_tree_node
+M._compute_file_stats = ui.compute_file_stats
+M._format_stat_bar = ui.format_stat_bar
 M._close_filetree = function() ui.close_win_pair(commit_state, "filetree_win", "filetree_buf") end
 
 return M

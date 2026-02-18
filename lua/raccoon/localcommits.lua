@@ -42,6 +42,7 @@ local function make_initial_state()
     grid_bufs = {},
     all_hunks = {},
     commit_files = {},
+    file_stats = {},
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
@@ -58,6 +59,7 @@ local function make_initial_state()
     cached_sha = nil,
     cached_tree_lines = nil,
     cached_line_paths = nil,
+    cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
     pr_was_active = false,
@@ -165,6 +167,7 @@ local function select_commit(index)
     for _, file in ipairs(files or {}) do
       local_state.commit_files[file.filename] = true
     end
+    local_state.file_stats = ui.compute_file_stats(files)
 
     local_state.all_hunks = {}
     local_state.cached_sha = nil
