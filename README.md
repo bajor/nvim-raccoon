@@ -94,7 +94,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 
-Each key in `tokens` is the **owner or org name from the repo URL** (`github.com/{owner}/repo`). For example, to review PRs from `my-org`, add `"my-org": "ghp_..."` to `tokens`.
+Each key in `tokens` is the **owner or org name from the repo URL** — the part right after `github.com/` in `github.com/{owner}/repo`. To find it, open any repo you want to review and copy the first path segment from the URL. For example, for `github.com/my-org/backend`, the key is `my-org`.
 
 ### GitHub Enterprise
 
