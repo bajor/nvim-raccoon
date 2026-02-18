@@ -9,14 +9,15 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
---- Compute per-file addition/deletion counts from diff patches
+--- Compute per-file addition/deletion counts and estimated total lines from diff patches
 ---@param files table[] Array of {filename, patch}
----@return table<string, {additions: number, deletions: number}>
+---@return table<string, {additions: number, deletions: number, total_lines: number}>
 function M.compute_file_stats(files)
   local stats = {}
   for _, file in ipairs(files or {}) do
     local additions = 0
     local deletions = 0
+    local max_line = 0
     local hunks = diff.parse_patch(file.patch)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
@@ -26,32 +27,44 @@ function M.compute_file_stats(files)
           deletions = deletions + 1
         end
       end
+      -- Estimate total file lines from the last hunk's range
+      local hunk_end = (hunk.start_line or 0) + (hunk.count or 0) - 1
+      if hunk_end > max_line then max_line = hunk_end end
     end
-    stats[file.filename] = { additions = additions, deletions = deletions }
+    -- For new files, max_line == additions (exact). For modified files, this is
+    -- a lower bound based on the last hunk's position in the new file.
+    local total_lines = math.max(max_line, additions)
+    stats[file.filename] = { additions = additions, deletions = deletions, total_lines = total_lines }
   end
   return stats
 end
 
---- Format a proportional diff size bar from addition/deletion counts
+--- Format a proportional diff size bar scaled to file size
 ---@param additions number
 ---@param deletions number
+---@param total_lines number Estimated total lines in the file
 ---@return string bar The bar string (e.g. "+++----")
 ---@return number add_chars Count of + characters
 ---@return number del_chars Count of - characters
-function M.format_stat_bar(additions, deletions)
-  local total = additions + deletions
-  if total == 0 then return "", 0, 0 end
+function M.format_stat_bar(additions, deletions, total_lines)
+  local changes = additions + deletions
+  if changes == 0 then return "", 0, 0 end
   local max_width = M.STAT_BAR_MAX_WIDTH
-  local add_chars = math.floor(additions / total * max_width + 0.5)
-  local del_chars = max_width - add_chars
+  -- Scale bar length by proportion of file changed
+  total_lines = math.max(total_lines or changes, changes)
+  local bar_len = math.max(1, math.floor(changes / total_lines * max_width + 0.5))
+  bar_len = math.min(bar_len, max_width)
+  -- Split bar into + and - proportionally
+  local add_chars = math.floor(additions / changes * bar_len + 0.5)
+  local del_chars = bar_len - add_chars
   -- Ensure at least 1 char for each non-zero count
   if additions > 0 and add_chars == 0 then
     add_chars = 1
-    del_chars = max_width - 1
+    del_chars = math.max(0, bar_len - 1)
   end
   if deletions > 0 and del_chars == 0 then
     del_chars = 1
-    add_chars = max_width - 1
+    add_chars = math.max(0, bar_len - 1)
   end
   return string.rep("+", add_chars) .. string.rep("-", del_chars), add_chars, del_chars
 end
@@ -246,7 +259,7 @@ function M.render_tree_node(node, prefix, lines, line_paths, file_stats, stat_li
         local stat = file_stats[child.path]
         if stat and (stat.additions > 0 or stat.deletions > 0) then
           local bar_prefix = prefix .. (is_last and "   " or "│  ")
-          local bar, add_chars, del_chars = M.format_stat_bar(stat.additions, stat.deletions)
+          local bar, add_chars, del_chars = M.format_stat_bar(stat.additions, stat.deletions, stat.total_lines)
           table.insert(lines, bar_prefix .. bar)
           stat_lines[#lines - 1] = { prefix_len = #bar_prefix, add_chars = add_chars, del_chars = del_chars }
         end
