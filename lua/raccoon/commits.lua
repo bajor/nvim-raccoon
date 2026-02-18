@@ -189,23 +189,30 @@ local function select_commit(index)
       return
     end
 
-    -- Track all files in commit and compute per-file diff stats
+    -- Track files, compute stats, and build flat hunk list in a single pass
     commit_state.commit_files = {}
-    for _, file in ipairs(files or {}) do
-      commit_state.commit_files[file.filename] = true
-    end
-    commit_state.file_stats = ui.compute_file_stats(files)
-
-    -- Parse all files into flat hunk list
+    commit_state.file_stats = {}
     commit_state.all_hunks = {}
     commit_state.cached_sha = nil
-    build_filetree_cache()
+    commit_state.cached_stat_lines = nil
     for _, file in ipairs(files or {}) do
+      commit_state.commit_files[file.filename] = true
+      local additions = 0
+      local deletions = 0
       local hunks = diff.parse_patch(file.patch)
       for _, hunk in ipairs(hunks) do
         table.insert(commit_state.all_hunks, { hunk = hunk, filename = file.filename })
+        for _, line_data in ipairs(hunk.lines) do
+          if line_data.type == "add" then
+            additions = additions + 1
+          elseif line_data.type == "del" then
+            deletions = deletions + 1
+          end
+        end
       end
+      commit_state.file_stats[file.filename] = { additions = additions, deletions = deletions }
     end
+    build_filetree_cache()
 
     if #commit_state.all_hunks == 0 then
       for i, buf in ipairs(commit_state.grid_bufs) do
