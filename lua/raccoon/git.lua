@@ -39,7 +39,9 @@ local function run_git(args, opts)
             if line:match("[Ff]ile ?name too long") then
               table.insert(stderr_data, "")
               table.insert(stderr_data, "Windows long-path support must also be enabled at the OS level:")
-              table.insert(stderr_data, "  reg add HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f")
+              local reg_cmd = "  reg add HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem"
+                .. " /v LongPathsEnabled /t REG_DWORD /d 1 /f"
+              table.insert(stderr_data, reg_cmd)
               table.insert(stderr_data, "  (requires admin privileges and a reboot)")
               break
             end
