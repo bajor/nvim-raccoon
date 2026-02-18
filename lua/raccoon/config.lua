@@ -1,5 +1,4 @@
 ---@class RaccoonConfig
----@field github_username string GitHub username
 ---@field github_host string GitHub host (default: "github.com", set for GitHub Enterprise)
 ---@field tokens table<string, string> Per-owner/org tokens (owner -> token)
 ---@field clone_root string Root directory for cloned PR repos
@@ -21,7 +20,6 @@ end
 
 --- Default configuration values
 M.defaults = {
-  github_username = "",
   github_host = "github.com",
   tokens = {},
   clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
@@ -129,11 +127,6 @@ function M.load()
   -- Merge with defaults
   local config = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), parsed)
 
-  -- Sanitize optional string fields (JSON null decodes to vim.NIL)
-  if type(config.github_username) ~= "string" then
-    config.github_username = ""
-  end
-
   -- Normalize github_host: lowercase, strip whitespace/protocol/trailing slashes
   config.github_host = config.github_host:lower():gsub("^%s+", ""):gsub("%s+$", "")
   config.github_host = config.github_host:gsub("^https?://", ""):gsub("/+$", "")
@@ -166,7 +159,6 @@ function M.create_default()
   end
 
   local default = {
-    github_username = "your-username",
     github_host = "github.com",
     tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
     clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
@@ -217,7 +209,7 @@ local function sanitize_shortcuts(merged, defaults)
 end
 
 --- Load shortcuts from config, falling back to defaults gracefully.
---- Unlike load(), this does not require valid tokens/username.
+--- Unlike load(), this does not require valid tokens.
 ---@return table shortcuts
 function M.load_shortcuts()
   local path = M.config_path

@@ -136,7 +136,6 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
       local home = vim.fn.expand("~")
       clone_root = clone_root:gsub("^" .. vim.pesc(home), "~")
       local default_config = string.format([[{
-  "github_username": "your-username",
   "github_host": "github.com",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"

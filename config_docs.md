@@ -10,7 +10,7 @@ The merge uses a deep merge strategy, so nested objects like `shortcuts` and `co
 
 Validation rules:
 - **`tokens`** is required and must contain at least one entry
-- Unknown fields are silently ignored
+- Unknown fields are silently ignored (including legacy `github_username`)
 
 ## Minimal config
 
@@ -54,20 +54,6 @@ To create a token:
 For GitHub Enterprise, create the token on your enterprise instance (e.g. `github.mycompany.com/settings/tokens`).
 
 ## Optional fields
-
-### `github_username`
-
-| Type | Default |
-|------|---------|
-| string | `""` |
-
-Your GitHub username. Used as the display name for optimistic comment rendering (shows your name on new comments before the API responds). If not set, displays "you" as a placeholder.
-
-```json
-{
-  "github_username": "octocat"
-}
-```
 
 ### `github_host`
 
@@ -197,7 +183,6 @@ Partial overrides are merged with defaults — you only need to specify keys you
 
 ```json
 {
-  "github_username": "your-username",
   "github_host": "github.com",
   "tokens": {
     "your-username": "ghp_personal_token",

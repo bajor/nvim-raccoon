@@ -72,7 +72,6 @@ Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/c
 
 ```json
 {
-  "github_username": "your-username",
   "tokens": {
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
   }
@@ -85,7 +84,6 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `github_username` | string | `""` | Your GitHub username (optional, used for comment display) |
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org, e.g. `{"my-org": "ghp_..."}` |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
@@ -122,7 +120,6 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
 
 ```json
 {
-  "github_username": "your-username",
   "github_host": "github.com",
   "tokens": {
     "your-username": "ghp_personal_token",
@@ -186,7 +183,7 @@ Disabled shortcuts show as `(disabled)` in `:Raccoon shortcuts`.
 
 1. Install the plugin and restart Neovim
 2. Run `:Raccoon config` to create and edit your config file
-3. Add your username and tokens
+3. Add your tokens
 4. Run `:Raccoon prs` to browse open PRs
 5. Press `Enter` on a PR to start reviewing
 
