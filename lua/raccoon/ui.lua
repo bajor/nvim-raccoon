@@ -504,12 +504,16 @@ function M.fetch_all_prs(callback)
         if owner and repo then
           local token = config.get_token_for_owner(cfg, owner)
           if token and viewer_map[token] then
-            table.insert(searchable, { owner = owner, repo = repo, token = token, username = viewer_map[token], key = repo_str })
+            table.insert(searchable, {
+              owner = owner, repo = repo, token = token,
+              username = viewer_map[token], key = repo_str,
+            })
           elseif not token then
             table.insert(all_errors, { key = repo_str, err = string.format("No token configured for '%s'", owner) })
           end
         else
-          table.insert(all_errors, { key = repo_str, err = string.format("Invalid repo format: '%s' (expected 'owner/repo')", repo_str) })
+          local msg = string.format("Invalid repo format: '%s' (expected 'owner/repo')", repo_str)
+          table.insert(all_errors, { key = repo_str, err = msg })
         end
       end
 
