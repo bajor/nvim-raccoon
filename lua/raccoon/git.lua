@@ -506,7 +506,7 @@ end
 ---@param base_branch string Base branch (e.g., "main")
 ---@param callback fun(commits: table[]|nil, err: string|nil)
 function M.log_commits(path, base_branch, callback)
-  run_git({ "log", "--format=%H %s", "--reverse", "origin/" .. base_branch .. "..HEAD" }, {
+  run_git({ "log", "--format=%H %s", "origin/" .. base_branch .. "..HEAD" }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
