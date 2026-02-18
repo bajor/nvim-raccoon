@@ -48,7 +48,6 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
 - A GitHub personal access token — either:
   - **Classic token** ([create here](https://github.com/settings/tokens)): with `repo` scope
-  - **Fine-grained token** ([create here](https://github.com/settings/personal-access-tokens)): with these repository permissions:
     - Read access to metadata
     - Read and Write access to code, issues, and pull requests
 
@@ -103,7 +102,7 @@ Each key in `tokens` is the **owner or org name from the repo URL** — the firs
 
 > **Requires GHES 3.9 or newer.** Older versions are not supported and will produce API errors.
 >
-> **Use a Classic token for GHES.** Fine-grained tokens may not be available on all GHES versions. Create one at `https://<your-host>/settings/tokens` with the `repo` scope.
+> **Use a Classic token for GHES.** Create one at `https://<your-host>/settings/tokens` with the `repo` scope.
 
 Set `github_host` to your company's GitHub Enterprise domain:
 

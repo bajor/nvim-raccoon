@@ -54,9 +54,8 @@ Tokens are used for both API authentication (`Authorization: Bearer <token>`) an
 
 To create a token:
 - **Classic token** ([github.com/settings/tokens](https://github.com/settings/tokens)): enable the `repo` scope
-- **Fine-grained token** ([github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens)): grant read access to metadata, and read/write access to code, issues, and pull requests
 
-For GitHub Enterprise, create a **Classic token** on your enterprise instance at `https://<your-host>/settings/tokens` with the `repo` scope. Fine-grained tokens may not be available on all GHES versions.
+For GitHub Enterprise, create a **Classic token** on your enterprise instance at `https://<your-host>/settings/tokens` with the `repo` scope. 
 
 ## Optional fields
 
@@ -226,7 +225,7 @@ Partial overrides are merged with defaults — you only need to specify keys you
 
 ## GitHub Enterprise example
 
-Requires GHES 3.9 or newer. Use a **Classic token** with `repo` scope — fine-grained tokens may not be available on all GHES versions. Create one at `https://<your-host>/settings/tokens`.
+Requires GHES 3.9 or newer. Use a **Classic token** with `repo` scope. Create one at `https://<your-host>/settings/tokens`.
 
 ```json
 {
