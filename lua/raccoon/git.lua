@@ -10,7 +10,7 @@ local function run_git(args, opts)
   local stdout_data = {}
   local stderr_data = {}
 
-  local job_id = vim.fn.jobstart({ "git", unpack(args) }, {
+  local job_id = vim.fn.jobstart({ "git", "-c", "core.longpaths=true", unpack(args) }, {
     cwd = opts.cwd,
     stdout_buffered = true,
     stderr_buffered = true,
