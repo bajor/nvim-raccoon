@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.6] - 2026-02-18
+
+### Fixed
+- Enable `core.longpaths` for all git operations, fixing "filename too long" errors on Windows when cloning repos with deeply nested paths (also requires Windows long-path support enabled at the OS level; see [Microsoft docs](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry#enable-long-paths-in-windows-10-version-1607-and-later))
+
 ## [0.9.5] - 2026-02-17
 
 ### Fixed

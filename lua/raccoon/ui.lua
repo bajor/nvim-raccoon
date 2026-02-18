@@ -566,7 +566,7 @@ function M.fetch_all_prs(callback)
 
       local pending = { n = #searchable }
       for _, entry in ipairs(searchable) do
-        api.search_user_prs(entry.key, entry.token, viewer_map[entry.token], function(prs, api_err)
+        api.search_user_prs(entry.token, viewer_map[entry.token], function(prs, api_err)
           collect(prs, api_err, entry.key, pending)
         end)
       end
