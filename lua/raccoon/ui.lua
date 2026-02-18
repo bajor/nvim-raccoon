@@ -462,56 +462,103 @@ function M.fetch_all_prs(callback)
     return
   end
 
-  local all_prs = {}
-  local all_errors = {}
-  local seen_pr = {}
+  -- Phase 1: Resolve viewer username for each unique token
+  local viewer_map = {} -- token -> username
+  local viewer_errors = {}
+  local viewer_pending = { n = #token_entries }
 
-  local function collect(prs, api_err, key, pending_ref)
-    pending_ref.n = pending_ref.n - 1
+  local function on_all_viewers_resolved()
+    -- Phase 2: Search PRs with resolved usernames
+    local all_prs = {}
+    local all_errors = {}
+    local seen_pr = {}
 
-    if api_err then
-      table.insert(all_errors, { key = key, err = api_err })
-    elseif prs then
-      for _, pr in ipairs(prs) do
-        if pr.html_url and not seen_pr[pr.html_url] then
-          seen_pr[pr.html_url] = true
-          table.insert(all_prs, pr)
+    for _, e in ipairs(viewer_errors) do
+      table.insert(all_errors, e)
+    end
+
+    local function collect(prs, api_err, key, pending_ref)
+      pending_ref.n = pending_ref.n - 1
+
+      if api_err then
+        table.insert(all_errors, { key = key, err = api_err })
+      elseif prs then
+        for _, pr in ipairs(prs) do
+          if pr.html_url and not seen_pr[pr.html_url] then
+            seen_pr[pr.html_url] = true
+            table.insert(all_prs, pr)
+          end
         end
+      end
+
+      if pending_ref.n == 0 then
+        callback(all_prs, all_errors)
       end
     end
 
-    if pending_ref.n == 0 then
-      callback(all_prs, all_errors)
+    local has_repos = cfg.repos and type(cfg.repos) == "table" and #cfg.repos > 0
+    if has_repos then
+      local searchable = {}
+      for _, repo_str in ipairs(cfg.repos) do
+        local owner, repo = repo_str:match("^([^/]+)/(.+)$")
+        if owner and repo then
+          local token = config.get_token_for_owner(cfg, owner)
+          if token and viewer_map[token] then
+            table.insert(searchable, { owner = owner, repo = repo, token = token, username = viewer_map[token], key = repo_str })
+          elseif not token then
+            table.insert(all_errors, { key = repo_str, err = string.format("No token configured for '%s'", owner) })
+          end
+        else
+          table.insert(all_errors, { key = repo_str, err = string.format("Invalid repo format: '%s' (expected 'owner/repo')", repo_str) })
+        end
+      end
+
+      if #searchable == 0 then
+        callback(all_prs, all_errors)
+        return
+      end
+
+      local pending = { n = #searchable }
+      for _, s in ipairs(searchable) do
+        api.search_repo_prs(s.owner, s.repo, s.token, s.username, function(prs, api_err)
+          collect(prs, api_err, s.key, pending)
+        end)
+      end
+    else
+      local searchable = {}
+      for _, entry in ipairs(token_entries) do
+        if viewer_map[entry.token] then
+          table.insert(searchable, entry)
+        end
+      end
+
+      if #searchable == 0 then
+        callback(all_prs, all_errors)
+        return
+      end
+
+      local pending = { n = #searchable }
+      for _, entry in ipairs(searchable) do
+        api.search_user_prs(entry.key, entry.token, viewer_map[entry.token], function(prs, api_err)
+          collect(prs, api_err, entry.key, pending)
+        end)
+      end
     end
   end
 
-  -- If repos are specified, fetch PRs only from those repos
-  local has_repos = cfg.repos and type(cfg.repos) == "table" and #cfg.repos > 0
-  if has_repos then
-    local pending = { n = #cfg.repos }
-    for _, repo_str in ipairs(cfg.repos) do
-      local owner, repo = repo_str:match("^([^/]+)/(.+)$")
-      if owner and repo then
-        local token = config.get_token_for_owner(cfg, owner)
-        if token then
-          api.search_repo_prs(owner, repo, token, function(prs, api_err)
-            collect(prs, api_err, repo_str, pending)
-          end)
-        else
-          collect(nil, string.format("No token configured for '%s'", owner), repo_str, pending)
-        end
-      else
-        collect(nil, string.format("Invalid repo format: '%s' (expected 'owner/repo')", repo_str), repo_str, pending)
+  for _, entry in ipairs(token_entries) do
+    api.get_viewer(entry.token, function(login, viewer_err)
+      if viewer_err then
+        table.insert(viewer_errors, { key = entry.key, err = "Failed to get username: " .. viewer_err })
+      elseif login then
+        viewer_map[entry.token] = login
       end
-    end
-  else
-    -- Default: search all PRs per owner/org
-    local pending = { n = #token_entries }
-    for _, entry in ipairs(token_entries) do
-      api.search_user_prs(entry.key, entry.token, function(prs, api_err)
-        collect(prs, api_err, entry.key, pending)
-      end)
-    end
+
+      viewer_pending.n = viewer_pending.n - 1
+      if viewer_pending.n == 0 then
+        on_all_viewers_resolved()
+      end
+    end)
   end
 end
 

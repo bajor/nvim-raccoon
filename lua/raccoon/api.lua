@@ -14,6 +14,9 @@ M.graphql_url = "https://api.github.com/graphql"
 ---@type { is_ghes: boolean }
 M.server_info = { is_ghes = false }
 
+--- Cache for viewer login per token (keyed by first 8 chars of token)
+local viewer_cache = {}
+
 --- Compute REST and GraphQL base URLs from a GitHub host
 ---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
 ---@return string base_url, string graphql_url
@@ -31,11 +34,12 @@ function M.init(host)
   M.server_info = { is_ghes = (host ~= "github.com") }
 end
 
---- Append GHES version hint to error messages when running against enterprise
+--- Append GHES version hint to error messages for likely version-related errors
 ---@param err string Original error message
+---@param status number|nil HTTP status code (hint only shown for 404)
 ---@return string
-local function ghes_hint(err)
-  if M.server_info.is_ghes then
+local function ghes_hint(err, status)
+  if M.server_info.is_ghes and status == 404 then
     return err .. " (raccoon requires GHES 3.9+)"
   end
   return err
@@ -98,7 +102,7 @@ local function request(opts)
   if response.status >= 400 then
     local err_body = vim.json.decode(response.body or "{}") or {}
     local message = err_body.message or "Unknown error"
-    return nil, ghes_hint(string.format("GitHub API error (%d): %s", response.status, message))
+    return nil, ghes_hint(string.format("GitHub API error (%d): %s", response.status, message), response.status)
   end
 
   local body = vim.json.decode(response.body or "[]")
@@ -142,13 +146,53 @@ local function fetch_all_pages(url, token)
   return all_items, nil
 end
 
---- Search for open PRs involving the authenticated user across an owner/org
----@param owner string GitHub user or org name (token key)
+--- Get the authenticated user's login for a token
 ---@param token string GitHub token
----@param callback fun(prs: table[]|nil, err: string|nil)
-function M.search_user_prs(owner, token, callback)
+---@param callback fun(login: string|nil, err: string|nil)
+function M.get_viewer(token, callback)
+  local cache_key = token:sub(1, 8)
+  if viewer_cache[cache_key] then
+    callback(viewer_cache[cache_key], nil)
+    return
+  end
+
   vim.schedule(function()
-    local query = string.format("type:pr state:open user:%s involves:@me", owner)
+    local url = string.format("%s/user", M.base_url)
+    local response, err = request({
+      url = url,
+      method = "GET",
+      token = token,
+    })
+
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    local login = response.data and response.data.login
+    if not login then
+      callback(nil, "Could not determine authenticated user")
+      return
+    end
+
+    viewer_cache[cache_key] = login
+    callback(login, nil)
+  end)
+end
+
+--- Clear the viewer cache (for testing)
+function M.clear_viewer_cache()
+  viewer_cache = {}
+end
+
+--- Search for open PRs involving the authenticated user across an owner/org
+---@param owner string GitHub user or org name (token key, used for error attribution)
+---@param token string GitHub token
+---@param username string Authenticated user's login
+---@param callback fun(prs: table[]|nil, err: string|nil)
+function M.search_user_prs(owner, token, username, callback)
+  vim.schedule(function()
+    local query = string.format("type:pr state:open involves:%s", username)
     local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
       M.base_url, vim.uri_encode(query))
 
@@ -180,10 +224,11 @@ end
 ---@param owner string Repository owner
 ---@param repo string Repository name
 ---@param token string GitHub token
+---@param username string Authenticated user's login
 ---@param callback fun(prs: table[]|nil, err: string|nil)
-function M.search_repo_prs(owner, repo, token, callback)
+function M.search_repo_prs(owner, repo, token, username, callback)
   vim.schedule(function()
-    local query = string.format("type:pr state:open repo:%s/%s involves:@me", owner, repo)
+    local query = string.format("type:pr state:open repo:%s/%s involves:%s", owner, repo, username)
     local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
       M.base_url, vim.uri_encode(query))
 
@@ -508,7 +553,7 @@ local function graphql_request(query, variables, token)
   if response.status >= 400 then
     local err_body = vim.json.decode(response.body or "{}") or {}
     local message = err_body.message or "Unknown error"
-    return nil, ghes_hint(string.format("GraphQL API error (%d): %s", response.status, message))
+    return nil, ghes_hint(string.format("GraphQL API error (%d): %s", response.status, message), response.status)
   end
 
   local body = vim.json.decode(response.body or "{}")

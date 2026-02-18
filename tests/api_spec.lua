@@ -49,6 +49,14 @@ describe("raccoon.api", function()
     it("has get_pr_review_threads function", function()
       assert.is_function(api.get_pr_review_threads)
     end)
+
+    it("has get_viewer function", function()
+      assert.is_function(api.get_viewer)
+    end)
+
+    it("has clear_viewer_cache function", function()
+      assert.is_function(api.clear_viewer_cache)
+    end)
   end)
 
   describe("parse_pr_url", function()

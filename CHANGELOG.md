@@ -8,19 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Fix GHES 422 errors caused by broken unauthenticated `/meta` version detection — GHES is now inferred from hostname
+- Fix GHES 422 errors when listing PRs — replace `user:{owner}` search qualifier with explicit `involves:{username}` resolved via `GET /user`
+- Replace `@me` alias in search queries with resolved username for GHES compatibility
+- Only show GHES 3.9+ version hint for 404 errors (not 422 validation errors)
 - Always send `X-GitHub-Api-Version: 2022-11-28` header (supported by both github.com and GHES 3.9+)
 - Normalize `github_host` (lowercase, strip protocol/whitespace/trailing slashes) to prevent GHES misclassification
-- Append GHES 3.9+ version hint to API error messages when running against enterprise
+
+### Added
+- `repos` config option — limit the PR list to specific repositories (`["owner/repo", ...]`) instead of showing all PRs across the entire org
+- Auto-detect authenticated username via `GET /user` — no manual username config needed
 
 ### Changed
 - Removed runtime GHES version detection in favor of deterministic host-based inference
 - Show one-time info notification when GHES mode is active
-
-### Added
-- `repos` config option — limit the PR list to specific repositories (`["owner/repo", ...]`) instead of showing all PRs across the entire org
-
-### Changed
-- PR list now only shows PRs involving you (authored, assigned, review-requested, or commented) via GitHub's `involves:@me` filter
+- PR list now only shows PRs involving you (authored, assigned, review-requested, or commented) via GitHub's `involves:{username}` filter
 
 ### Removed
 - `github_username` config option — it was only used for cosmetic comment display and is now ignored if present (backward compatible)
