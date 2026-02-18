@@ -543,10 +543,9 @@ function M.fetch_all_prs(callback)
 
       local pending = { n = #searchable }
       for _, s in ipairs(searchable) do
-        api.init(s.host)
         api.search_repo_prs(s.owner, s.repo, s.token, s.username, function(prs, api_err)
           collect(prs, api_err, s.key, pending)
-        end)
+        end, s.host)
       end
     else
       local searchable = {}
@@ -563,16 +562,14 @@ function M.fetch_all_prs(callback)
 
       local pending = { n = #searchable }
       for _, entry in ipairs(searchable) do
-        api.init(entry.host)
         api.search_user_prs(entry.token, viewer_map[entry.token], function(prs, api_err)
           collect(prs, api_err, entry.key, pending)
-        end)
+        end, entry.host)
       end
     end
   end
 
   for _, entry in ipairs(token_entries) do
-    api.init(entry.host)
     api.get_viewer(entry.token, function(login, viewer_err)
       if viewer_err then
         table.insert(viewer_errors, { key = entry.key, err = "Failed to get username: " .. viewer_err })
@@ -584,7 +581,7 @@ function M.fetch_all_prs(callback)
       if viewer_pending.n == 0 then
         on_all_viewers_resolved()
       end
-    end)
+    end, entry.host)
   end
 end
 

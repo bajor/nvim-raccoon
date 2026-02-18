@@ -94,6 +94,9 @@ local function validate_config(config)
       if type(value.token) ~= "string" or value.token == "" then
         return false, string.format("tokens['%s'].token must be a non-empty string", key)
       end
+      if value.host ~= nil and (type(value.host) ~= "string" or value.host == "") then
+        return false, string.format("tokens['%s'].host must be a non-empty string", key)
+      end
     elseif type(value) ~= "string" or value == "" then
       return false, string.format("tokens['%s'] must be a non-empty string or {token, host} table", key)
     end

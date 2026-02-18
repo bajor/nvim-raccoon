@@ -76,6 +76,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
       return
     end
 
+    api.init(state.get_github_host() or cfg.github_host)
     local token = config.get_token_for_owner(cfg, owner)
     if not token then
       vim.notify(

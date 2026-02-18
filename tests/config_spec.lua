@@ -806,6 +806,63 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
+    it("rejects table token with empty host", function()
+      local tmpfile = test_tmp_dir .. "/empty_host.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {
+          "org": {"token": "ghp_xxx", "host": ""}
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(cfg)
+      assert.is_not_nil(err)
+      assert.truthy(err:find("host"))
+
+      os.remove(tmpfile)
+    end)
+
+    it("rejects table token with whitespace-only host", function()
+      local tmpfile = test_tmp_dir .. "/whitespace_host.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {
+          "org": {"token": "ghp_xxx", "host": "   "}
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(cfg)
+      assert.is_not_nil(err)
+      assert.truthy(err:find("host"))
+
+      os.remove(tmpfile)
+    end)
+
+    it("rejects table token with protocol-only host", function()
+      local tmpfile = test_tmp_dir .. "/proto_only_host.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {
+          "org": {"token": "ghp_xxx", "host": "https://"}
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(cfg)
+      assert.is_not_nil(err)
+      assert.truthy(err:find("host"))
+
+      os.remove(tmpfile)
+    end)
+
     it("rejects table token with missing token field", function()
       local tmpfile = test_tmp_dir .. "/bad_table_token.json"
       local f = io.open(tmpfile, "w")
