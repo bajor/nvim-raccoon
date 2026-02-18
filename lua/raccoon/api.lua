@@ -509,9 +509,9 @@ function M.parse_pr_url(url, host)
     return nil, nil, nil, nil
   end
   -- Extract host from URL
-  local host, owner, repo, num = url:match("https?://([^/]+)/([^/]+)/([^/]+)/pull/(%d+)")
-  if host and owner and repo and num then
-    return owner, repo, tonumber(num), host:lower()
+  local matched_host, owner, repo, num = url:match("https?://([^/]+)/([^/]+)/([^/]+)/pull/(%d+)")
+  if matched_host and owner and repo and num then
+    return owner, repo, tonumber(num), matched_host:lower()
   end
   return nil, nil, nil, nil
 end
