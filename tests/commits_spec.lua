@@ -1309,14 +1309,6 @@ describe("raccoon.commits compute_file_stats", function()
     assert.equals(1, stats["a.lua"].deletions)
   end)
 
-  it("estimates total_lines from hunk range", function()
-    -- Hunk: @@ -1,2 +1,3 @@ -> new file has at least 1+3-1=3 lines
-    local stats = commits._compute_file_stats({
-      { filename = "a.lua", patch = "@@ -1,2 +1,3 @@\n-old\n+new\n+added" },
-    })
-    assert.equals(3, stats["a.lua"].total_lines)
-  end)
-
   it("aggregates across multiple hunks", function()
     local patch = "@@ -1,1 +1,2 @@\n-a\n+b\n+c\n@@ -10,1 +11,1 @@\n-x\n+y"
     local stats = commits._compute_file_stats({
@@ -1324,8 +1316,6 @@ describe("raccoon.commits compute_file_stats", function()
     })
     assert.equals(3, stats["multi.lua"].additions)
     assert.equals(2, stats["multi.lua"].deletions)
-    -- Last hunk: start_line=11, count=1 -> max_line=11
-    assert.equals(11, stats["multi.lua"].total_lines)
   end)
 
   it("handles files with no changes (empty patch)", function()
@@ -1334,7 +1324,6 @@ describe("raccoon.commits compute_file_stats", function()
     })
     assert.equals(0, stats["binary.bin"].additions)
     assert.equals(0, stats["binary.bin"].deletions)
-    assert.equals(0, stats["binary.bin"].total_lines)
   end)
 
   it("handles multiple files", function()
@@ -1351,38 +1340,38 @@ end)
 
 describe("raccoon.commits format_stat_bar", function()
   it("returns empty for zero changes", function()
-    local bar, add, del = commits._format_stat_bar(0, 0, 100)
+    local bar, add, del = commits._format_stat_bar(0, 0)
     assert.equals("", bar)
     assert.equals(0, add)
     assert.equals(0, del)
   end)
 
-  it("full bar when entire file is new (additions == total_lines)", function()
-    local bar, add, del = commits._format_stat_bar(20, 0, 20)
+  it("bar length equals change count when under max_width", function()
+    local bar = commits._format_stat_bar(3, 2)
+    assert.equals(5, #bar)
+  end)
+
+  it("bar length capped at STAT_BAR_MAX_WIDTH", function()
+    local bar = commits._format_stat_bar(50, 50)
     assert.equals(20, #bar)
-    assert.equals(20, add)
+  end)
+
+  it("all + for additions only", function()
+    local bar, add, del = commits._format_stat_bar(5, 0)
+    assert.equals("+++++", bar)
+    assert.equals(5, add)
     assert.equals(0, del)
-    assert.is_truthy(bar:match("^%++$"))
   end)
 
-  it("full bar when entire file is deleted (deletions == total_lines)", function()
-    local bar, add, del = commits._format_stat_bar(0, 20, 20)
-    assert.equals(20, #bar)
+  it("all - for deletions only", function()
+    local bar, add, del = commits._format_stat_bar(0, 3)
+    assert.equals("---", bar)
     assert.equals(0, add)
-    assert.equals(20, del)
-    assert.is_truthy(bar:match("^%-+$"))
+    assert.equals(3, del)
   end)
 
-  it("short bar for small changes in large file", function()
-    -- 2 changes in 200-line file = 1% -> bar_len = max(1, round(2/200*20)) = 1
-    local bar, add, del = commits._format_stat_bar(1, 1, 200)
-    assert.is_true(#bar <= 3)
-    assert.is_true(#bar >= 1)
-  end)
-
-  it("proportional split within the bar", function()
-    -- 10 adds + 10 dels in 20-line file = 100% -> full bar, split 50/50
-    local bar, add, del = commits._format_stat_bar(10, 10, 20)
+  it("proportional split for mixed changes", function()
+    local bar, add, del = commits._format_stat_bar(10, 10)
     assert.equals(20, #bar)
     assert.equals(10, add)
     assert.equals(10, del)
@@ -1390,29 +1379,27 @@ describe("raccoon.commits format_stat_bar", function()
   end)
 
   it("ensures at least 1 char for each non-zero type", function()
-    -- 1 add + 19 dels in 20-line file -> bar should have at least 1 + and 1 -
-    local bar, add, del = commits._format_stat_bar(1, 19, 20)
+    -- 1 add + 1 del -> bar_len = max(2,2) = 2
+    local bar, add, del = commits._format_stat_bar(1, 1)
     assert.is_true(add >= 1)
     assert.is_true(del >= 1)
   end)
 
-  it("bar length scales with change proportion", function()
-    -- 10 changes in 100-line file = 10% -> bar_len ~ 2
-    local bar_small = commits._format_stat_bar(5, 5, 100)
-    -- 100 changes in 100-line file = 100% -> bar_len = 20
-    local bar_full = commits._format_stat_bar(50, 50, 100)
-    assert.is_true(#bar_small < #bar_full)
-  end)
-
-  it("bar has at least 1 char for any non-zero changes", function()
-    local bar = commits._format_stat_bar(1, 0, 10000)
-    assert.is_true(#bar >= 1)
-  end)
-
-  it("defaults total_lines to changes when nil", function()
-    -- nil total_lines -> treated as total_lines == changes -> full bar
-    local bar = commits._format_stat_bar(10, 10, nil)
+  it("both types shown even with extreme ratio", function()
+    -- 1 add + 19 dels -> bar_len = 20, add should still get at least 1 char
+    local bar, add, del = commits._format_stat_bar(1, 19)
     assert.equals(20, #bar)
+    assert.is_true(add >= 1)
+    assert.is_true(del >= 1)
+  end)
+
+  it("small mixed changes get bar_len of at least 2", function()
+    -- 1 add + 1 del: would be bar_len=2, both visible
+    local bar, add, del = commits._format_stat_bar(1, 1)
+    assert.equals(2, #bar)
+    assert.equals(1, add)
+    assert.equals(1, del)
+    assert.equals("+-", bar)
   end)
 end)
 
@@ -1421,7 +1408,7 @@ describe("raccoon.commits render_tree_node with file_stats", function()
     local tree = commits._build_file_tree({ "a.lua", "b.lua" })
     local lines = {}
     local line_paths = {}
-    local file_stats = { ["a.lua"] = { additions = 5, deletions = 3, total_lines = 8 } }
+    local file_stats = { ["a.lua"] = { additions = 5, deletions = 3 } }
     local stat_lines = {}
     commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
     -- a.lua + stat bar + b.lua = 3 lines
@@ -1435,7 +1422,7 @@ describe("raccoon.commits render_tree_node with file_stats", function()
     local tree = commits._build_file_tree({ "a.lua", "b.lua" })
     local lines = {}
     local line_paths = {}
-    local file_stats = { ["a.lua"] = { additions = 5, deletions = 3, total_lines = 8 } }
+    local file_stats = { ["a.lua"] = { additions = 5, deletions = 3 } }
     local stat_lines = {}
     commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
     -- Only 2 files mapped, not the stat line
@@ -1450,7 +1437,7 @@ describe("raccoon.commits render_tree_node with file_stats", function()
     local tree = commits._build_file_tree({ "x.lua" })
     local lines = {}
     local line_paths = {}
-    local file_stats = { ["x.lua"] = { additions = 3, deletions = 7, total_lines = 10 } }
+    local file_stats = { ["x.lua"] = { additions = 3, deletions = 7 } }
     local stat_lines = {}
     commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
     assert.equals(2, #lines)
@@ -1484,7 +1471,7 @@ describe("raccoon.commits render_tree_node with file_stats", function()
     local tree = commits._build_file_tree({ "a.lua" })
     local lines = {}
     local line_paths = {}
-    local file_stats = { ["a.lua"] = { additions = 0, deletions = 0, total_lines = 50 } }
+    local file_stats = { ["a.lua"] = { additions = 0, deletions = 0 } }
     local stat_lines = {}
     commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
     assert.equals(1, #lines)
@@ -1495,8 +1482,8 @@ describe("raccoon.commits render_tree_node with file_stats", function()
     local lines = {}
     local line_paths = {}
     local file_stats = {
-      ["a.lua"] = { additions = 5, deletions = 5, total_lines = 10 },
-      ["b.lua"] = { additions = 3, deletions = 0, total_lines = 3 },
+      ["a.lua"] = { additions = 5, deletions = 5 },
+      ["b.lua"] = { additions = 3, deletions = 0 },
     }
     local stat_lines = {}
     commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
@@ -1506,21 +1493,20 @@ describe("raccoon.commits render_tree_node with file_stats", function()
     assert.is_truthy(lines[4]:match("^   "))
   end)
 
-  it("produces shorter bars for small changes in large files", function()
-    local tree = commits._build_file_tree({ "big.lua", "small.lua" })
+  it("produces shorter bars for fewer changes", function()
+    local tree = commits._build_file_tree({ "few.lua", "many.lua" })
     local lines = {}
     local line_paths = {}
     local file_stats = {
-      ["big.lua"] = { additions = 2, deletions = 0, total_lines = 500 },
-      ["small.lua"] = { additions = 10, deletions = 0, total_lines = 10 },
+      ["few.lua"] = { additions = 2, deletions = 0 },
+      ["many.lua"] = { additions = 15, deletions = 5 },
     }
     local stat_lines = {}
     commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
-    -- big.lua bar should be shorter than small.lua bar
-    local big_stat = stat_lines[1]    -- after big.lua (line 0)
-    local small_stat = stat_lines[3]  -- after small.lua (line 2)
-    assert.is_not_nil(big_stat)
-    assert.is_not_nil(small_stat)
-    assert.is_true(big_stat.add_chars < small_stat.add_chars)
+    local few_stat = stat_lines[1]
+    local many_stat = stat_lines[3]
+    assert.is_not_nil(few_stat)
+    assert.is_not_nil(many_stat)
+    assert.is_true(few_stat.add_chars < many_stat.add_chars + many_stat.del_chars)
   end)
 end)
