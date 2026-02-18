@@ -199,6 +199,50 @@ describe("raccoon.git", function()
   end)
 end)
 
+-- Command format tests (mock_jobstart)
+describe("raccoon.git command format", function()
+  local mocks = require("tests.helpers.mocks")
+  local recorded
+
+  before_each(function()
+    recorded = mocks.mock_jobstart({})
+  end)
+
+  after_each(function()
+    mocks.restore()
+  end)
+
+  it("clone includes core.longpaths flag", function()
+    git.clone("https://github.com/o/r.git", "/tmp/dest", "main", function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("^git %-c core%.longpaths=true clone"))
+  end)
+
+  it("get_current_branch includes core.longpaths flag", function()
+    git.get_current_branch("/tmp", function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("^git %-c core%.longpaths=true rev%-parse"))
+  end)
+
+  it("get_current_sha includes core.longpaths flag", function()
+    git.get_current_sha("/tmp", function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("^git %-c core%.longpaths=true rev%-parse HEAD"))
+  end)
+
+  it("clone without branch omits --branch flag", function()
+    git.clone("https://github.com/o/r.git", "/tmp/dest", nil, function() end)
+    assert.equals(1, #recorded)
+    assert.is_nil(recorded[1].cmd:match("%-%-branch"))
+  end)
+
+  it("clone with branch includes --branch flag", function()
+    git.clone("https://github.com/o/r.git", "/tmp/dest", "feat", function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("%-%-branch feat"))
+  end)
+end)
+
 -- Git error handling tests
 describe("raccoon.git error handling", function()
   describe("get_current_branch error cases", function()
