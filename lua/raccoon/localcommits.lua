@@ -42,6 +42,7 @@ local function make_initial_state()
     grid_bufs = {},
     all_hunks = {},
     commit_files = {},
+    file_stats = {},
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
@@ -58,6 +59,7 @@ local function make_initial_state()
     cached_sha = nil,
     cached_tree_lines = nil,
     cached_line_paths = nil,
+    cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
     pr_was_active = false,
@@ -162,19 +164,32 @@ local function select_commit(index)
     end
 
     local_state.commit_files = {}
-    for _, file in ipairs(files or {}) do
-      local_state.commit_files[file.filename] = true
-    end
-
+    local_state.file_stats = {}
     local_state.all_hunks = {}
     local_state.cached_sha = nil
-    build_filetree_cache()
+    local_state.cached_stat_lines = nil
     for _, file in ipairs(files or {}) do
+      local_state.commit_files[file.filename] = true
+      local additions = 0
+      local deletions = 0
       local hunks = diff.parse_patch(file.patch)
       for _, hunk in ipairs(hunks) do
-        table.insert(local_state.all_hunks, { hunk = hunk, filename = file.filename })
+        table.insert(local_state.all_hunks, {
+          hunk = hunk, filename = file.filename,
+        })
+        for _, line_data in ipairs(hunk.lines) do
+          if line_data.type == "add" then
+            additions = additions + 1
+          elseif line_data.type == "del" then
+            deletions = deletions + 1
+          end
+        end
       end
+      local_state.file_stats[file.filename] = {
+        additions = additions, deletions = deletions,
+      }
     end
+    build_filetree_cache()
 
     if #local_state.all_hunks == 0 then
       for i, buf in ipairs(local_state.grid_bufs) do

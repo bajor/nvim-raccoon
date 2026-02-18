@@ -1289,3 +1289,224 @@ describe("raccoon.commits close_filetree", function()
     assert.is_nil(cs.filetree_buf)
   end)
 end)
+
+describe("raccoon.commits compute_file_stats", function()
+  it("returns empty table for nil input", function()
+    local stats = commits._compute_file_stats(nil)
+    assert.same({}, stats)
+  end)
+
+  it("returns empty table for empty input", function()
+    local stats = commits._compute_file_stats({})
+    assert.same({}, stats)
+  end)
+
+  it("counts additions and deletions from patch", function()
+    local stats = commits._compute_file_stats({
+      { filename = "a.lua", patch = "@@ -1,2 +1,3 @@\n-old\n+new\n+added" },
+    })
+    assert.equals(2, stats["a.lua"].additions)
+    assert.equals(1, stats["a.lua"].deletions)
+  end)
+
+  it("aggregates across multiple hunks", function()
+    local patch = "@@ -1,1 +1,2 @@\n-a\n+b\n+c\n@@ -10,1 +11,1 @@\n-x\n+y"
+    local stats = commits._compute_file_stats({
+      { filename = "multi.lua", patch = patch },
+    })
+    assert.equals(3, stats["multi.lua"].additions)
+    assert.equals(2, stats["multi.lua"].deletions)
+  end)
+
+  it("handles files with no changes (empty patch)", function()
+    local stats = commits._compute_file_stats({
+      { filename = "binary.bin", patch = "" },
+    })
+    assert.equals(0, stats["binary.bin"].additions)
+    assert.equals(0, stats["binary.bin"].deletions)
+  end)
+
+  it("handles multiple files", function()
+    local stats = commits._compute_file_stats({
+      { filename = "a.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" },
+      { filename = "b.lua", patch = "@@ -1,1 +1,2 @@\n context\n+added" },
+    })
+    assert.equals(1, stats["a.lua"].additions)
+    assert.equals(1, stats["a.lua"].deletions)
+    assert.equals(1, stats["b.lua"].additions)
+    assert.equals(0, stats["b.lua"].deletions)
+  end)
+end)
+
+describe("raccoon.commits format_stat_bar", function()
+  it("returns empty for zero changes", function()
+    local bar, add, del = commits._format_stat_bar(0, 0)
+    assert.equals("", bar)
+    assert.equals(0, add)
+    assert.equals(0, del)
+  end)
+
+  it("bar length equals change count when under max_width", function()
+    local bar = commits._format_stat_bar(3, 2)
+    assert.equals(5, #bar)
+  end)
+
+  it("bar length capped at STAT_BAR_MAX_WIDTH", function()
+    local bar = commits._format_stat_bar(50, 50)
+    assert.equals(20, #bar)
+  end)
+
+  it("all + for additions only", function()
+    local bar, add, del = commits._format_stat_bar(5, 0)
+    assert.equals("+++++", bar)
+    assert.equals(5, add)
+    assert.equals(0, del)
+  end)
+
+  it("all - for deletions only", function()
+    local bar, add, del = commits._format_stat_bar(0, 3)
+    assert.equals("---", bar)
+    assert.equals(0, add)
+    assert.equals(3, del)
+  end)
+
+  it("proportional split for mixed changes", function()
+    local bar, add, del = commits._format_stat_bar(10, 10)
+    assert.equals(20, #bar)
+    assert.equals(10, add)
+    assert.equals(10, del)
+    assert.equals(string.rep("+", 10) .. string.rep("-", 10), bar)
+  end)
+
+  it("ensures at least 1 char for each non-zero type", function()
+    -- 1 add + 1 del -> bar_len = max(2,2) = 2
+    local bar, add, del = commits._format_stat_bar(1, 1)
+    assert.is_true(add >= 1)
+    assert.is_true(del >= 1)
+  end)
+
+  it("both types shown even with extreme ratio", function()
+    -- 1 add + 19 dels -> bar_len = 20, add should still get at least 1 char
+    local bar, add, del = commits._format_stat_bar(1, 19)
+    assert.equals(20, #bar)
+    assert.is_true(add >= 1)
+    assert.is_true(del >= 1)
+  end)
+
+  it("small mixed changes get bar_len of at least 2", function()
+    -- 1 add + 1 del: would be bar_len=2, both visible
+    local bar, add, del = commits._format_stat_bar(1, 1)
+    assert.equals(2, #bar)
+    assert.equals(1, add)
+    assert.equals(1, del)
+    assert.equals("+-", bar)
+  end)
+end)
+
+describe("raccoon.commits render_tree_node with file_stats", function()
+  it("inserts stat lines below changed files", function()
+    local tree = commits._build_file_tree({ "a.lua", "b.lua" })
+    local lines = {}
+    local line_paths = {}
+    local file_stats = { ["a.lua"] = { additions = 5, deletions = 3 } }
+    local stat_lines = {}
+    commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
+    -- a.lua + stat bar + b.lua = 3 lines
+    assert.equals(3, #lines)
+    assert.is_truthy(lines[1]:match("a.lua"))
+    assert.is_truthy(lines[2]:match("[%+%-]"))
+    assert.is_truthy(lines[3]:match("b.lua"))
+  end)
+
+  it("does not add stat lines to line_paths", function()
+    local tree = commits._build_file_tree({ "a.lua", "b.lua" })
+    local lines = {}
+    local line_paths = {}
+    local file_stats = { ["a.lua"] = { additions = 5, deletions = 3 } }
+    local stat_lines = {}
+    commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
+    -- Only 2 files mapped, not the stat line
+    local mapped = 0
+    for _ in pairs(line_paths) do mapped = mapped + 1 end
+    assert.equals(2, mapped)
+    -- Stat line index (1, 0-based) should NOT be in line_paths
+    assert.is_nil(line_paths[1])
+  end)
+
+  it("records stat line metadata in stat_lines table", function()
+    local tree = commits._build_file_tree({ "x.lua" })
+    local lines = {}
+    local line_paths = {}
+    local file_stats = { ["x.lua"] = { additions = 3, deletions = 7 } }
+    local stat_lines = {}
+    commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
+    assert.equals(2, #lines)
+    -- stat_lines[1] (0-based) should have metadata
+    local stat = stat_lines[1]
+    assert.is_not_nil(stat)
+    assert.is_true(stat.add_chars > 0)
+    assert.is_true(stat.del_chars > 0)
+    assert.is_true(stat.prefix_len > 0)
+  end)
+
+  it("does not insert stat lines for files without stats", function()
+    local tree = commits._build_file_tree({ "a.lua", "b.lua" })
+    local lines = {}
+    local line_paths = {}
+    local file_stats = {}
+    local stat_lines = {}
+    commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
+    assert.equals(2, #lines)
+  end)
+
+  it("does not insert stat lines when file_stats is nil", function()
+    local tree = commits._build_file_tree({ "a.lua", "b.lua" })
+    local lines = {}
+    local line_paths = {}
+    commits._render_tree_node(tree, "", lines, line_paths, nil, nil)
+    assert.equals(2, #lines)
+  end)
+
+  it("skips stat line for files with zero changes", function()
+    local tree = commits._build_file_tree({ "a.lua" })
+    local lines = {}
+    local line_paths = {}
+    local file_stats = { ["a.lua"] = { additions = 0, deletions = 0 } }
+    local stat_lines = {}
+    commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
+    assert.equals(1, #lines)
+  end)
+
+  it("uses correct tree prefix for stat lines", function()
+    local tree = commits._build_file_tree({ "a.lua", "b.lua" })
+    local lines = {}
+    local line_paths = {}
+    local file_stats = {
+      ["a.lua"] = { additions = 5, deletions = 5 },
+      ["b.lua"] = { additions = 3, deletions = 0 },
+    }
+    local stat_lines = {}
+    commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
+    -- a.lua is not last -> stat bar prefix has "│  "
+    assert.is_truthy(lines[2]:match("^│  "))
+    -- b.lua is last -> stat bar prefix has "   "
+    assert.is_truthy(lines[4]:match("^   "))
+  end)
+
+  it("produces shorter bars for fewer changes", function()
+    local tree = commits._build_file_tree({ "few.lua", "many.lua" })
+    local lines = {}
+    local line_paths = {}
+    local file_stats = {
+      ["few.lua"] = { additions = 2, deletions = 0 },
+      ["many.lua"] = { additions = 15, deletions = 5 },
+    }
+    local stat_lines = {}
+    commits._render_tree_node(tree, "", lines, line_paths, file_stats, stat_lines)
+    local few_stat = stat_lines[1]
+    local many_stat = stat_lines[3]
+    assert.is_not_nil(few_stat)
+    assert.is_not_nil(many_stat)
+    assert.is_true(few_stat.add_chars < many_stat.add_chars + many_stat.del_chars)
+  end)
+end)

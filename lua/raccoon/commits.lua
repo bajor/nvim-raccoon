@@ -26,6 +26,7 @@ local commit_state = {
   grid_bufs = {},
   all_hunks = {},
   commit_files = {},
+  file_stats = {},
   current_page = 1,
   saved_buf = nil,
   saved_laststatus = nil,
@@ -42,6 +43,7 @@ local commit_state = {
   cached_sha = nil,
   cached_tree_lines = nil,
   cached_line_paths = nil,
+  cached_stat_lines = nil,
   cached_file_count = nil,
   focus_target = "sidebar",
 }
@@ -62,6 +64,7 @@ local function reset_state()
     grid_bufs = {},
     all_hunks = {},
     commit_files = {},
+    file_stats = {},
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
@@ -78,6 +81,7 @@ local function reset_state()
     cached_sha = nil,
     cached_tree_lines = nil,
     cached_line_paths = nil,
+    cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
   }
@@ -185,22 +189,30 @@ local function select_commit(index)
       return
     end
 
-    -- Track all files in commit
+    -- Track files, compute stats, and build flat hunk list in a single pass
     commit_state.commit_files = {}
-    for _, file in ipairs(files or {}) do
-      commit_state.commit_files[file.filename] = true
-    end
-
-    -- Parse all files into flat hunk list
+    commit_state.file_stats = {}
     commit_state.all_hunks = {}
     commit_state.cached_sha = nil
-    build_filetree_cache()
+    commit_state.cached_stat_lines = nil
     for _, file in ipairs(files or {}) do
+      commit_state.commit_files[file.filename] = true
+      local additions = 0
+      local deletions = 0
       local hunks = diff.parse_patch(file.patch)
       for _, hunk in ipairs(hunks) do
         table.insert(commit_state.all_hunks, { hunk = hunk, filename = file.filename })
+        for _, line_data in ipairs(hunk.lines) do
+          if line_data.type == "add" then
+            additions = additions + 1
+          elseif line_data.type == "del" then
+            deletions = deletions + 1
+          end
+        end
       end
+      commit_state.file_stats[file.filename] = { additions = additions, deletions = deletions }
     end
+    build_filetree_cache()
 
     if #commit_state.all_hunks == 0 then
       for i, buf in ipairs(commit_state.grid_bufs) do
@@ -531,6 +543,8 @@ M._setup_keymaps = setup_keymaps
 M._render_filetree = function() ui.render_filetree(commit_state) end
 M._build_file_tree = ui.build_file_tree
 M._render_tree_node = ui.render_tree_node
+M._compute_file_stats = ui.compute_file_stats
+M._format_stat_bar = ui.format_stat_bar
 M._close_filetree = function() ui.close_win_pair(commit_state, "filetree_win", "filetree_buf") end
 
 return M

@@ -7,6 +7,60 @@ local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 
 M.SIDEBAR_WIDTH = 50
+M.STAT_BAR_MAX_WIDTH = 20
+
+--- Compute per-file addition/deletion counts from diff patches
+---@param files table[] Array of {filename, patch}
+---@return table<string, {additions: number, deletions: number}>
+function M.compute_file_stats(files)
+  local stats = {}
+  for _, file in ipairs(files or {}) do
+    local additions = 0
+    local deletions = 0
+    local hunks = diff.parse_patch(file.patch)
+    for _, hunk in ipairs(hunks) do
+      for _, line_data in ipairs(hunk.lines) do
+        if line_data.type == "add" then
+          additions = additions + 1
+        elseif line_data.type == "del" then
+          deletions = deletions + 1
+        end
+      end
+    end
+    stats[file.filename] = { additions = additions, deletions = deletions }
+  end
+  return stats
+end
+
+--- Format a diff size bar. Bar length scales with total change count (more changes = longer bar,
+--- capped at STAT_BAR_MAX_WIDTH). Within the bar, + and - are split proportionally.
+---@param additions number
+---@param deletions number
+---@return string bar The bar string (e.g. "+++----")
+---@return number add_chars Count of + characters
+---@return number del_chars Count of - characters
+function M.format_stat_bar(additions, deletions)
+  local changes = additions + deletions
+  if changes == 0 then return "", 0, 0 end
+  local max_width = M.STAT_BAR_MAX_WIDTH
+  local bar_len = math.min(changes, max_width)
+  -- Ensure both types visible when both exist
+  if additions > 0 and deletions > 0 then
+    bar_len = math.max(2, bar_len)
+  end
+  -- Split bar into + and - proportionally
+  local add_chars = math.floor(additions / changes * bar_len + 0.5)
+  local del_chars = bar_len - add_chars
+  -- Guarantee at least 1 char for each non-zero type
+  if additions > 0 and add_chars == 0 then
+    add_chars = 1
+    del_chars = bar_len - 1
+  elseif deletions > 0 and del_chars == 0 then
+    del_chars = 1
+    add_chars = bar_len - 1
+  end
+  return string.rep("+", add_chars) .. string.rep("-", del_chars), add_chars, del_chars
+end
 
 --- Create a scratch buffer (nofile, wipe on hide)
 ---@return number buf
@@ -167,7 +221,9 @@ end
 ---@param prefix string Indentation prefix for current depth
 ---@param lines string[] Output lines array (mutated)
 ---@param line_paths table<number, string> Output map: line index -> file path (mutated)
-function M.render_tree_node(node, prefix, lines, line_paths)
+---@param file_stats? table<string, {additions: number, deletions: number}> Per-file diff stats
+---@param stat_lines? table<number, table> Output stat line metadata (mutated)
+function M.render_tree_node(node, prefix, lines, line_paths, file_stats, stat_lines)
   local dirs = {}
   local files = {}
   for _, child in ipairs(node.children) do
@@ -191,10 +247,20 @@ function M.render_tree_node(node, prefix, lines, line_paths)
     table.insert(lines, prefix .. connector .. display)
     if child.path then
       line_paths[#lines - 1] = child.path
+      -- Insert stat bar below changed files
+      if file_stats and stat_lines then
+        local stat = file_stats[child.path]
+        if stat and (stat.additions > 0 or stat.deletions > 0) then
+          local bar_prefix = prefix .. (is_last and "   " or "│  ")
+          local bar, add_chars, del_chars = M.format_stat_bar(stat.additions, stat.deletions)
+          table.insert(lines, bar_prefix .. bar)
+          stat_lines[#lines - 1] = { prefix_len = #bar_prefix, add_chars = add_chars, del_chars = del_chars }
+        end
+      end
     end
     if child.children then
       local next_prefix = prefix .. (is_last and "   " or "│  ")
-      M.render_tree_node(child, next_prefix, lines, line_paths)
+      M.render_tree_node(child, next_prefix, lines, line_paths, file_stats, stat_lines)
     end
   end
 end
@@ -569,13 +635,15 @@ function M.build_filetree_cache(s, repo_path, sha)
     local tree = M.build_file_tree(raw)
     local lines = {}
     local line_paths = {}
-    M.render_tree_node(tree, "", lines, line_paths)
+    local stat_lines = {}
+    M.render_tree_node(tree, "", lines, line_paths, s.file_stats, stat_lines)
     if #lines == 0 then
       lines = { "  No files" }
     end
 
     s.cached_tree_lines = lines
     s.cached_line_paths = line_paths
+    s.cached_stat_lines = stat_lines
     s.cached_file_count = #raw
     M.render_filetree(s)
   end)
@@ -620,6 +688,22 @@ function M.render_filetree(s)
       hl_group = "RaccoonFileNormal"
     end
     pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl_group, line_idx, 0, -1)
+  end
+
+  -- Apply split highlighting for diff stat bars (green +, red -)
+  local stat_lines = s.cached_stat_lines
+  if stat_lines then
+    for line_idx, stat in pairs(stat_lines) do
+      local start = stat.prefix_len
+      if stat.add_chars > 0 then
+        pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "RaccoonAddSign", line_idx, start, start + stat.add_chars)
+      end
+      if stat.del_chars > 0 then
+        local del_start = start + stat.add_chars
+        local del_end = del_start + stat.del_chars
+        pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "RaccoonDeleteSign", line_idx, del_start, del_end)
+      end
+    end
   end
 
   local win = s.filetree_win
