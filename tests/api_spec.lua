@@ -158,9 +158,12 @@ describe("raccoon.api", function()
       end
     end)
 
-    it("returns nil for enterprise URL without matching host", function()
-      local owner, repo, number = api.parse_pr_url("https://github.mycompany.com/owner/repo/pull/42")
-      assert.is_nil(owner)
+    it("extracts host from enterprise URL when no host hint given", function()
+      local owner, repo, number, host = api.parse_pr_url("https://github.mycompany.com/owner/repo/pull/42")
+      assert.equals("owner", owner)
+      assert.equals("repo", repo)
+      assert.equals(42, number)
+      assert.equals("github.mycompany.com", host)
     end)
 
     it("parses enterprise GitHub URL with matching host", function()
