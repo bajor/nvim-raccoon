@@ -34,7 +34,7 @@ This uses `github.com` as the host, auto-discovers PRs from your token's permiss
 |------|---------|----------|
 | object | `{}` | Yes |
 
-A map of owner/org names to GitHub personal access tokens. Each owner/org you want to access needs a matching token entry.
+A map of owner/org names to GitHub personal access tokens. Each key is the **owner or org name from the repo URL** — the first path segment after the host in `github.com/{owner}/repo`. Each owner/org you want to access needs a matching token entry.
 
 Tokens are used for both API authentication (`Authorization: Bearer <token>`) and HTTPS git operations (cloning, fetching).
 
