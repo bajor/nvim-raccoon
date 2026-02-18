@@ -55,6 +55,22 @@ For GitHub Enterprise, create the token on your enterprise instance (e.g. `githu
 
 ## Optional fields
 
+### `repos`
+
+| Type | Default |
+|------|---------|
+| array | `[]` |
+
+Limit the `:Raccoon prs` list to specific repositories. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). When set, only open PRs from these repos are shown. When empty or omitted, PRs from all repos accessible by each token are shown.
+
+```json
+{
+  "repos": ["acme-corp/backend", "acme-corp/frontend"]
+}
+```
+
+The owner in each repo entry must have a matching token in `tokens`.
+
 ### `github_host`
 
 | Type | Default |
@@ -188,6 +204,7 @@ Partial overrides are merged with defaults — you only need to specify keys you
     "your-username": "ghp_personal_token",
     "work-org": "ghp_work_token"
   },
+  "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
   "pull_changes_interval": 120,
   "commit_viewer": {
@@ -212,7 +229,8 @@ Requires GHES 3.9 or newer.
   "tokens": {
     "jdoe": "ghp_xxxxxxxxxxxxxxxxxxxx",
     "platform-team": "ghp_yyyyyyyyyyyyyyyyyyyy"
-  }
+  },
+  "repos": ["platform-team/core-api", "platform-team/infra"]
 }
 ```
 

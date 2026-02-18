@@ -86,6 +86,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 |-------|------|---------|-------------|
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org, e.g. `{"my-org": "ghp_..."}` |
+| `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]` |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `pull_changes_interval` | number | `300` | How often (in seconds) to auto-sync with remote |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
@@ -125,6 +126,7 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
     "your-username": "ghp_personal_token",
     "work-org": "ghp_work_token"
   },
+  "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
   "pull_changes_interval": 120,
   "commit_viewer": {

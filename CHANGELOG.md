@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Removed runtime GHES version detection in favor of deterministic host-based inference
 - Show one-time info notification when GHES mode is active
 
+### Added
+- `repos` config option — limit the PR list to specific repositories (`["owner/repo", ...]`) instead of showing all PRs across the entire org
+
 ### Removed
 - `github_username` config option — it was only used for cosmetic comment display and is now ignored if present (backward compatible)
 

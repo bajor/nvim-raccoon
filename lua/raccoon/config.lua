@@ -1,6 +1,7 @@
 ---@class RaccoonConfig
 ---@field github_host string GitHub host (default: "github.com", set for GitHub Enterprise)
 ---@field tokens table<string, string> Per-owner/org tokens (owner -> token)
+---@field repos string[] Optional list of repos to show PRs from ("owner/repo" format)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field pull_changes_interval number Auto-sync interval in seconds (default: 300)
 
@@ -22,6 +23,7 @@ end
 M.defaults = {
   github_host = "github.com",
   tokens = {},
+  repos = {},
   clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
   pull_changes_interval = 300,
   commit_viewer = {

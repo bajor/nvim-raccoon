@@ -464,29 +464,54 @@ function M.fetch_all_prs(callback)
 
   local all_prs = {}
   local all_errors = {}
-  local pending = #token_entries
   local seen_pr = {}
 
-  for _, entry in ipairs(token_entries) do
-    api.search_user_prs(entry.key, entry.token, function(prs, api_err)
-      pending = pending - 1
+  local function collect(prs, api_err, key, pending_ref)
+    pending_ref.n = pending_ref.n - 1
 
-      if api_err then
-        table.insert(all_errors, { key = entry.key, err = api_err })
-      elseif prs then
-        for _, pr in ipairs(prs) do
-          -- Deduplicate by html_url
-          if pr.html_url and not seen_pr[pr.html_url] then
-            seen_pr[pr.html_url] = true
-            table.insert(all_prs, pr)
-          end
+    if api_err then
+      table.insert(all_errors, { key = key, err = api_err })
+    elseif prs then
+      for _, pr in ipairs(prs) do
+        if pr.html_url and not seen_pr[pr.html_url] then
+          seen_pr[pr.html_url] = true
+          table.insert(all_prs, pr)
         end
       end
+    end
 
-      if pending == 0 then
-        callback(all_prs, all_errors)
+    if pending_ref.n == 0 then
+      callback(all_prs, all_errors)
+    end
+  end
+
+  -- If repos are specified, fetch PRs only from those repos
+  local has_repos = cfg.repos and type(cfg.repos) == "table" and #cfg.repos > 0
+  if has_repos then
+    local pending = { n = #cfg.repos }
+    for _, repo_str in ipairs(cfg.repos) do
+      local owner, repo = repo_str:match("^([^/]+)/(.+)$")
+      if owner and repo then
+        local token = config.get_token_for_owner(cfg, owner)
+        if token then
+          api.list_prs(owner, repo, token, function(prs, api_err)
+            collect(prs, api_err, repo_str, pending)
+          end)
+        else
+          collect(nil, string.format("No token configured for '%s'", owner), repo_str, pending)
+        end
+      else
+        collect(nil, string.format("Invalid repo format: '%s' (expected 'owner/repo')", repo_str), repo_str, pending)
       end
-    end)
+    end
+  else
+    -- Default: search all PRs per owner/org
+    local pending = { n = #token_entries }
+    for _, entry in ipairs(token_entries) do
+      api.search_user_prs(entry.key, entry.token, function(prs, api_err)
+        collect(prs, api_err, entry.key, pending)
+      end)
+    end
   end
 end
 

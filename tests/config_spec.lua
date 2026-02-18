@@ -21,16 +21,20 @@ describe("raccoon.config", function()
   describe("defaults", function()
     it("has all required default fields", function()
       assert.is_table(config.defaults.tokens)
+      assert.is_table(config.defaults.repos)
       assert.is_string(config.defaults.clone_root)
       assert.is_number(config.defaults.pull_changes_interval)
       assert.equals(300, config.defaults.pull_changes_interval)
+    end)
+
+    it("repos defaults to empty table", function()
+      assert.same({}, config.defaults.repos)
     end)
 
     it("does not contain dead config fields", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
       assert.is_nil(config.defaults.notifications)
-      assert.is_nil(config.defaults.repos)
       assert.is_nil(config.defaults.poll_interval_seconds)
     end)
   end)
@@ -175,6 +179,38 @@ describe("raccoon.config", function()
       assert.equals("ghp_test123", cfg.tokens["owner"])
       -- Check tilde expansion
       assert.is_not_nil(cfg.clone_root:match("^/"))
+
+      os.remove(tmpfile)
+    end)
+
+    it("loads config with repos filter", function()
+      local tmpfile = test_tmp_dir .. "/repos_filter.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"acme": "ghp_xxx"},
+        "repos": ["acme/backend", "acme/frontend"]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.same({"acme/backend", "acme/frontend"}, cfg.repos)
+
+      os.remove(tmpfile)
+    end)
+
+    it("defaults repos to empty table when not specified", function()
+      local tmpfile = test_tmp_dir .. "/no_repos.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.same({}, cfg.repos)
 
       os.remove(tmpfile)
     end)
