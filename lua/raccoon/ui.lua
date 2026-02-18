@@ -465,18 +465,14 @@ function M.fetch_all_prs(callback)
     return
   end
 
-  api.init(cfg.github_host)
-
-  -- Collect unique tokens: {key, token} pairs
+  -- Collect unique tokens: {key, token, host} entries
   local token_entries = {}
   local seen = {}
 
-  if cfg.tokens and type(cfg.tokens) == "table" then
-    for key, token in pairs(cfg.tokens) do
-      if not seen[token] then
-        table.insert(token_entries, { key = key, token = token })
-        seen[token] = true
-      end
+  for _, entry in ipairs(config.get_all_tokens(cfg)) do
+    if not seen[entry.token] then
+      table.insert(token_entries, entry)
+      seen[entry.token] = true
     end
   end
 
@@ -525,10 +521,10 @@ function M.fetch_all_prs(callback)
       for _, repo_str in ipairs(cfg.repos) do
         local owner, repo = repo_str:match("^([^/]+)/(.+)$")
         if owner and repo then
-          local token = config.get_token_for_owner(cfg, owner)
+          local token, host = config.get_token_for_owner(cfg, owner)
           if token and viewer_map[token] then
             table.insert(searchable, {
-              owner = owner, repo = repo, token = token,
+              owner = owner, repo = repo, token = token, host = host,
               username = viewer_map[token], key = repo_str,
             })
           elseif not token then
@@ -547,6 +543,7 @@ function M.fetch_all_prs(callback)
 
       local pending = { n = #searchable }
       for _, s in ipairs(searchable) do
+        api.init(s.host)
         api.search_repo_prs(s.owner, s.repo, s.token, s.username, function(prs, api_err)
           collect(prs, api_err, s.key, pending)
         end)
@@ -566,6 +563,7 @@ function M.fetch_all_prs(callback)
 
       local pending = { n = #searchable }
       for _, entry in ipairs(searchable) do
+        api.init(entry.host)
         api.search_user_prs(entry.token, viewer_map[entry.token], function(prs, api_err)
           collect(prs, api_err, entry.key, pending)
         end)
@@ -574,6 +572,7 @@ function M.fetch_all_prs(callback)
   end
 
   for _, entry in ipairs(token_entries) do
+    api.init(entry.host)
     api.get_viewer(entry.token, function(login, viewer_err)
       if viewer_err then
         table.insert(viewer_errors, { key = entry.key, err = "Failed to get username: " .. viewer_err })
