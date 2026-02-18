@@ -185,12 +185,11 @@ function M.clear_viewer_cache()
   viewer_cache = {}
 end
 
---- Search for open PRs involving the authenticated user across an owner/org
----@param owner string GitHub user or org name (token key, used for error attribution)
+--- Search for open PRs involving the authenticated user
 ---@param token string GitHub token
 ---@param username string Authenticated user's login
 ---@param callback fun(prs: table[]|nil, err: string|nil)
-function M.search_user_prs(owner, token, username, callback)
+function M.search_user_prs(token, username, callback)
   vim.schedule(function()
     local query = string.format("type:pr state:open involves:%s", username)
     local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
