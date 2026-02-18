@@ -94,7 +94,10 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 
-Each key in `tokens` is the **owner or org name from the repo URL** — the part right after `github.com/` in `github.com/{owner}/repo`. To find it, open any repo you want to review and copy the first path segment from the URL. For example, for `github.com/my-org/backend`, the key is `my-org`.
+Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
+
+- **github.com**: `github.com/{owner}/repo` — e.g. `github.com/my-org/backend` → key is `my-org`
+- **GitHub Enterprise**: `github.mycompany.com/{owner}/repo` — e.g. `github.mycompany.com/platform-team/core-api` → key is `platform-team`
 
 ### GitHub Enterprise
 
