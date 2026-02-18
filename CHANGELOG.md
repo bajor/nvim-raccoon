@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.8] - 2026-02-18
+
+### Added
+- Diff size bars in commit mode file tree — each changed file shows a proportional `+++----` bar below it indicating additions (green) and deletions (red) for the current commit
+- `compute_file_stats()` and `format_stat_bar()` helpers in commit UI module
+- Stat bars automatically update when navigating between commits
+- Stat bar lines are skipped by file tree keyboard navigation (j/k)
+- Works in both PR commit mode and local commit mode
+
 ## [0.9.7] - 2026-02-18
 
 ### Added
