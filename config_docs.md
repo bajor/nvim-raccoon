@@ -24,7 +24,7 @@ The smallest valid config needs just a token:
 }
 ```
 
-This uses `github.com` as the host, auto-discovers PRs from your token's permissions, and uses defaults for everything else.
+This uses `github.com` as the host, shows open PRs involving you (authored, assigned, review-requested, or commented) from all repos accessible by the token, and uses defaults for everything else.
 
 ## Required fields
 
@@ -61,7 +61,7 @@ For GitHub Enterprise, create the token on your enterprise instance (e.g. `githu
 |------|---------|
 | array | `[]` |
 
-Limit the `:Raccoon prs` list to specific repositories. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). When set, only open PRs from these repos are shown. When empty or omitted, PRs from all repos accessible by each token are shown.
+Limit the `:Raccoon prs` list to specific repositories. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). When set, only open PRs from these repos that involve you (authored, assigned, review-requested, or commented) are shown. When empty or omitted, PRs involving you from all repos accessible by each token are shown.
 
 ```json
 {

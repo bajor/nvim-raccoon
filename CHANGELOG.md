@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - `repos` config option — limit the PR list to specific repositories (`["owner/repo", ...]`) instead of showing all PRs across the entire org
 
+### Changed
+- PR list now only shows PRs involving you (authored, assigned, review-requested, or commented) via GitHub's `involves:@me` filter
+
 ### Removed
 - `github_username` config option — it was only used for cosmetic comment display and is now ignored if present (backward compatible)
 

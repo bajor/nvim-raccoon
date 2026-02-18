@@ -22,6 +22,10 @@ describe("raccoon.api", function()
       assert.is_function(api.list_prs)
     end)
 
+    it("has search_repo_prs function", function()
+      assert.is_function(api.search_repo_prs)
+    end)
+
     it("has get_pr function", function()
       assert.is_function(api.get_pr)
     end)

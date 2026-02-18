@@ -86,7 +86,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 |-------|------|---------|-------------|
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org, e.g. `{"my-org": "ghp_..."}` |
-| `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]` |
+| `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `pull_changes_interval` | number | `300` | How often (in seconds) to auto-sync with remote |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |

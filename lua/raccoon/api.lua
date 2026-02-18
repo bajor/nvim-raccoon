@@ -142,13 +142,13 @@ local function fetch_all_pages(url, token)
   return all_items, nil
 end
 
---- Search for all open PRs owned by a user or org
+--- Search for open PRs involving the authenticated user across an owner/org
 ---@param owner string GitHub user or org name (token key)
 ---@param token string GitHub token
 ---@param callback fun(prs: table[]|nil, err: string|nil)
 function M.search_user_prs(owner, token, callback)
   vim.schedule(function()
-    local query = string.format("type:pr state:open user:%s", owner)
+    local query = string.format("type:pr state:open user:%s involves:@me", owner)
     local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
       M.base_url, vim.uri_encode(query))
 
@@ -176,7 +176,40 @@ function M.search_user_prs(owner, token, callback)
   end)
 end
 
---- List open pull requests for a repository
+--- Search for open PRs involving the authenticated user in a specific repo
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param token string GitHub token
+---@param callback fun(prs: table[]|nil, err: string|nil)
+function M.search_repo_prs(owner, repo, token, callback)
+  vim.schedule(function()
+    local query = string.format("type:pr state:open repo:%s/%s involves:@me", owner, repo)
+    local url = string.format("%s/search/issues?q=%s&sort=updated&order=desc&per_page=100",
+      M.base_url, vim.uri_encode(query))
+
+    local response, err = request({
+      url = url,
+      method = "GET",
+      token = token,
+    })
+
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    local prs = {}
+    local full_name = string.format("%s/%s", owner, repo)
+    for _, item in ipairs(response.data.items or {}) do
+      item.base = { repo = { full_name = full_name } }
+      table.insert(prs, item)
+    end
+
+    callback(prs, nil)
+  end)
+end
+
+--- List open pull requests for a repository (unfiltered)
 ---@param owner string Repository owner
 ---@param repo string Repository name
 ---@param token string GitHub token

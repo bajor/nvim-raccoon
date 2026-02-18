@@ -494,7 +494,7 @@ function M.fetch_all_prs(callback)
       if owner and repo then
         local token = config.get_token_for_owner(cfg, owner)
         if token then
-          api.list_prs(owner, repo, token, function(prs, api_err)
+          api.search_repo_prs(owner, repo, token, function(prs, api_err)
             collect(prs, api_err, repo_str, pending)
           end)
         else
