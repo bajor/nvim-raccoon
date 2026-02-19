@@ -91,7 +91,7 @@ local function setup_highlights()
 
   -- Sign highlights with line highlighting
   vim.fn.sign_define("RaccoonComment", {
-    text = "💬",
+    text = ">>",
     texthl = "RaccoonCommentSign",
     linehl = "RaccoonCommentLine",
     numhl = "RaccoonCommentSign",
@@ -121,9 +121,13 @@ local function get_current_file_path()
     return nil
   end
 
-  local current_file = vim.fn.expand("%:p")
-  if current_file:sub(1, #clone_path) == clone_path then
-    local relative_path = current_file:sub(#clone_path + 2) -- +2 to skip the trailing separator
+  local current_file = vim.fs.normalize(vim.fn.expand("%:p"))
+  local norm_clone = vim.fs.normalize(clone_path)
+  -- Case-insensitive comparison on Windows (case-insensitive filesystem)
+  local cmp_file = vim.fn.has("win32") == 1 and current_file:lower() or current_file
+  local cmp_clone = vim.fn.has("win32") == 1 and norm_clone:lower() or norm_clone
+  if cmp_file:sub(1, #cmp_clone) == cmp_clone then
+    local relative_path = current_file:sub(#norm_clone + 2) -- +2 to skip the separator
     return (relative_path:gsub("\\", "/"))
   end
   return nil
@@ -170,7 +174,7 @@ function M.show_comments(buf, comments)
       end
 
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line - 1, 0, {
-        virt_text = { { "  💬 " .. preview, "RaccoonCommentSign" } },
+        virt_text = { { "  >> " .. preview, "RaccoonCommentSign" } },
         virt_text_pos = "eol",
       })
     end
@@ -309,7 +313,7 @@ function M.show_comment_popup(comment)
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = " Comment ",
     title_pos = "center",
   })
@@ -382,7 +386,7 @@ function M.show_readonly_thread(opts)
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = opts.title or " Thread ",
     title_pos = "center",
   })
@@ -494,7 +498,7 @@ function M.show_comment_thread()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = M._build_thread_title(current_line, shortcuts),
     title_pos = "center",
   })
@@ -863,7 +867,7 @@ function M.create_comment()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = M._build_comment_title("New Comment", shortcuts),
     title_pos = "center",
   })
@@ -1125,7 +1129,7 @@ function M.list_comments()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = " All PR Comments (" .. total_count .. ") ",
     title_pos = "center",
   })

@@ -47,7 +47,7 @@ function M.create_floating_window(opts)
     col = col,
     row = row,
     style = "minimal",
-    border = opts.border or "rounded",
+    border = opts.border or "single",
   }
 
   -- Only add title options if title is provided
@@ -287,7 +287,7 @@ function M.show_pr_list()
     width_pct = 0.7,
     height_pct = 0.8,
     title = "Pull Requests",
-    border = "rounded",
+    border = "single",
   })
 
   -- Store state
@@ -636,7 +636,7 @@ function M.show_description()
     width = width,
     height = height,
     title = "PR Description",
-    border = "rounded",
+    border = "single",
   })
 
   -- Store window handle for toggle
@@ -762,7 +762,7 @@ function M.show_shortcuts()
     width = width,
     height = height,
     title = "Raccoon Shortcuts",
-    border = "rounded",
+    border = "single",
   })
 
   -- Set content

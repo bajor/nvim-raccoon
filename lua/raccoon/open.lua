@@ -68,13 +68,13 @@ local function update_statusline()
 
   -- Conflict warning (highest priority - red)
   if has_conflicts then
-    table.insert(parts, "%#RaccoonConflict# ⛔ MERGE CONFLICTS %*")
+    table.insert(parts, "%#RaccoonConflict# !! MERGE CONFLICTS %*")
   end
 
   -- Behind warning (yellow)
   if commits_behind > 0 then
     local plural = commits_behind == 1 and "commit" or "commits"
-    table.insert(parts, string.format("%%#RaccoonWarning# ⚠ %d %s behind %s %%*",
+    table.insert(parts, string.format("%%#RaccoonWarning# !! %d %s behind %s %%*",
       commits_behind, plural, pr.base.ref))
   end
 
@@ -111,10 +111,10 @@ function M.statusline()
   end
 
   if has_conflicts then
-    return file_part .. "⛔ CONFLICTS"
+    return file_part .. "!! CONFLICTS"
   elseif commits_behind > 0 then
     local plural = commits_behind == 1 and "commit" or "commits"
-    return file_part .. string.format("⚠ %d %s behind %s", commits_behind, plural, pr.base.ref)
+    return file_part .. string.format("!! %d %s behind %s", commits_behind, plural, pr.base.ref)
   else
     return file_part .. "✓ In sync"
   end

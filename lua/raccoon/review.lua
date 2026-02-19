@@ -104,7 +104,7 @@ function M.show_submit_ui()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = " Submit Review ",
     title_pos = "center",
   })
@@ -175,7 +175,7 @@ function M.prompt_review_body(event)
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = string.format(" %s (Ctrl-S to submit, q to cancel) ", event_name),
     title_pos = "center",
   })
@@ -308,7 +308,7 @@ function M.show_status()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = " Review Status ",
     title_pos = "center",
   })

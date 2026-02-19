@@ -416,7 +416,7 @@ function M.merge_picker()
         width = width,
         height = height,
         style = "minimal",
-        border = "rounded",
+        border = "single",
         title = " Merge PR ",
         title_pos = "center",
       })

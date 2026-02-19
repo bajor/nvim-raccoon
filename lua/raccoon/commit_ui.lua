@@ -502,7 +502,7 @@ function M.open_maximize(opts)
       row = row,
       col = col,
       style = "minimal",
-      border = "rounded",
+      border = "single",
     })
 
     opts.state.maximize_win = win
@@ -593,7 +593,7 @@ function M.open_file_content(opts)
       row = row,
       col = col,
       style = "minimal",
-      border = "rounded",
+      border = "single",
     })
 
     opts.state.maximize_win = win

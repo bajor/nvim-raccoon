@@ -248,9 +248,9 @@ function M.get_statusline_component()
 
   -- Show sync status
   if sync.has_conflicts then
-    table.insert(parts, "⛔ CONFLICTS")
+    table.insert(parts, "!! CONFLICTS")
   elseif sync.behind > 0 then
-    table.insert(parts, string.format("⚠ %d behind", sync.behind))
+    table.insert(parts, string.format("!! %d behind", sync.behind))
   else
     table.insert(parts, "✓ In sync")
   end
