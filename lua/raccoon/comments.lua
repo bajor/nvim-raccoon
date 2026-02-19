@@ -72,10 +72,22 @@ local sign_group = "RaccoonComment"
 --- Define signs and highlight groups for comments
 local function setup_highlights()
   -- Bright yellow/orange background for comment lines - very visible
-  vim.api.nvim_set_hl(0, "RaccoonCommentLine", { bg = "#4a3d00", fg = "#ffcc00", bold = true })
-  vim.api.nvim_set_hl(0, "RaccoonCommentLineResolved", { bg = "#1a3d1a", fg = "#88cc88" })
-  vim.api.nvim_set_hl(0, "RaccoonCommentLinePending", { bg = "#4a2800", fg = "#ffaa00", bold = true })
-  vim.api.nvim_set_hl(0, "RaccoonCommentSign", { fg = "#ffcc00", bold = true })
+  vim.api.nvim_set_hl(0, "RaccoonCommentLine", {
+    bg = "#4a3d00", fg = "#ffcc00", bold = true,
+    ctermbg = 58, ctermfg = 220,
+  })
+  vim.api.nvim_set_hl(0, "RaccoonCommentLineResolved", {
+    bg = "#1a3d1a", fg = "#88cc88",
+    ctermbg = 22, ctermfg = 114,
+  })
+  vim.api.nvim_set_hl(0, "RaccoonCommentLinePending", {
+    bg = "#4a2800", fg = "#ffaa00", bold = true,
+    ctermbg = 94, ctermfg = 214,
+  })
+  vim.api.nvim_set_hl(0, "RaccoonCommentSign", {
+    fg = "#ffcc00", bold = true,
+    ctermfg = 220,
+  })
 
   -- Sign highlights with line highlighting
   vim.fn.sign_define("RaccoonComment", {
@@ -109,9 +121,13 @@ local function get_current_file_path()
     return nil
   end
 
-  local current_file = vim.fn.expand("%:p")
-  if current_file:sub(1, #clone_path) == clone_path then
-    local relative_path = current_file:sub(#clone_path + 2) -- +2 to skip the trailing separator
+  local current_file = vim.fs.normalize(vim.fn.expand("%:p"))
+  local norm_clone = vim.fs.normalize(clone_path)
+  -- Case-insensitive comparison on Windows (case-insensitive filesystem)
+  local cmp_file = vim.fn.has("win32") == 1 and current_file:lower() or current_file
+  local cmp_clone = vim.fn.has("win32") == 1 and norm_clone:lower() or norm_clone
+  if cmp_file:sub(1, #cmp_clone) == cmp_clone then
+    local relative_path = current_file:sub(#norm_clone + 2) -- +2 to skip the separator
     return (relative_path:gsub("\\", "/"))
   end
   return nil
@@ -297,10 +313,11 @@ function M.show_comment_popup(comment)
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = " Comment ",
     title_pos = "center",
   })
+  vim.wo[win].winhighlight = "Normal:Normal"
 
   -- Close keymaps
   local shortcuts = config.load_shortcuts()
@@ -369,11 +386,12 @@ function M.show_readonly_thread(opts)
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = opts.title or " Thread ",
     title_pos = "center",
   })
 
+  vim.wo[win].winhighlight = "Normal:Normal"
   vim.wo[win].wrap = true
 
   local shortcuts = config.load_shortcuts()
@@ -480,10 +498,11 @@ function M.show_comment_thread()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = M._build_thread_title(current_line, shortcuts),
     title_pos = "center",
   })
+  vim.wo[win].winhighlight = "Normal:Normal"
 
   -- Helper to find which comment section cursor is in
   local function get_cursor_section()
@@ -848,10 +867,11 @@ function M.create_comment()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = M._build_comment_title("New Comment", shortcuts),
     title_pos = "center",
   })
+  vim.wo[win].winhighlight = "Normal:Normal"
 
   -- Start in insert mode
   vim.cmd("startinsert")
@@ -1109,10 +1129,11 @@ function M.list_comments()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = " All PR Comments (" .. total_count .. ") ",
     title_pos = "center",
   })
+  vim.wo[win].winhighlight = "Normal:Normal"
 
   -- Track window for toggle behavior
   comment_list_win = win

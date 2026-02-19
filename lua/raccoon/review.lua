@@ -104,10 +104,11 @@ function M.show_submit_ui()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = " Submit Review ",
     title_pos = "center",
   })
+  vim.wo[win].winhighlight = "Normal:Normal"
 
   -- Handle key presses
   local function handle_selection(event)
@@ -174,10 +175,11 @@ function M.prompt_review_body(event)
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = string.format(" %s (Ctrl-S to submit, q to cancel) ", event_name),
     title_pos = "center",
   })
+  vim.wo[win].winhighlight = "Normal:Normal"
 
   -- Move cursor to empty line and start insert
   vim.api.nvim_win_set_cursor(win, { 5, 0 })
@@ -306,10 +308,11 @@ function M.show_status()
     width = width,
     height = height,
     style = "minimal",
-    border = "rounded",
+    border = "single",
     title = " Review Status ",
     title_pos = "center",
   })
+  vim.wo[win].winhighlight = "Normal:Normal"
 
   local shortcuts = config.load_shortcuts()
   if config.is_enabled(shortcuts.close) then
