@@ -317,7 +317,7 @@ function M.show_comment_popup(comment)
     title = " Comment ",
     title_pos = "center",
   })
-  vim.wo[win].winhighlight = "Normal:Normal"
+  vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:Normal"
 
   -- Close keymaps
   local shortcuts = config.load_shortcuts()
@@ -391,7 +391,7 @@ function M.show_readonly_thread(opts)
     title_pos = "center",
   })
 
-  vim.wo[win].winhighlight = "Normal:Normal"
+  vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:Normal"
   vim.wo[win].wrap = true
 
   local shortcuts = config.load_shortcuts()
@@ -407,7 +407,7 @@ function M.show_readonly_thread(opts)
 end
 
 --- Show threaded comment view for the current line
---- Allows viewing, editing existing comments, and adding new ones
+--- Existing comments are read-only; only the new comment section is editable
 function M.show_comment_thread()
   if not state.is_active() then
     vim.notify("No active PR review session", vim.log.levels.WARN)
@@ -435,30 +435,18 @@ function M.show_comment_thread()
 
   -- Build buffer content with comment sections
   local lines = {}
-  local comment_map = {} -- Maps buffer line ranges to comment data
 
   for i, comment in ipairs(line_comments) do
     local author = comment.user and comment.user.login or "unknown"
-    local start_line = #lines + 1
 
     -- Add author header
     table.insert(lines, "@ " .. author .. (comment.pending and " [pending]" or ""))
     table.insert(lines, "")
 
     -- Add comment body (split into lines)
-    local body_start = #lines + 1
     for body_line in (comment.body or ""):gmatch("[^\n]*") do
       table.insert(lines, body_line)
     end
-    local body_end = #lines
-
-    -- Track this comment's editable region
-    comment_map[i] = {
-      comment = comment,
-      body_start = body_start,
-      body_end = body_end,
-      start_line = start_line,
-    }
 
     -- Add divider if not last comment
     if i < #line_comments then
@@ -488,7 +476,7 @@ function M.show_comment_thread()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
   vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
-  vim.api.nvim_buf_set_option(buf, "modifiable", true)
+  vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
   -- Create floating window
   local win = vim.api.nvim_open_win(buf, true, {
@@ -502,38 +490,36 @@ function M.show_comment_thread()
     title = M._build_thread_title(current_line, shortcuts),
     title_pos = "center",
   })
-  vim.wo[win].winhighlight = "Normal:Normal"
+  vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:Normal"
 
-  -- Helper to find which comment section cursor is in
-  local function get_cursor_section()
-    local cursor_line = vim.fn.line(".")
-
-    -- Check if in new comment section
-    if cursor_line >= new_comment_start then
-      return { type = "new", start = new_comment_start }
-    end
-
-    -- Check existing comments
-    for i, info in pairs(comment_map) do
-      if cursor_line >= info.body_start and cursor_line <= info.body_end then
-        return { type = "existing", index = i, info = info }
+  -- Lock existing comments: toggle modifiable based on cursor position
+  local augroup = vim.api.nvim_create_augroup("RaccoonThreadLock" .. buf, { clear = true })
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+    group = augroup,
+    buffer = buf,
+    callback = function()
+      local in_editable = vim.fn.line(".") >= new_comment_start
+      vim.api.nvim_buf_set_option(buf, "modifiable", in_editable)
+    end,
+  })
+  vim.api.nvim_create_autocmd("InsertEnter", {
+    group = augroup,
+    buffer = buf,
+    callback = function()
+      if vim.fn.line(".") < new_comment_start then
+        vim.cmd("stopinsert")
+        vim.notify("Existing comments are read-only", vim.log.levels.INFO)
       end
-    end
+    end,
+  })
 
-    return nil
-  end
-
-  -- Helper to extract body from a section
-  local function get_section_body(start_line, end_line)
-    local section_lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
-    return table.concat(section_lines, "\n")
-  end
-
-  -- Save function
+  -- Save function (new comments only)
   local function save_comment()
-    local section = get_cursor_section()
-    if not section then
-      vim.notify("Move cursor to a comment section to save", vim.log.levels.WARN)
+    local all_lines = vim.api.nvim_buf_get_lines(buf, new_comment_start - 1, -1, false)
+    local body = table.concat(all_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+
+    if body == "" then
+      vim.notify("Empty comment", vim.log.levels.WARN)
       return
     end
 
@@ -557,104 +543,60 @@ function M.show_comment_thread()
       return
     end
 
-    if section.type == "new" then
-      -- Get all lines from new_comment_start to end
-      local all_lines = vim.api.nvim_buf_get_lines(buf, new_comment_start - 1, -1, false)
-      local body = table.concat(all_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+    vim.notify("Submitting new comment...", vim.log.levels.INFO)
 
-      if body == "" then
-        vim.notify("Empty comment", vim.log.levels.WARN)
-        return
-      end
-
-      vim.notify("Submitting new comment...", vim.log.levels.INFO)
-
-      -- Helper for success
-      local function on_success(result, is_line_comment)
-        local new_comment = {
-          id = result and result.id,
-          path = path,
-          line = current_line,
-          body = body,
-          pending = false,
-          is_issue_comment = not is_line_comment,
-          user = { login = "you" },
-        }
-        table.insert(file_comments, new_comment)
-        state.set_comments(path, file_comments)
-
-        local msg = is_line_comment and "Comment added!" or "Comment added (as PR comment - line not in diff)"
-        vim.notify(msg, vim.log.levels.INFO)
-        vim.api.nvim_win_close(win, true)
-      end
-
-      -- Try line-level comment first
-      api.create_comment(owner, repo, number, {
-        body = body,
+    -- Helper for success
+    local function on_success(result, is_line_comment)
+      local new_comment = {
+        id = result and result.id,
         path = path,
         line = current_line,
-        commit_id = pr.head.sha,
-        side = "RIGHT",
-      }, token, function(result, err)
-        vim.schedule(function()
-          if err then
-            if err:find("422") then
-              -- Fallback to PR issue comment
-              vim.notify("Line not in diff, submitting as PR comment...", vim.log.levels.INFO)
-              local formatted_body = string.format("**`%s:%d`**\n\n%s", path, current_line, body)
+        body = body,
+        pending = false,
+        is_issue_comment = not is_line_comment,
+        user = { login = "you" },
+      }
+      table.insert(file_comments, new_comment)
+      state.set_comments(path, file_comments)
 
-              api.create_issue_comment(owner, repo, number, formatted_body, token, function(issue_result, issue_err)
-                vim.schedule(function()
-                  if issue_err then
-                    vim.notify("Failed: " .. issue_err, vim.log.levels.ERROR)
-                    return
-                  end
-                  on_success(issue_result, false)
-                end)
-              end)
-            else
-              vim.notify("Failed: " .. err, vim.log.levels.ERROR)
-            end
-            return
-          end
-
-          on_success(result, true)
-        end)
-      end)
-
-    elseif section.type == "existing" then
-      local info = section.info
-      local comment = info.comment
-
-      -- Get updated body
-      local body = get_section_body(info.body_start, info.body_end):gsub("^%s+", ""):gsub("%s+$", "")
-
-      if body == comment.body then
-        vim.notify("No changes", vim.log.levels.INFO)
-        return
-      end
-
-      if not comment.id then
-        vim.notify("Cannot edit pending comment - submit it first", vim.log.levels.WARN)
-        return
-      end
-
-      vim.notify("Updating comment...", vim.log.levels.INFO)
-
-      api.update_comment(owner, repo, comment.id, body, token, function(_result, err)
-        vim.schedule(function()
-          if err then
-            vim.notify("Failed: " .. err, vim.log.levels.ERROR)
-            return
-          end
-
-          -- Update local state
-          comment.body = body
-          vim.notify("Comment updated!", vim.log.levels.INFO)
-          vim.api.nvim_win_close(win, true)
-        end)
-      end)
+      local msg = is_line_comment and "Comment added!" or "Comment added (as PR comment - line not in diff)"
+      vim.notify(msg, vim.log.levels.INFO)
+      vim.api.nvim_win_close(win, true)
     end
+
+    -- Try line-level comment first
+    api.create_comment(owner, repo, number, {
+      body = body,
+      path = path,
+      line = current_line,
+      commit_id = pr.head.sha,
+      side = "RIGHT",
+    }, token, function(result, err)
+      vim.schedule(function()
+        if err then
+          if err:find("422") then
+            -- Fallback to PR issue comment
+            vim.notify("Line not in diff, submitting as PR comment...", vim.log.levels.INFO)
+            local formatted_body = string.format("**`%s:%d`**\n\n%s", path, current_line, body)
+
+            api.create_issue_comment(owner, repo, number, formatted_body, token, function(issue_result, issue_err)
+              vim.schedule(function()
+                if issue_err then
+                  vim.notify("Failed: " .. issue_err, vim.log.levels.ERROR)
+                  return
+                end
+                on_success(issue_result, false)
+              end)
+            end)
+          else
+            vim.notify("Failed: " .. err, vim.log.levels.ERROR)
+          end
+          return
+        end
+
+        on_success(result, true)
+      end)
+    end)
   end
 
   -- Resolve thread function
@@ -829,11 +771,10 @@ function M.show_comment_thread()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 
-  -- Position cursor in new comment section if no existing comments
-  if #line_comments == 0 then
-    vim.api.nvim_win_set_cursor(win, { new_comment_start, 0 })
-    vim.cmd("startinsert")
-  end
+  -- Position cursor in the editable new comment section
+  vim.api.nvim_win_set_cursor(win, { new_comment_start, 0 })
+  vim.api.nvim_buf_set_option(buf, "modifiable", true)
+  vim.cmd("startinsert")
 end
 
 --- Create a new comment at the current line
@@ -871,7 +812,7 @@ function M.create_comment()
     title = M._build_comment_title("New Comment", shortcuts),
     title_pos = "center",
   })
-  vim.wo[win].winhighlight = "Normal:Normal"
+  vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:Normal"
 
   -- Start in insert mode
   vim.cmd("startinsert")
@@ -1133,7 +1074,7 @@ function M.list_comments()
     title = " All PR Comments (" .. total_count .. ") ",
     title_pos = "center",
   })
-  vim.wo[win].winhighlight = "Normal:Normal"
+  vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:Normal"
 
   -- Track window for toggle behavior
   comment_list_win = win
