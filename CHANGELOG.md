@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Fix broken colors and black floating window backgrounds on Windows (PowerShell) — added 256-color (`ctermbg`/`ctermfg`) fallbacks to all 14 highlight groups so diff backgrounds, signs, comments, and statusline highlights render correctly when `termguicolors` is off
-- Fix floating windows showing black backgrounds on Windows — popup floating windows now set `winhighlight = "Normal:Normal"` to inherit the editor background instead of relying on `NormalFloat`
+- Fix floating windows showing black backgrounds on Windows — popup floating windows now set `winhighlight = "Normal:Normal,FloatBorder:Normal"` to inherit the editor background for both content and border areas instead of relying on `NormalFloat`/`FloatBorder`
 - Fix case-sensitive path comparison in comment placement that silently fails on Windows (case-insensitive filesystem) — now normalizes and case-folds paths when `win32` is detected
 - Switch floating window borders from `"rounded"` to `"single"` — sharp corners (`┌┐└┘`) have broader font support than curved corners (`╭╮╰╯`) on Windows
 

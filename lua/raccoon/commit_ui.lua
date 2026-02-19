@@ -507,6 +507,7 @@ function M.open_maximize(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    vim.wo[win].winhighlight = "FloatBorder:Normal"
 
     M.apply_diff_highlights(opts.ns_id, buf, hl_lines)
 
@@ -597,6 +598,7 @@ function M.open_file_content(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    vim.wo[win].winhighlight = "FloatBorder:Normal"
 
     local shortcuts = config.load_shortcuts()
     local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
