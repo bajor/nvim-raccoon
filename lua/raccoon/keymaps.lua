@@ -420,6 +420,7 @@ function M.merge_picker()
         title = " Merge PR ",
         title_pos = "center",
       })
+      vim.wo[win].winhighlight = "Normal:Normal"
 
       -- Highlight the title and CI status
       vim.api.nvim_buf_call(buf, function()

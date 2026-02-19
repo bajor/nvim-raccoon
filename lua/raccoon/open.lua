@@ -36,11 +36,20 @@ end
 --- Setup the statusline highlight groups
 local function setup_statusline_highlight()
   -- Yellow/orange for out of sync (same as comment highlight)
-  vim.api.nvim_set_hl(0, "RaccoonWarning", { fg = "#ffcc00", bg = "#4a3d00", bold = true })
+  vim.api.nvim_set_hl(0, "RaccoonWarning", {
+    fg = "#ffcc00", bg = "#4a3d00", bold = true,
+    ctermfg = 220, ctermbg = 58,
+  })
   -- Red for conflicts
-  vim.api.nvim_set_hl(0, "RaccoonConflict", { fg = "#ffffff", bg = "#8b0000", bold = true })
+  vim.api.nvim_set_hl(0, "RaccoonConflict", {
+    fg = "#ffffff", bg = "#8b0000", bold = true,
+    ctermfg = 15, ctermbg = 88,
+  })
   -- Green for in sync
-  vim.api.nvim_set_hl(0, "RaccoonOk", { fg = "#88cc88", bg = "#1a3d1a", bold = true })
+  vim.api.nvim_set_hl(0, "RaccoonOk", {
+    fg = "#88cc88", bg = "#1a3d1a", bold = true,
+    ctermfg = 114, ctermbg = 22,
+  })
 end
 
 --- Update the statusline to show sync status

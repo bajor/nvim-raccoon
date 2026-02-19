@@ -63,6 +63,7 @@ function M.create_floating_window(opts)
   vim.wo[win].cursorline = true
   vim.wo[win].wrap = false
   vim.wo[win].scrolloff = 3
+  vim.wo[win].winhighlight = "Normal:Normal"
 
   return win, buf
 end
