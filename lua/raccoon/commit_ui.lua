@@ -515,7 +515,6 @@ function M.open_maximize(opts)
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
-    vim.wo[win].winhighlight = "Normal:Normal"
 
     local skip_keys = nil
     if #change_starts > 0 then
@@ -603,7 +602,6 @@ function M.open_file_content(opts)
     local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].wrap = true
-    vim.wo[win].winhighlight = "Normal:Normal"
 
     M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
 
