@@ -91,7 +91,7 @@ local function setup_highlights()
 
   -- Sign highlights with line highlighting
   vim.fn.sign_define("RaccoonComment", {
-    text = ">>",
+    text = "💬",
     texthl = "RaccoonCommentSign",
     linehl = "RaccoonCommentLine",
     numhl = "RaccoonCommentSign",
@@ -174,7 +174,7 @@ function M.show_comments(buf, comments)
       end
 
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line - 1, 0, {
-        virt_text = { { "  >> " .. preview, "RaccoonCommentSign" } },
+        virt_text = { { "  💬 " .. preview, "RaccoonCommentSign" } },
         virt_text_pos = "eol",
       })
     end
