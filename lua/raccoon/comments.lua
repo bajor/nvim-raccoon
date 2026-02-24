@@ -7,16 +7,16 @@ local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local state = require("raccoon.state")
 
---- Get a valid line number from a comment, handling vim.NIL from JSON null
+--- Get a valid line number from a comment, handling vim.NIL from JSON null.
+--- Only uses comment.line (the HEAD-version line number). Does NOT fall back to
+--- original_line (base-version) or position (diff offset) — those refer to
+--- different coordinate spaces and produce wrong sign/navigation targets.
 ---@param comment table
 ---@return number|nil
 local function get_comment_line(comment)
-  -- Check each field, ensuring it's a real number (not vim.NIL or other types)
-  for _, field in ipairs({ "line", "original_line", "position" }) do
-    local val = comment[field]
-    if type(val) == "number" and val > 0 then
-      return val
-    end
+  local val = comment.line
+  if type(val) == "number" and val > 0 then
+    return val
   end
   return nil
 end
