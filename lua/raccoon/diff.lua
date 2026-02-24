@@ -212,6 +212,7 @@ function M.open_file(file)
     -- File may still be open despite the error, continue if buffer exists
   end
   local buf = vim.api.nvim_get_current_buf()
+  vim.wo[vim.api.nvim_get_current_win()].signcolumn = "yes:1"
 
   -- Track buffer in session
   state.add_buffer(buf)
