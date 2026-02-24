@@ -13,7 +13,7 @@ local state = require("raccoon.state")
 --- different coordinate spaces and produce wrong sign/navigation targets.
 ---@param comment table
 ---@return number|nil
-local function get_comment_line(comment)
+function M.get_comment_line(comment)
   local val = comment.line
   if type(val) == "number" and val > 0 then
     return val
@@ -153,7 +153,7 @@ function M.show_comments(buf, comments)
   local line_count = vim.api.nvim_buf_line_count(buf)
 
   for _, comment in ipairs(comments or {}) do
-    local line = get_comment_line(comment)
+    local line = M.get_comment_line(comment)
     if line and line <= line_count then
       -- Place sign with high priority
       local sign_name = "RaccoonComment"
@@ -211,7 +211,7 @@ function M.find_next_comment()
   local next_line = math.huge
 
   for _, comment in ipairs(comments) do
-    local line = get_comment_line(comment)
+    local line = M.get_comment_line(comment)
     if line and line > current_line and line < next_line then
       next_comment = comment
       next_line = line
@@ -235,7 +235,7 @@ function M.find_prev_comment()
   local prev_line = 0
 
   for _, comment in ipairs(comments) do
-    local line = get_comment_line(comment)
+    local line = M.get_comment_line(comment)
     if line and line < current_line and line > prev_line then
       prev_comment = comment
       prev_line = line
@@ -427,7 +427,7 @@ function M.show_comment_thread()
   -- Find comments for this line
   local line_comments = {}
   for _, comment in ipairs(file_comments) do
-    local comment_line = get_comment_line(comment)
+    local comment_line = M.get_comment_line(comment)
     if comment_line and comment_line == current_line then
       table.insert(line_comments, comment)
     end
@@ -1008,8 +1008,8 @@ function M.list_comments()
     if a.file ~= b.file then
       return a.file < b.file
     end
-    local line_a = get_comment_line(a.comment) or 0
-    local line_b = get_comment_line(b.comment) or 0
+    local line_a = M.get_comment_line(a.comment) or 0
+    local line_b = M.get_comment_line(b.comment) or 0
     return line_a < line_b
   end)
 
@@ -1029,7 +1029,7 @@ function M.list_comments()
     end
 
     local comment = entry.comment
-    local line_num = get_comment_line(comment) or 0
+    local line_num = M.get_comment_line(comment) or 0
     local author = comment.user and comment.user.login or "unknown"
     local preview = (comment.body or ""):gsub("\n", " "):sub(1, 60)
     local status = comment.pending and " [pending]" or (comment.resolved and " [resolved]" or "")
@@ -1107,10 +1107,10 @@ function M.list_comments()
         title = " Review ",
       })
     elseif entry.file and entry.comment then
-      local target_line = get_comment_line(entry.comment)
+      local target_line = M.get_comment_line(entry.comment)
       local thread = {}
       for _, e in ipairs(all_comments) do
-        if e.file == entry.file and get_comment_line(e.comment) == target_line then
+        if e.file == entry.file and M.get_comment_line(e.comment) == target_line then
           table.insert(thread, e.comment)
         end
       end
@@ -1139,7 +1139,7 @@ function M.toggle_resolved()
   local current_line = vim.fn.line(".")
 
   for _, comment in ipairs(comments) do
-    local line = get_comment_line(comment)
+    local line = M.get_comment_line(comment)
     if line and line == current_line then
       comment.resolved = not comment.resolved
       vim.notify(

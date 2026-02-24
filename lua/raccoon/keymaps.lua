@@ -13,20 +13,6 @@ local state = require("raccoon.state")
 --- Default keymap options
 local default_opts = { noremap = true, silent = true }
 
---- Get a valid line number from a comment, handling vim.NIL from JSON null.
---- Only uses comment.line (the HEAD-version line number). Does NOT fall back to
---- original_line (base-version) or position (diff offset) — those refer to
---- different coordinate spaces and produce wrong navigation targets.
----@param comment table
----@return number|nil
-local function get_comment_line(comment)
-  local val = comment.line
-  if type(val) == "number" and val > 0 then
-    return val
-  end
-  return nil
-end
-
 --- Get all points of interest (diffs and comments) for a file
 ---@param file table File data with filename and patch
 ---@return table[] points Sorted list of {line, type} where type is "diff" or "comment"
@@ -68,7 +54,7 @@ local function get_file_points(file)
   -- Get comments
   local file_comments = state.get_comments(file.filename)
   for _, comment in ipairs(file_comments) do
-    local line = get_comment_line(comment)
+    local line = comments.get_comment_line(comment)
     if line and not seen[line] then
       table.insert(points, { line = line, type = "comment" })
       seen[line] = true
@@ -210,7 +196,7 @@ local function get_all_comment_points()
     local seen = {}
 
     for _, comment in ipairs(file_comments) do
-      local line = get_comment_line(comment)
+      local line = comments.get_comment_line(comment)
       if line and not seen[line] then
         table.insert(comment_points, {
           file_index = file_idx,
