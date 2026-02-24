@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.9.9] - 2026-02-19
 
+### Added
+- Lock existing comments as read-only in thread view — only the new comment input section at the bottom is editable, preventing accidental modification of existing review comments
+
 ### Fixed
+- Fix `winhighlight` on maximize windows breaking the winbar display on macOS — removed the override from maximize windows
 - Fix broken colors and black floating window backgrounds on Windows (PowerShell) — added 256-color (`ctermbg`/`ctermfg`) fallbacks to all 14 highlight groups so diff backgrounds, signs, comments, and statusline highlights render correctly when `termguicolors` is off
 - Fix floating windows showing black backgrounds on Windows — popup floating windows now set `winhighlight = "Normal:Normal,FloatBorder:Normal"` to inherit the editor background for both content and border areas instead of relying on `NormalFloat`/`FloatBorder`
 - Fix case-sensitive path comparison in comment placement that silently fails on Windows (case-insensitive filesystem) — now normalizes and case-folds paths when `win32` is detected
