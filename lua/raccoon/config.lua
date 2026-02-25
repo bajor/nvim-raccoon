@@ -30,6 +30,12 @@ M.defaults = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
   },
+  parallel_agents = {
+    enabled = false,
+    command = "",
+    suffix_prompt = "",
+    shortcut = "<leader>a",
+  },
   shortcuts = {
     -- Global
     pr_list = "<leader>pr",
@@ -251,6 +257,52 @@ function M.load_shortcuts()
 
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
   return sanitize_shortcuts(merged, M.defaults.shortcuts)
+end
+
+--- Load parallel_agents config, falling back to defaults gracefully.
+--- Unlike load(), this does not require valid tokens.
+---@return table parallel_agents
+function M.load_parallel_agents()
+  local defaults = M.defaults.parallel_agents
+  local path = M.config_path
+  local stat = vim.uv.fs_stat(path)
+  if not stat then
+    return vim.deepcopy(defaults)
+  end
+
+  local file = io.open(path, "r")
+  if not file then
+    return vim.deepcopy(defaults)
+  end
+
+  local content = file:read("*a")
+  file:close()
+
+  local ok, parsed = pcall(vim.json.decode, content)
+  if not ok or type(parsed) ~= "table" then
+    return vim.deepcopy(defaults)
+  end
+
+  local user = parsed.parallel_agents
+  if type(user) ~= "table" then
+    return vim.deepcopy(defaults)
+  end
+
+  local shortcut
+  if user.shortcut == false then
+    shortcut = false
+  elseif type(user.shortcut) == "string" and user.shortcut ~= "" then
+    shortcut = user.shortcut
+  else
+    shortcut = defaults.shortcut
+  end
+
+  return {
+    enabled = type(user.enabled) == "boolean" and user.enabled or defaults.enabled,
+    command = type(user.command) == "string" and user.command or defaults.command,
+    suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
+    shortcut = shortcut,
+  }
 end
 
 --- Get the token and host for a given owner/org from the tokens table
