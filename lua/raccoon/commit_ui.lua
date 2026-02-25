@@ -556,6 +556,34 @@ function M.open_maximize(opts)
         end
       end, buf_opts)
     end
+
+    -- Parallel agent dispatch keymap
+    local pa_cfg = config.load_parallel_agents()
+    if pa_cfg.enabled and config.is_enabled(pa_cfg.shortcut) then
+      local pa = require("raccoon.parallel_agents")
+      local function dispatch_fn()
+        local visual_lines, line_start, line_end
+        local mode = vim.fn.mode()
+        if mode == "v" or mode == "V" or mode == "\22" then
+          vim.api.nvim_feedkeys(
+            vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false
+          )
+          line_start = vim.fn.line("'<")
+          line_end = vim.fn.line("'>")
+          visual_lines = vim.api.nvim_buf_get_lines(buf, line_start - 1, line_end, false)
+        end
+        pa.dispatch({
+          repo_path = opts.repo_path,
+          commit_sha = opts.sha,
+          commit_message = opts.commit_message or "",
+          filename = opts.filename,
+          visual_lines = visual_lines,
+          line_start = line_start,
+          line_end = line_end,
+        })
+      end
+      vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
+    end
   end)
 end
 
@@ -946,12 +974,14 @@ function M.setup_filetree_nav(s, opts)
     local sha = opts.get_sha()
     if not repo_path then return end
     local is_changed = s.commit_files and s.commit_files[path]
+    local commit_msg = opts.get_commit_message and opts.get_commit_message() or ""
     if is_changed then
       M.open_maximize({
         ns_id = opts.ns_id,
         repo_path = repo_path,
         sha = sha,
         filename = path,
+        commit_message = commit_msg,
         generation = s.select_generation,
         get_generation = function() return s.select_generation end,
         state = s,

@@ -132,6 +132,7 @@ local function maximize_cell(cell_num)
     repo_path = local_state.repo_path,
     sha = commit.sha,
     filename = filename,
+    commit_message = commit.message or "",
     generation = local_state.select_generation,
     get_generation = function() return local_state.select_generation end,
     state = local_state,
@@ -487,6 +488,10 @@ local function setup_keymaps()
     get_sha = function()
       local c = get_commit(local_state.selected_index)
       return c and c.sha
+    end,
+    get_commit_message = function()
+      local c = get_commit(local_state.selected_index)
+      return c and c.message or ""
     end,
   })
 
