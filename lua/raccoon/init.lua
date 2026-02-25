@@ -93,14 +93,21 @@ end
 ---@return string
 function M.statusline()
   local open = require("raccoon.open")
-  return open.statusline()
+  local pa = require("raccoon.parallel_agents")
+  local base = open.statusline()
+  local count = pa.get_running_count()
+  if count > 0 then
+    return base .. string.format(" [%d agent%s]", count, count == 1 and "" or "s")
+  end
+  return base
 end
 
 --- Check if PR review is active (for lualine cond)
 ---@return boolean
 function M.is_active()
   local open = require("raccoon.open")
-  return open.is_active()
+  local pa = require("raccoon.parallel_agents")
+  return open.is_active() or pa.get_running_count() > 0
 end
 
 return M
