@@ -489,6 +489,26 @@ describe("raccoon.diff", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    it("does not place deletion sign on added line when deletion precedes addition", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "new line 1", "context" })
+
+      local patch = "@@ -1,2 +1,2 @@\n-old line 1\n+new line 1\n context"
+      diff.apply_highlights(buf, patch)
+
+      local ns = diff.get_namespace()
+      -- Buffer line 0 is the added line; extmarks on it must NOT have sign_text = "-"
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, { 0, 0 }, { 0, -1 }, { details = true })
+      for _, mark in ipairs(marks) do
+        local details = mark[4]
+        if details.sign_text then
+          assert.is_not_equal("-", details.sign_text)
+        end
+      end
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 
   describe("parse_hunk_header edge cases", function()

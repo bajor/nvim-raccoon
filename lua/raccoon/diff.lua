@@ -161,8 +161,6 @@ function M.apply_highlights(buf, patch)
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target_line, 0, {
         virt_lines = virt_lines,
         virt_lines_above = true,
-        sign_text = "-",
-        sign_hl_group = "RaccoonDeleteSign",
       })
     end
   end
