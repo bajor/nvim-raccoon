@@ -75,9 +75,15 @@ PR #42: Open  [2 agents]
 
 The `is_active()` function returns `true` while agents are running, even without an active PR session. This means your lualine `cond` function will keep the statusline section visible while agents finish.
 
+## Where agents run
+
+**PR mode**: Agents run in the shallow clone at `{clone_root}/{owner}/{repo}/pr-{number}`, checked out to the PR branch. Pushing from here updates the PR directly — making `suffix_prompt: "Commit and push when done."` a natural fit for review-driven fixes.
+
+**Local mode**: Agents run in your working directory (the git root). Changes happen in place.
+
 ## Concurrent access
 
-Each agent runs in its own shell process rooted at the repository path. Multiple agents can run simultaneously on the same repo. Since they share the working directory, be aware of potential git conflicts if multiple agents modify the same files. Using the suffix prompt to instruct agents to work on branches can help avoid this.
+Multiple agents can run simultaneously on the same repo. Since they share the working directory, be aware of potential git conflicts if multiple agents modify the same files. Using the suffix prompt to instruct agents to work on branches can help avoid this.
 
 ## Notes
 

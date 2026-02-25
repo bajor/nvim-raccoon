@@ -221,6 +221,8 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
 }
 ```
 
+In **PR commit viewer** mode, agents run inside the shallow clone checked out to the PR branch (`{clone_root}/{owner}/{repo}/pr-{number}`), so "commit and push" pushes directly to the PR. In **local commit viewer** mode, agents run in your working directory.
+
 ### `shortcuts`
 
 | Type | Default |
