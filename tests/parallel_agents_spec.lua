@@ -1,5 +1,6 @@
 local pa = require("raccoon.parallel_agents")
 local config = require("raccoon.config")
+local mocks = require("tests.helpers.mocks")
 
 local test_tmp_dir = "/tmp/claude/raccoon-tests"
 
@@ -128,6 +129,97 @@ describe("raccoon.parallel_agents", function()
       -- First placeholder replaced, second remains
       local _, count = cmd:gsub('"your task"', "")
       assert.equals(1, count)
+    end)
+  end)
+
+  describe("statusline and is_active integration", function()
+    local original_open
+
+    before_each(function()
+      original_open = package.loaded["raccoon.open"]
+      package.loaded["raccoon.open"] = {
+        statusline = function() return "PR #42: Open" end,
+        is_active = function() return false end,
+      }
+      -- Force raccoon.init to pick up the fresh mock
+      package.loaded["raccoon.init"] = nil
+    end)
+
+    after_each(function()
+      package.loaded["raccoon.open"] = original_open
+      package.loaded["raccoon.init"] = nil
+    end)
+
+    it("statusline returns base string with 0 agents", function()
+      local init = require("raccoon.init")
+      assert.equals("PR #42: Open", init.statusline())
+    end)
+
+    it("statusline appends singular agent count", function()
+      table.insert(pa._get_agents(), { job_id = 1, task_name = "t1" })
+      local init = require("raccoon.init")
+      assert.equals("PR #42: Open [1 agent]", init.statusline())
+    end)
+
+    it("statusline appends plural agent count", function()
+      local agents = pa._get_agents()
+      table.insert(agents, { job_id = 1, task_name = "t1" })
+      table.insert(agents, { job_id = 2, task_name = "t2" })
+      table.insert(agents, { job_id = 3, task_name = "t3" })
+      local init = require("raccoon.init")
+      assert.equals("PR #42: Open [3 agents]", init.statusline())
+    end)
+
+    it("is_active returns false with 0 agents and open inactive", function()
+      local init = require("raccoon.init")
+      assert.is_false(init.is_active())
+    end)
+
+    it("is_active returns true when agents are running", function()
+      table.insert(pa._get_agents(), { job_id = 1, task_name = "t1" })
+      local init = require("raccoon.init")
+      assert.is_true(init.is_active())
+    end)
+  end)
+
+  describe("dispatch success path", function()
+    local original_ui_input
+
+    before_each(function()
+      original_ui_input = vim.ui.input
+    end)
+
+    after_each(function()
+      vim.ui.input = original_ui_input
+      mocks.restore()
+    end)
+
+    it("increments count and tracks agent after dispatch", function()
+      -- Write enabled config with valid command
+      local tmpfile = test_tmp_dir .. "/pa_dispatch.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": true, "command": "echo \\"your task\\""}}')
+      f:close()
+      config.config_path = tmpfile
+
+      -- Mock vim.ui.input to provide task text
+      vim.ui.input = function(opts, cb) cb("my test task") end
+
+      -- Mock jobstart to capture the job
+      mocks.mock_jobstart({ [".*"] = { exit_code = 0 } })
+
+      pa.dispatch({ repo_path = "/tmp" })
+
+      -- Agent should be tracked
+      assert.equals(1, pa.get_running_count())
+      local agents = pa._get_agents()
+      assert.equals("my test task", agents[1].task_name)
+
+      -- Flush vim.schedule so on_exit fires
+      vim.wait(100, function() return pa.get_running_count() == 0 end)
+      assert.equals(0, pa.get_running_count())
+
+      os.remove(tmpfile)
     end)
   end)
 

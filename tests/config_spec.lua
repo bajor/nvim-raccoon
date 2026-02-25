@@ -841,6 +841,23 @@ describe("raccoon.config", function()
       p1.command = "MUTATED"
       assert.is_not_equal("MUTATED", p2.command)
     end)
+
+    it("respects enabled=false even when default is true", function()
+      local original_default = config.defaults.parallel_agents.enabled
+      config.defaults.parallel_agents.enabled = true
+
+      local tmpfile = test_tmp_dir .. "/pa_enabled_false.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": false}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local pa = config.load_parallel_agents()
+      assert.is_false(pa.enabled)
+
+      os.remove(tmpfile)
+      config.defaults.parallel_agents.enabled = original_default
+    end)
   end)
 
   describe("multi-host tokens", function()
