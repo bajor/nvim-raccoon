@@ -112,13 +112,6 @@ local function goto_point(point)
   vim.api.nvim_win_set_cursor(0, { target_line, 0 })
   vim.cmd("normal! zz")
 
-  -- Flash the landing line for visibility
-  local flash_ns = vim.api.nvim_create_namespace("raccoon_flash")
-  vim.api.nvim_buf_add_highlight(0, flash_ns, "IncSearch", target_line - 1, 0, -1)
-  vim.defer_fn(function()
-    pcall(vim.api.nvim_buf_clear_namespace, 0, flash_ns, 0, -1)
-  end, 150)
-
   -- Show what we landed on with position in file
   local file_points = get_file_points(point.file)
   local point_idx = 1
