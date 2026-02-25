@@ -118,8 +118,9 @@ function M.dispatch(opts)
   end)
 end
 
--- Exposed for testing
+---@private
 M._get_agents = function() return agents end
+---@private
 M._reset_agents = function() agents = {} end
 
 return M

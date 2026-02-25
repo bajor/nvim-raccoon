@@ -208,6 +208,31 @@ function M.create_default()
   return true, nil
 end
 
+--- Read and parse the JSON config file.
+--- Returns the parsed table, or nil on any failure.
+---@return table?
+local function read_config_json()
+  local path = M.config_path
+  local stat = vim.uv.fs_stat(path)
+  if not stat then return nil end
+  local file = io.open(path, "r")
+  if not file then return nil end
+  local content = file:read("*a")
+  file:close()
+  local ok, parsed = pcall(vim.json.decode, content)
+  if not ok or type(parsed) ~= "table" then return nil end
+  return parsed
+end
+
+--- Return val if it is a boolean, otherwise return default.
+---@param val any
+---@param default boolean
+---@return boolean
+local function bool_field(val, default)
+  if type(val) == "boolean" then return val end
+  return default
+end
+
 --- Sanitize merged shortcuts against the defaults structure.
 --- Each leaf must be a non-empty string (valid binding) or false (disabled).
 --- Anything else (vim.NIL, numbers, empty strings, tables at leaf positions) falls back to the default.
@@ -236,22 +261,8 @@ end
 --- Unlike load(), this does not require valid tokens.
 ---@return table shortcuts
 function M.load_shortcuts()
-  local path = M.config_path
-  local stat = vim.uv.fs_stat(path)
-  if not stat then
-    return vim.deepcopy(M.defaults.shortcuts)
-  end
-
-  local file = io.open(path, "r")
-  if not file then
-    return vim.deepcopy(M.defaults.shortcuts)
-  end
-
-  local content = file:read("*a")
-  file:close()
-
-  local ok, parsed = pcall(vim.json.decode, content)
-  if not ok or type(parsed) ~= "table" then
+  local parsed = read_config_json()
+  if not parsed then
     return vim.deepcopy(M.defaults.shortcuts)
   end
 
@@ -264,22 +275,9 @@ end
 ---@return table parallel_agents
 function M.load_parallel_agents()
   local defaults = M.defaults.parallel_agents
-  local path = M.config_path
-  local stat = vim.uv.fs_stat(path)
-  if not stat then
-    return vim.deepcopy(defaults)
-  end
 
-  local file = io.open(path, "r")
-  if not file then
-    return vim.deepcopy(defaults)
-  end
-
-  local content = file:read("*a")
-  file:close()
-
-  local ok, parsed = pcall(vim.json.decode, content)
-  if not ok or type(parsed) ~= "table" then
+  local parsed = read_config_json()
+  if not parsed then
     return vim.deepcopy(defaults)
   end
 
@@ -298,7 +296,7 @@ function M.load_parallel_agents()
   end
 
   return {
-    enabled = type(user.enabled) == "boolean" and user.enabled or defaults.enabled,
+    enabled = bool_field(user.enabled, defaults.enabled),
     command = type(user.command) == "string" and user.command or defaults.command,
     suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
     shortcut = shortcut,
