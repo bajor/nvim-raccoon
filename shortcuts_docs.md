@@ -99,6 +99,14 @@ These shortcuts are nested under `shortcuts.commit_mode` in config and are only 
 | `maximize_prefix` | `<leader>m` | Prefix for maximizing a grid cell. Followed by a cell number (1-9), e.g. `<leader>m1` maximizes cell 1 into a full floating window with the complete file diff. Inside the maximized view, normal vim navigation works (scrolling, search). Close with `q` or the `close` shortcut. |
 | `browse_files` | `<leader>f` | Toggle focus between the commit sidebar and the file tree. While in file tree mode, navigate with j/k, jump with gg/G, search with `/`, and press Enter to view a file's content at the current commit state. |
 
+## Parallel agents (maximized diff view)
+
+Active inside the maximized diff floating window when `parallel_agents.enabled` is `true` in config. Works in both normal and visual mode.
+
+| Config key | Default | Description |
+|------------|---------|-------------|
+| `parallel_agents.shortcut` | `<leader>a` | Dispatch an agent with commit context. In visual mode, the selected lines are included in the prompt. Set to `false` to disable. See [parallel_agents_docs.md](parallel_agents_docs.md). |
+
 Note: `j`/`k` for navigating commits in the sidebar and `Enter` for selecting a commit are hardcoded and not configurable.
 
 ## Example: custom config

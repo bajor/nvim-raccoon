@@ -195,6 +195,32 @@ Number of recent base branch commits shown in the commit viewer sidebar. These a
 }
 ```
 
+### `parallel_agents`
+
+| Type | Default |
+|------|---------|
+| object | see below |
+
+Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized diff view. See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable the feature |
+| `command` | string | `""` | Shell command template containing `"your task"` placeholder |
+| `suffix_prompt` | string | `""` | Text appended to every agent prompt |
+| `shortcut` | string or false | `"<leader>a"` | Keymap to trigger dispatch. Set to `false` to disable. |
+
+```json
+{
+  "parallel_agents": {
+    "enabled": true,
+    "command": "claude -p \"your task\"",
+    "suffix_prompt": "Commit and push when done.",
+    "shortcut": "<leader>a"
+  }
+}
+```
+
 ### `shortcuts`
 
 | Type | Default |
