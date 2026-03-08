@@ -477,6 +477,7 @@ function M.close_win_pair(s, win_key, buf_key)
   s[win_key] = nil
   if buf_key then s[buf_key] = nil end
   if win_key == "maximize_win" then
+    M.stop_maximize_watcher(s)
     s.maximize_workdir_opts = nil
   end
 end
@@ -560,12 +561,14 @@ function M.open_maximize(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    M.stop_maximize_watcher(opts.state)
     if opts.is_working_dir then
       opts.state.maximize_workdir_opts = {
         ns_id = opts.ns_id,
         repo_path = opts.repo_path,
         filename = opts.filename,
       }
+      M.start_maximize_watcher(opts.state)
     else
       opts.state.maximize_workdir_opts = nil
     end
@@ -620,6 +623,38 @@ function M.open_maximize(opts)
 
     setup_parallel_agent_keymap(buf, opts)
   end)
+end
+
+--- Stop the file watcher for the maximize window
+---@param s table State table
+function M.stop_maximize_watcher(s)
+  if s.maximize_fs_event then
+    pcall(function()
+      s.maximize_fs_event:stop()
+      if not s.maximize_fs_event:is_closing() then
+        s.maximize_fs_event:close()
+      end
+    end)
+    s.maximize_fs_event = nil
+  end
+end
+
+--- Start a file watcher that refreshes the maximize window on file changes
+---@param s table State table (must have maximize_workdir_opts set)
+function M.start_maximize_watcher(s)
+  local mopts = s.maximize_workdir_opts
+  if not mopts then return end
+
+  local filepath = vim.fs.joinpath(mopts.repo_path, mopts.filename)
+  local handle = vim.uv.new_fs_event()
+  if not handle then return end
+
+  s.maximize_fs_event = handle
+  handle:start(filepath, {}, vim.schedule_wrap(function(err)
+    if err then return end
+    if not s.maximize_workdir_opts then return end
+    M.refresh_maximize(s)
+  end))
 end
 
 --- Refresh the maximize window in-place for working directory changes

@@ -552,7 +552,6 @@ start_workdir_poll_timer = function()
 
       if local_state.selected_index == 1 then
         select_commit(1)
-        ui.refresh_maximize(local_state)
       end
 
       start_workdir_poll_timer()
