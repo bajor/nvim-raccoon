@@ -346,3 +346,4 @@ The design philosophy of this plugin is influenced by Gabriella Gonzalez's [Beyo
 ## License
 
 MIT
+
