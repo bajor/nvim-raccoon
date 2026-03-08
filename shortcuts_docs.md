@@ -105,7 +105,7 @@ Active inside the maximized diff floating window when `parallel_agents.enabled` 
 
 | Config key | Default | Description |
 |------------|---------|-------------|
-| `parallel_agents.shortcut` | `<leader>a` | Dispatch an agent with commit context. In visual mode, the selected lines are included in the prompt. Set to `false` to disable. See [parallel_agents_docs.md](parallel_agents_docs.md). |
+| `parallel_agents.shortcut` | `<leader>aa` | Dispatch an agent with commit context. In visual mode, the selected lines are included in the prompt. Set to `false` to disable. See [parallel_agents_docs.md](parallel_agents_docs.md). |
 
 Note: `j`/`k` for navigating commits in the sidebar and `Enter` for selecting a commit are hardcoded and not configurable.
 

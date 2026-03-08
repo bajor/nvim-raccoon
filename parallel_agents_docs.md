@@ -10,8 +10,8 @@ Add a `parallel_agents` section to `~/.config/raccoon/config.json`:
 {
   "parallel_agents": {
     "enabled": true,
-    "command": "claude -p <PROMPT>",
-    "suffix_prompt": "Commit and push when done.",
+    "command": "claude --dangerously-skip-permissions -p <PROMPT>",
+    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request.",
     "shortcut": "<leader>aa"
   }
 }
@@ -29,7 +29,7 @@ The `command` field is a shell string executed via `sh -c`. The `<PROMPT>` place
 ### Command template examples
 
 ```json
-"command": "claude -p <PROMPT>"
+"command": "claude --dangerously-skip-permissions -p <PROMPT>"
 "command": "amp -x <PROMPT>"
 "command": "aider --message <PROMPT>"
 ```
@@ -39,7 +39,7 @@ The `command` field is a shell string executed via `sh -c`. The `<PROMPT>` place
 1. Open the commit viewer (`:Raccoon commits` or `:Raccoon local`)
 2. Navigate to a commit and maximize a diff cell (`<leader>m1`, `<leader>m2`, etc.) or browse files and press Enter
 3. In the maximized diff view:
-   - **Normal mode**: Press the shortcut (default `<leader>a`), type your task, press Enter
+   - **Normal mode**: Press the shortcut (default `<leader>aa`), type your task, press Enter
    - **Visual mode**: Select lines of interest, press the shortcut, type your task, press Enter
 
 The agent receives:
@@ -77,7 +77,7 @@ The `is_active()` function returns `true` while agents are running, even without
 
 ## Where agents run
 
-**PR mode**: Agents run in the shallow clone at `{clone_root}/{owner}/{repo}/pr-{number}`, checked out to the PR branch. Pushing from here updates the PR directly — making `suffix_prompt: "Commit and push when done."` a natural fit for review-driven fixes.
+**PR mode**: Agents run in the shallow clone at `{clone_root}/{owner}/{repo}/pr-{number}`, checked out to the PR branch. Pushing from here updates the PR directly — making a commit-focused `suffix_prompt` a natural fit for review-driven fixes.
 
 **Local mode**: Agents run in your working directory (the git root). Changes happen in place.
 

@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.10] - 2026-03-08
 
 ### Added
-- Parallel agents — dispatch fire-and-forget CLI agents (e.g., `claude -p`, `amp -x`) from the commit viewer's maximized diff view via `<leader>a` (configurable)
+- Parallel agents — dispatch fire-and-forget CLI agents (e.g., `claude -p`, `amp -x`) from the commit viewer's maximized diff view via `<leader>aa` (configurable)
 - Visual selection context — select code lines before dispatching to include them in the agent prompt
 - Agent prompt assembly with task description, visual selection, commit context (SHA, message, filename), and configurable suffix prompt
 - Statusline indicator showing `[N agent(s)]` count while agents are running

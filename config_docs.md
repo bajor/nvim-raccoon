@@ -214,8 +214,8 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
 {
   "parallel_agents": {
     "enabled": true,
-    "command": "claude -p <PROMPT>",
-    "suffix_prompt": "Commit and push when done.",
+    "command": "claude --dangerously-skip-permissions -p <PROMPT>",
+    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request.",
     "shortcut": "<leader>aa"
   }
 }
@@ -260,8 +260,8 @@ Partial overrides are merged with defaults — you only need to specify keys you
   },
   "parallel_agents": {
     "enabled": true,
-    "command": "claude -p <PROMPT>",
-    "suffix_prompt": "Commit and push when done."
+    "command": "claude --dangerously-skip-permissions -p <PROMPT>",
+    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request."
   },
   "shortcuts": {
     "pr_list": "<leader>pr",

@@ -310,9 +310,9 @@ Local mode works alongside an active PR review — entering `:Raccoon local` pau
 
 ## Parallel Agents
 
-Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. Review a commit, optionally select code lines, and press `<leader>a` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
+Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. Review a commit, optionally select code lines, and press `<leader>aa` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
 
-Configure with the `parallel_agents` block in `config.json`. Set `command` to your CLI agent template (e.g. `claude -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
+Configure with the `parallel_agents` block in `config.json`. Set `command` to your CLI agent template (e.g. `claude --dangerously-skip-permissions -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
 
 ## Statusline
 
