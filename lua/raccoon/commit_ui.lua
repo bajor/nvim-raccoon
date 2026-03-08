@@ -580,6 +580,7 @@ function M.open_maximize(opts)
           visual_lines = visual_lines,
           line_start = line_start,
           line_end = line_end,
+          view_state = opts.state,
         })
       end
       vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
@@ -891,6 +892,7 @@ function M.setup_focus_lock(s, augroup_name)
       if not s.active then return end
       local cur_win = vim.api.nvim_get_current_win()
       if cur_win == s.maximize_win then return end
+      if s.popup_win and cur_win == s.popup_win then return end
       if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
         vim.schedule(function()
           if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then

@@ -57,7 +57,8 @@ end
 
 --- Open a floating window for task input, call on_submit with the text
 ---@param on_submit fun(task_text: string)
-local function open_task_input(on_submit)
+---@param view_state? table Optional state table; sets state.popup_win while open
+local function open_task_input(on_submit, view_state)
   local shortcuts = config.load_shortcuts()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
@@ -84,11 +85,14 @@ local function open_task_input(on_submit)
     zindex = 100,
   })
 
+  if view_state then view_state.popup_win = win end
+
   vim.cmd("startinsert")
 
   local buf_opts = { buffer = buf, noremap = true, silent = true }
 
   local function close()
+    if view_state then view_state.popup_win = nil end
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
     end
@@ -111,7 +115,7 @@ local function open_task_input(on_submit)
 end
 
 --- Dispatch an agent process
----@param opts table {repo_path, commit_sha, commit_message, filename, visual_lines, line_start, line_end}
+---@param opts table {repo_path, commit_sha, commit_message, filename, visual_lines, line_start, line_end, view_state}
 function M.dispatch(opts)
   local pa_cfg = config.load_parallel_agents()
 
@@ -169,7 +173,7 @@ function M.dispatch(opts)
     else
       vim.notify("Failed to start agent process", vim.log.levels.ERROR)
     end
-  end)
+  end, opts.view_state)
 end
 
 ---@private
