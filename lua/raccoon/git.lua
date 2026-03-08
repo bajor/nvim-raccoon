@@ -744,7 +744,42 @@ function M.find_default_branch(path, callback)
   })
 end
 
+--- List untracked (new) files in the working directory
+---@param path string Repository path
+---@param callback fun(files: string[])
+local function list_untracked_files(path, callback)
+  run_git({ "ls-files", "--others", "--exclude-standard" }, {
+    cwd = path,
+    on_exit = function(code, stdout, _)
+      if code ~= 0 then
+        callback({})
+        return
+      end
+      callback(stdout)
+    end,
+  })
+end
+
+--- Build a synthetic diff patch for a new (untracked) file
+--- All lines appear as additions since the file doesn't exist in HEAD
+---@param path string Repository path
+---@param filename string File path relative to repo root
+---@return string|nil patch Patch string or nil if file can't be read
+local function build_new_file_patch(path, filename)
+  local filepath = vim.fs.joinpath(path, filename)
+  local ok, lines = pcall(vim.fn.readfile, filepath)
+  if not ok or not lines or #lines == 0 then
+    return nil
+  end
+  local patch_lines = { "@@ -0,0 +1," .. #lines .. " @@" }
+  for _, line in ipairs(lines) do
+    table.insert(patch_lines, "+" .. line)
+  end
+  return table.concat(patch_lines, "\n")
+end
+
 --- Get diff of working directory vs HEAD, split into per-file patches
+--- Includes both tracked modifications and untracked (new) files
 ---@param path string Repository path
 ---@param callback fun(files: table[]|nil, err: string|nil)
 function M.diff_working_dir(path, callback)
@@ -755,7 +790,16 @@ function M.diff_working_dir(path, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      callback(parse_diff_output(stdout), nil)
+      local files = parse_diff_output(stdout)
+      list_untracked_files(path, function(untracked)
+        for _, f in ipairs(untracked) do
+          local patch = build_new_file_patch(path, f)
+          if patch then
+            table.insert(files, { filename = f, patch = patch })
+          end
+        end
+        callback(files, nil)
+      end)
     end,
   })
 end
@@ -765,24 +809,40 @@ end
 ---@param filename string File path within the repo
 ---@param callback fun(patch: string|nil, err: string|nil)
 function M.diff_working_dir_file(path, filename, callback)
-  run_git({ "diff", "HEAD", "-U99999", "--", filename }, {
+  -- Check if file is tracked to handle untracked files differently
+  run_git({ "ls-files", "--", filename }, {
     cwd = path,
-    on_exit = function(code, stdout, stderr)
-      if code ~= 0 then
-        callback(nil, table.concat(stderr, "\n"))
+    on_exit = function(check_code, check_stdout, _)
+      local is_tracked = check_code == 0 and #check_stdout > 0
+      if not is_tracked then
+        local patch = build_new_file_patch(path, filename)
+        if patch then
+          callback(patch, nil)
+        else
+          callback(nil, "Failed to read untracked file: " .. filename)
+        end
         return
       end
-      local lines = {}
-      local in_patch = false
-      for _, line in ipairs(stdout) do
-        if line:match("^@@") then
-          in_patch = true
-        end
-        if in_patch then
-          table.insert(lines, line)
-        end
-      end
-      callback(table.concat(lines, "\n"), nil)
+      run_git({ "diff", "HEAD", "-U99999", "--", filename }, {
+        cwd = path,
+        on_exit = function(code, stdout, stderr)
+          if code ~= 0 then
+            callback(nil, table.concat(stderr, "\n"))
+            return
+          end
+          local lines = {}
+          local in_patch = false
+          for _, line in ipairs(stdout) do
+            if line:match("^@@") then
+              in_patch = true
+            end
+            if in_patch then
+              table.insert(lines, line)
+            end
+          end
+          callback(table.concat(lines, "\n"), nil)
+        end,
+      })
     end,
   })
 end
@@ -808,19 +868,35 @@ end
 ---@param sha string|nil Commit SHA, or nil for working directory
 ---@param callback fun(files: string[], err: string|nil)
 function M.list_files(path, sha, callback)
-  local args = sha
-    and { "ls-tree", "-r", "--name-only", sha }
-    or { "ls-files" }
-  run_git(args, {
-    cwd = path,
-    on_exit = function(code, stdout, stderr)
-      if code ~= 0 then
-        callback({}, table.concat(stderr, "\n"))
-        return
-      end
-      callback(stdout, nil)
-    end,
-  })
+  if sha then
+    run_git({ "ls-tree", "-r", "--name-only", sha }, {
+      cwd = path,
+      on_exit = function(code, stdout, stderr)
+        if code ~= 0 then
+          callback({}, table.concat(stderr, "\n"))
+          return
+        end
+        callback(stdout, nil)
+      end,
+    })
+  else
+    run_git({ "ls-files" }, {
+      cwd = path,
+      on_exit = function(code, stdout, stderr)
+        if code ~= 0 then
+          callback({}, table.concat(stderr, "\n"))
+          return
+        end
+        local tracked = stdout
+        list_untracked_files(path, function(untracked)
+          for _, f in ipairs(untracked) do
+            table.insert(tracked, f)
+          end
+          callback(tracked, nil)
+        end)
+      end,
+    })
+  end
 end
 
 
