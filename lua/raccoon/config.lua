@@ -220,7 +220,10 @@ local function read_config_json()
   local content = file:read("*a")
   file:close()
   local ok, parsed = pcall(vim.json.decode, content)
-  if not ok or type(parsed) ~= "table" then return nil end
+  if not ok or type(parsed) ~= "table" then
+    vim.notify("Raccoon: failed to parse config.json, using defaults", vim.log.levels.WARN)
+    return nil
+  end
   return parsed
 end
 

@@ -73,8 +73,9 @@ local function open_task_input(on_submit, view_state)
   local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "q"
   local title = string.format(" Agent Task (%s=send, %s=cancel) ", save_key, close_key)
 
-  -- Set flag before open_win so the WinEnter focus lock sees it
-  if view_state then view_state.popup_win = true end
+  -- Set truthy sentinel before open_win so the WinEnter focus lock sees it
+  -- (open_win fires WinEnter synchronously before we can assign the real handle)
+  if view_state then view_state.popup_win = -1 end
 
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
@@ -115,6 +116,7 @@ local function open_task_input(on_submit, view_state)
     vim.keymap.set("n", shortcuts.comment_save, submit, buf_opts)
   end
   vim.keymap.set("n", "q", close, buf_opts)
+  vim.keymap.set("i", "<C-c>", close, buf_opts)
   if config.is_enabled(shortcuts.close) then
     vim.keymap.set("n", shortcuts.close, close, buf_opts)
   end
@@ -140,9 +142,14 @@ function M.dispatch(opts)
     return
   end
 
-  if pa_cfg.command:find("claude", 1, true) and not pa_cfg.command:find("%-%-dangerously%-skip%-permissions") then
+  local has_claude = pa_cfg.command:find("claude", 1, true)
+  local has_skip_perms = pa_cfg.command:find("%-%-dangerously%-skip%-permissions")
+  local has_allowed_tools = pa_cfg.command:find("%-%-allowedTools")
+  if has_claude and not has_skip_perms and not has_allowed_tools then
     vim.notify(
-      "Parallel agents: command contains 'claude' without '--dangerously-skip-permissions'.\nBackground agents cannot answer permission prompts.",
+      "Parallel agents: claude command lacks permission flags.\n"
+        .. "Use --dangerously-skip-permissions or --allowedTools"
+        .. " so background agents don't hang on prompts.",
       vim.log.levels.WARN
     )
   end
@@ -161,29 +168,11 @@ function M.dispatch(opts)
 
     local final_cmd = M.build_command(pa_cfg.command, prompt)
 
-    local log_dir = vim.fn.stdpath("log") or vim.fn.stdpath("data")
-    local log_path = vim.fs.joinpath(log_dir, "raccoon-agent.log")
-    local stdout_lines = {}
     local stderr_lines = {}
-
-    -- Log the command being run for debugging
-    local f0 = io.open(log_path, "a")
-    if f0 then
-      f0:write(string.format("\n[%s] STARTING task=%s cwd=%s\ncmd: %s\n",
-        os.date("%Y-%m-%d %H:%M:%S"), task_text, opts.repo_path or "?", final_cmd))
-      f0:close()
-    end
 
     -- Redirect stdin from /dev/null so the child process doesn't hang waiting for input
     local job_id = vim.fn.jobstart({ "sh", "-c", final_cmd .. " </dev/null" }, {
       cwd = opts.repo_path,
-      on_stdout = function(_, data)
-        if data then
-          for _, line in ipairs(data) do
-            if line ~= "" then table.insert(stdout_lines, line) end
-          end
-        end
-      end,
       on_stderr = function(_, data)
         if data then
           for _, line in ipairs(data) do
@@ -200,27 +189,10 @@ function M.dispatch(opts)
             end
           end
 
-          -- Append to log file for debugging
-          local f = io.open(log_path, "a")
-          if f then
-            f:write(string.format("\n[%s] task=%s exit=%d cwd=%s\n",
-              os.date("%Y-%m-%d %H:%M:%S"), task_text, exit_code, opts.repo_path or "?"))
-            if #stdout_lines > 0 then
-              f:write("stdout:\n" .. table.concat(stdout_lines, "\n") .. "\n")
-            end
-            if #stderr_lines > 0 then
-              f:write("stderr:\n" .. table.concat(stderr_lines, "\n") .. "\n")
-            end
-            f:close()
-          end
-
           local level = exit_code == 0 and vim.log.levels.INFO or vim.log.levels.WARN
           local msg = string.format("Agent finished (exit %d): %s", exit_code, task_text)
-          if exit_code ~= 0 then
-            if #stderr_lines > 0 then
-              msg = msg .. "\n" .. table.concat(stderr_lines, "\n")
-            end
-            msg = msg .. "\nLog: " .. log_path
+          if exit_code ~= 0 and #stderr_lines > 0 then
+            msg = msg .. "\n" .. table.concat(stderr_lines, "\n")
           end
           vim.notify(msg, level)
         end)
@@ -230,8 +202,10 @@ function M.dispatch(opts)
     if job_id > 0 then
       table.insert(agents, { job_id = job_id, task_name = task_text })
       vim.notify(string.format("Agent dispatched: %s (%d running)", task_text, #agents))
+    elseif job_id == 0 then
+      vim.notify("Failed to start agent: invalid command arguments", vim.log.levels.ERROR)
     else
-      vim.notify("Failed to start agent process", vim.log.levels.ERROR)
+      vim.notify("Failed to start agent: command not executable", vim.log.levels.ERROR)
     end
   end, opts.view_state)
 end

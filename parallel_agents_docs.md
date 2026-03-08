@@ -30,17 +30,20 @@ The `command` field is a shell string executed via `sh -c`. The `<PROMPT>` place
 
 ```json
 "command": "claude --dangerously-skip-permissions -p <PROMPT>"
+"command": "claude --allowedTools Edit,Write,Bash -p <PROMPT>"
 "command": "amp -x <PROMPT>"
 "command": "aider --message <PROMPT>"
 ```
+
+For `claude`, use either `--dangerously-skip-permissions` or `--allowedTools <tools>` so the agent doesn't hang on permission prompts. The plugin warns if neither flag is present.
 
 ## Usage
 
 1. Open the commit viewer (`:Raccoon commits` or `:Raccoon local`)
 2. Navigate to a commit and maximize a diff cell (`<leader>m1`, `<leader>m2`, etc.) or browse files and press Enter
 3. In the maximized diff view:
-   - **Normal mode**: Press the shortcut (default `<leader>aa`), type your task, press Enter
-   - **Visual mode**: Select lines of interest, press the shortcut, type your task, press Enter
+   - **Normal mode**: Press the shortcut (default `<leader>aa`), type your task, press `<leader>s` to send
+   - **Visual mode**: Select lines of interest, press the shortcut, type your task, press `<leader>s` to send
 
 The agent receives:
 - Your task description
@@ -70,7 +73,7 @@ The visual selection block is only included when you select lines before dispatc
 When agents are running, the statusline shows a count:
 
 ```
-PR #42: Open  [2 agents]
+[1/5] ✓ In sync [2 agents]
 ```
 
 The `is_active()` function returns `true` while agents are running, even without an active PR session. This means your lualine `cond` function will keep the statusline section visible while agents finish.
@@ -87,7 +90,7 @@ Multiple agents can run simultaneously on the same repo. Since they share the wo
 
 ## Notes
 
-- The feature is completely inert when `enabled` is `false` (the default) — no keymaps are registered, no modules are loaded unnecessarily
-- Agents run as detached processes — closing Neovim does not kill them
+- The feature is completely inert when `enabled` is `false` (the default) — no keymaps are registered and no agent processes are spawned
+- Agents run as child processes of Neovim — closing Neovim will terminate running agents, so ensure agents complete before exiting
 - The shortcut works in both normal and visual mode, making it the first visual-mode keymap in the commit viewer
 - The feature works in both PR commit viewer and local commit viewer modes

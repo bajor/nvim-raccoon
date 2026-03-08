@@ -258,7 +258,7 @@ describe("raccoon.parallel_agents", function()
       os.remove(tmpfile)
     end)
 
-    it("warns when claude command lacks --dangerously-skip-permissions", function()
+    it("warns when claude command lacks permission flags", function()
       local tmpfile = test_tmp_dir .. "/pa_no_perms.json"
       local f = io.open(tmpfile, "w")
       f:write('{"parallel_agents": {"enabled": true, "command": "claude -p <PROMPT>"}}')
@@ -270,7 +270,7 @@ describe("raccoon.parallel_agents", function()
       local warned = false
       local orig_notify = vim.notify
       vim.notify = function(msg, level)
-        if msg:find("dangerously%-skip%-permissions") and level == vim.log.levels.WARN then
+        if msg:find("permission flags") and level == vim.log.levels.WARN then
           warned = true
         end
       end
@@ -295,7 +295,30 @@ describe("raccoon.parallel_agents", function()
       local warned = false
       local orig_notify = vim.notify
       vim.notify = function(msg, level)
-        if msg:find("dangerously%-skip%-permissions") then warned = true end
+        if msg:find("permission flags") then warned = true end
+      end
+
+      pa.dispatch({ repo_path = "/tmp" })
+
+      vim.notify = orig_notify
+      pa._open_task_input = nil
+      assert.is_false(warned)
+      os.remove(tmpfile)
+    end)
+
+    it("does not warn when --allowedTools is present", function()
+      local tmpfile = test_tmp_dir .. "/pa_allowed_tools.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": true, "command": "claude --allowedTools Edit,Write -p <PROMPT>"}}')
+      f:close()
+      config.config_path = tmpfile
+
+      pa._open_task_input = function() end
+
+      local warned = false
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        if msg:find("permission flags") then warned = true end
       end
 
       pa.dispatch({ repo_path = "/tmp" })
@@ -318,7 +341,7 @@ describe("raccoon.parallel_agents", function()
       local warned = false
       local orig_notify = vim.notify
       vim.notify = function(msg, level)
-        if msg:find("dangerously%-skip%-permissions") then warned = true end
+        if msg:find("permission flags") then warned = true end
       end
 
       pa.dispatch({ repo_path = "/tmp" })
