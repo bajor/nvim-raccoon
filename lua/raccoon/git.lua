@@ -306,7 +306,11 @@ end
 ---@return string
 function M.build_pr_path(clone_root, owner, repo, pr_number)
   local root = clone_root:gsub("[/\\]+$", "")
-  return vim.fs.joinpath(root, owner, repo, "pr-" .. pr_number)
+  local pr_dir = owner .. "/" .. repo .. "/pr-" .. pr_number
+  if root == "" then
+    return pr_dir
+  end
+  return root .. "/" .. pr_dir
 end
 
 --- Check how many commits the current branch is behind the base branch
