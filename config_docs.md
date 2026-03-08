@@ -206,7 +206,7 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable the feature |
-| `command` | string | `""` | Shell command template containing `"your task"` placeholder |
+| `command` | string | `""` | Shell command template containing `<PROMPT>` placeholder |
 | `suffix_prompt` | string | `""` | Text appended to every agent prompt |
 | `shortcut` | string or false | `"<leader>a"` | Keymap to trigger dispatch. Set to `false` to disable. |
 
@@ -214,7 +214,7 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
 {
   "parallel_agents": {
     "enabled": true,
-    "command": "claude -p \"your task\"",
+    "command": "claude -p <PROMPT>",
     "suffix_prompt": "Commit and push when done.",
     "shortcut": "<leader>a"
   }

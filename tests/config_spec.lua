@@ -742,7 +742,7 @@ describe("raccoon.config", function()
       f:write([[{
         "parallel_agents": {
           "enabled": true,
-          "command": "claude -p \"your task\"",
+          "command": "claude -p <PROMPT>",
           "suffix_prompt": "Always push."
         }
       }]])
@@ -751,7 +751,7 @@ describe("raccoon.config", function()
       config.config_path = tmpfile
       local pa = config.load_parallel_agents()
       assert.is_true(pa.enabled)
-      assert.equals('claude -p "your task"', pa.command)
+      assert.equals('claude -p <PROMPT>', pa.command)
       assert.equals("Always push.", pa.suffix_prompt)
       assert.equals("<leader>a", pa.shortcut) -- default kept
 

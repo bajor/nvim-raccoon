@@ -10,7 +10,7 @@ Add a `parallel_agents` section to `~/.config/raccoon/config.json`:
 {
   "parallel_agents": {
     "enabled": true,
-    "command": "claude -p \"your task\"",
+    "command": "claude -p <PROMPT>",
     "suffix_prompt": "Commit and push when done.",
     "shortcut": "<leader>a"
   }
@@ -20,18 +20,18 @@ Add a `parallel_agents` section to `~/.config/raccoon/config.json`:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable the feature. When false, no keymaps are registered. |
-| `command` | string | `""` | Shell command template. Must contain `"your task"` as a placeholder — it will be replaced with the assembled prompt (shell-escaped). |
+| `command` | string | `""` | Shell command template. Must contain `<PROMPT>` as a placeholder — it will be replaced with the assembled prompt (shell-escaped). |
 | `suffix_prompt` | string | `""` | Text appended to every agent prompt. Use this for instructions like "always commit and push when done". |
 | `shortcut` | string or false | `"<leader>a"` | Keymap to trigger agent dispatch in maximized diff view. Set to `false` to disable. |
 
-The `command` field is a shell string executed via `sh -c`. The `"your task"` placeholder is replaced with a shell-escaped prompt containing the user's task description, commit context, and optionally the visual selection.
+The `command` field is a shell string executed via `sh -c`. The `<PROMPT>` placeholder is replaced with a shell-escaped prompt containing the user's task description, commit context, and optionally the visual selection.
 
 ### Command template examples
 
 ```json
-"command": "claude -p \"your task\""
-"command": "amp -x \"your task\""
-"command": "aider --message \"your task\""
+"command": "claude -p <PROMPT>"
+"command": "amp -x <PROMPT>"
+"command": "aider --message <PROMPT>"
 ```
 
 ## Usage

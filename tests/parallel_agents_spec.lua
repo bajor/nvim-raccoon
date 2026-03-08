@@ -107,10 +107,10 @@ describe("raccoon.parallel_agents", function()
 
   describe("build_command", function()
     it("replaces placeholder with shell-escaped prompt", function()
-      local cmd = pa.build_command('claude -p "your task"', "hello world")
+      local cmd = pa.build_command('claude -p <PROMPT>', "hello world")
       assert.truthy(cmd:find("claude %-p "))
       -- Should not contain the placeholder anymore
-      assert.falsy(cmd:find('"your task"'))
+      assert.falsy(cmd:find('<PROMPT>'))
     end)
 
     it("returns template unchanged when placeholder is missing", function()
@@ -119,15 +119,15 @@ describe("raccoon.parallel_agents", function()
     end)
 
     it("handles special characters in prompt via shellescape", function()
-      local cmd = pa.build_command('claude -p "your task"', "it's a test with $VAR and `backticks`")
+      local cmd = pa.build_command('claude -p <PROMPT>', "it's a test with $VAR and `backticks`")
       -- shellescape wraps in single quotes, so the original quotes should be escaped
-      assert.falsy(cmd:find('"your task"'))
+      assert.falsy(cmd:find('<PROMPT>'))
     end)
 
     it("only replaces the first occurrence", function()
-      local cmd = pa.build_command('echo "your task" && echo "your task"', "hello")
+      local cmd = pa.build_command('echo <PROMPT> && echo <PROMPT>', "hello")
       -- First placeholder replaced, second remains
-      local _, count = cmd:gsub('"your task"', "")
+      local _, count = cmd:gsub('<PROMPT>', "")
       assert.equals(1, count)
     end)
   end)
@@ -198,7 +198,7 @@ describe("raccoon.parallel_agents", function()
       -- Write enabled config with valid command
       local tmpfile = test_tmp_dir .. "/pa_dispatch.json"
       local f = io.open(tmpfile, "w")
-      f:write('{"parallel_agents": {"enabled": true, "command": "echo \\"your task\\""}}')
+      f:write('{"parallel_agents": {"enabled": true, "command": "echo <PROMPT>"}}')
       f:close()
       config.config_path = tmpfile
 

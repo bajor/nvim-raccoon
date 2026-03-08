@@ -38,12 +38,12 @@ function M.build_prompt(opts, task_text)
 end
 
 --- Build the final shell command by replacing the placeholder
----@param cmd_template string Command template containing "your task"
+---@param cmd_template string Command template containing <PROMPT> placeholder
 ---@param prompt string The assembled prompt
 ---@return string final_cmd
 function M.build_command(cmd_template, prompt)
   local escaped = vim.fn.shellescape(prompt)
-  local placeholder = '"your task"'
+  local placeholder = '<PROMPT>'
   local pos = cmd_template:find(placeholder, 1, true)
   if not pos then return cmd_template end
   return cmd_template:sub(1, pos - 1) .. escaped .. cmd_template:sub(pos + #placeholder)
@@ -70,8 +70,8 @@ function M.dispatch(opts)
     return
   end
 
-  if not pa_cfg.command:find('"your task"', 1, true) then
-    vim.notify('Parallel agents: command must contain "your task" placeholder', vim.log.levels.WARN)
+  if not pa_cfg.command:find('<PROMPT>', 1, true) then
+    vim.notify('Parallel agents: command must contain <PROMPT> placeholder', vim.log.levels.WARN)
     return
   end
 
