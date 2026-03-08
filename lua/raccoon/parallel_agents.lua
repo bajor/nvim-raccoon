@@ -55,6 +55,60 @@ function M.get_running_count()
   return #agents
 end
 
+--- Open a floating window for task input, call on_submit with the text
+---@param on_submit fun(task_text: string)
+local function open_task_input(on_submit)
+  local shortcuts = config.load_shortcuts()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+
+  local width = 80
+  local height = 5
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local save_key = config.is_enabled(shortcuts.comment_save) and shortcuts.comment_save or "<leader>s"
+  local title = string.format(" Agent Task (%s=send, Esc=cancel) ", save_key)
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    title = title,
+    title_pos = "center",
+  })
+
+  vim.cmd("startinsert")
+
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+
+  local function close()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+
+  local function submit()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local text = vim.fn.trim(table.concat(lines, "\n"))
+    close()
+    if text ~= "" then
+      on_submit(text)
+    end
+  end
+
+  if config.is_enabled(shortcuts.comment_save) then
+    vim.keymap.set("n", shortcuts.comment_save, submit, buf_opts)
+  end
+  vim.keymap.set("n", "<Esc>", close, buf_opts)
+  vim.keymap.set("n", "q", close, buf_opts)
+end
+
 --- Dispatch an agent process
 ---@param opts table {repo_path, commit_sha, commit_message, filename, visual_lines, line_start, line_end}
 function M.dispatch(opts)
@@ -75,9 +129,8 @@ function M.dispatch(opts)
     return
   end
 
-  vim.ui.input({ prompt = "Agent task: " }, function(task_text)
-    if not task_text or task_text == "" then return end
-
+  local get_input = M._open_task_input or open_task_input
+  get_input(function(task_text)
     local prompt = M.build_prompt({
       commit_sha = opts.commit_sha,
       commit_message = opts.commit_message,

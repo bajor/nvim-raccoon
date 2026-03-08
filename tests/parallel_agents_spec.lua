@@ -183,14 +183,8 @@ describe("raccoon.parallel_agents", function()
   end)
 
   describe("dispatch success path", function()
-    local original_ui_input
-
-    before_each(function()
-      original_ui_input = vim.ui.input
-    end)
-
     after_each(function()
-      vim.ui.input = original_ui_input
+      pa._open_task_input = nil
       mocks.restore()
     end)
 
@@ -202,8 +196,8 @@ describe("raccoon.parallel_agents", function()
       f:close()
       config.config_path = tmpfile
 
-      -- Mock vim.ui.input to provide task text
-      vim.ui.input = function(opts, cb) cb("my test task") end
+      -- Mock task input to provide task text immediately
+      pa._open_task_input = function(on_submit) on_submit("my test task") end
 
       -- Mock jobstart to capture the job
       mocks.mock_jobstart({ [".*"] = { exit_code = 0 } })
