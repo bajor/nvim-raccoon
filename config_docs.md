@@ -195,6 +195,22 @@ Number of recent base branch commits shown in the commit viewer sidebar. These a
 }
 ```
 
+#### `commit_viewer.sidebar_width`
+
+| Type | Default |
+|------|---------|
+| number | `50` |
+
+Width in columns of the commit list sidebar (right) and file tree panel (left). Clamped to 20–120.
+
+```json
+{
+  "commit_viewer": {
+    "sidebar_width": 40
+  }
+}
+```
+
 ### `parallel_agents`
 
 | Type | Default |
@@ -209,6 +225,7 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
 | `command` | string | `""` | Shell command template containing `<PROMPT>` placeholder |
 | `suffix_prompt` | string | `""` | Text appended to every agent prompt |
 | `shortcut` | string or false | `"<leader>aa"` | Keymap to trigger dispatch. Set to `false` to disable. |
+| `popup_width` | number | `70` | Width of the task input popup (clamped to terminal width). |
 
 ```json
 {

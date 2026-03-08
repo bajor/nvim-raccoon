@@ -23,6 +23,7 @@ Add a `parallel_agents` section to `~/.config/raccoon/config.json`:
 | `command` | string | `""` | Shell command template. Must contain `<PROMPT>` as a placeholder — it will be replaced with the assembled prompt (shell-escaped). |
 | `suffix_prompt` | string | `""` | Text appended to every agent prompt. Use this for instructions like "always commit and push when done". |
 | `shortcut` | string or false | `"<leader>aa"` | Keymap to trigger agent dispatch in maximized diff view. Set to `false` to disable. |
+| `popup_width` | number | `70` | Width of the task input popup in columns. Clamped to terminal width minus 4. |
 
 The `command` field is a shell string executed via `sh -c`. The `<PROMPT>` placeholder is replaced with a shell-escaped prompt containing the user's task description, commit context, and optionally the visual selection.
 

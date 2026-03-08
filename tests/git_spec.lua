@@ -420,7 +420,7 @@ describe("raccoon.git path edge cases", function()
   describe("build_pr_path edge cases", function()
     it("handles empty clone root", function()
       local path = git.build_pr_path("", "owner", "repo", 1)
-      assert.equals("/owner/repo/pr-1", path)
+      assert.equals("owner/repo/pr-1", path)
     end)
 
     it("handles trailing slash in clone root", function()

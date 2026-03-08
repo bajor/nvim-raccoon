@@ -102,7 +102,7 @@ function M.statusline()
   return base
 end
 
---- Check if PR review is active (for lualine cond)
+--- Check if PR review or parallel agents are active (for lualine cond)
 ---@return boolean
 function M.is_active()
   local open = require("raccoon.open")

@@ -29,12 +29,14 @@ M.defaults = {
   commit_viewer = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
+    sidebar_width = 50,
   },
   parallel_agents = {
     enabled = false,
     command = "",
     suffix_prompt = "",
     shortcut = "<leader>aa",
+    popup_width = 70,
   },
   shortcuts = {
     -- Global
@@ -303,6 +305,8 @@ function M.load_parallel_agents()
     command = type(user.command) == "string" and user.command or defaults.command,
     suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
     shortcut = shortcut,
+    popup_width = type(user.popup_width) == "number" and user.popup_width > 0
+      and math.floor(user.popup_width) or defaults.popup_width,
   }
 end
 

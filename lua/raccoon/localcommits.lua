@@ -698,6 +698,7 @@ local function enter_local_mode()
       cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
     end
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
+    ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
   end
 
   vim.notify("Loading commits...", vim.log.levels.INFO)

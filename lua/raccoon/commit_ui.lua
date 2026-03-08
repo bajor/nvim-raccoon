@@ -129,6 +129,7 @@ end
 ---@param buf number Buffer ID
 ---@param grid_rows number Grid row count (for maximize prefix blocking)
 ---@param grid_cols number Grid column count
+---@param skip_keys? table<string, boolean> Keys to exclude from blocking
 function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local shortcuts = config.load_shortcuts()
@@ -482,7 +483,7 @@ function M.close_grid(s)
 end
 
 --- Open a maximize floating window for a full-file diff
----@param opts table {ns_id, repo_path, sha, filename, generation, get_generation, state, is_working_dir}
+---@param opts table {ns_id, repo_path, sha, filename, commit_message, generation, ...}
 function M.open_maximize(opts)
   local git = require("raccoon.git")
 
@@ -571,9 +572,10 @@ function M.open_maximize(opts)
     local pa_cfg = config.load_parallel_agents()
     local skip_keys
     if #change_starts > 0 then
-      skip_keys = {}
-      skip_keys[shortcuts.commit_mode.next_page] = true
-      skip_keys[shortcuts.commit_mode.prev_page] = true
+      skip_keys = {
+        [shortcuts.commit_mode.next_page] = true,
+        [shortcuts.commit_mode.prev_page] = true,
+      }
     end
     M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols, skip_keys)
 
@@ -662,7 +664,12 @@ function M.refresh_maximize(s)
     if not s.maximize_workdir_opts then return end
     if not vim.api.nvim_buf_is_valid(buf) then return end
 
-    if err or not patch or patch == "" then return end
+    if err or not patch or patch == "" then
+      vim.bo[buf].modifiable = true
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+      vim.bo[buf].modifiable = false
+      return
+    end
 
     local hunks = diff.parse_patch(patch)
     if #hunks == 0 then return end

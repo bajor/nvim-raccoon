@@ -768,8 +768,11 @@ end
 local function build_new_file_patch(path, filename)
   local filepath = vim.fs.joinpath(path, filename)
   local ok, lines = pcall(vim.fn.readfile, filepath)
-  if not ok or not lines or #lines == 0 then
+  if not ok or not lines then
     return nil
+  end
+  if #lines == 0 then
+    return "@@ -0,0 +0,0 @@"
   end
   local patch_lines = { "@@ -0,0 +1," .. #lines .. " @@" }
   for _, line in ipairs(lines) do

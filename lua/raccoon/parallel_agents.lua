@@ -58,13 +58,14 @@ end
 --- Open a floating window for task input, call on_submit with the text
 ---@param on_submit fun(task_text: string)
 ---@param view_state? table Optional state table; sets state.popup_win while open
-local function open_task_input(on_submit, view_state)
+---@param popup_width? number Desired popup width (clamped to terminal)
+local function open_task_input(on_submit, view_state, popup_width)
   local shortcuts = config.load_shortcuts()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
 
-  local width = 80
+  local width = math.min(popup_width or 70, vim.o.columns - 4)
   local height = 5
   local row = 1
   local col = math.floor((vim.o.columns - width) / 2)
@@ -107,9 +108,11 @@ local function open_task_input(on_submit, view_state)
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local text = vim.fn.trim(table.concat(lines, "\n"))
     close()
-    if text ~= "" then
-      on_submit(text)
+    if text == "" then
+      vim.notify("Agent dispatch cancelled: no task provided", vim.log.levels.INFO)
+      return
     end
+    on_submit(text)
   end
 
   if config.is_enabled(shortcuts.comment_save) then
@@ -152,6 +155,7 @@ function M.dispatch(opts)
         .. " so background agents don't hang on prompts.",
       vim.log.levels.WARN
     )
+    return
   end
 
   local get_input = M._open_task_input or open_task_input
@@ -207,7 +211,7 @@ function M.dispatch(opts)
     else
       vim.notify("Failed to start agent: command not executable", vim.log.levels.ERROR)
     end
-  end, opts.view_state)
+  end, opts.view_state, pa_cfg.popup_width)
 end
 
 ---@private

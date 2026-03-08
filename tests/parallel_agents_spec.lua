@@ -217,6 +217,107 @@ describe("raccoon.parallel_agents", function()
     end)
   end)
 
+  describe("dispatch failure paths", function()
+    after_each(function()
+      pa._open_task_input = nil
+      mocks.restore()
+    end)
+
+    it("reports error when jobstart returns 0 (invalid arguments)", function()
+      local tmpfile = test_tmp_dir .. "/pa_jobfail_0.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": true, "command": "echo <PROMPT>"}}')
+      f:close()
+      config.config_path = tmpfile
+
+      pa._open_task_input = function(on_submit) on_submit("test task") end
+
+      local orig_jobstart = vim.fn.jobstart
+      vim.fn.jobstart = function() return 0 end
+
+      local notifications = mocks.mock_notify()
+
+      pa.dispatch({ repo_path = "/tmp" })
+
+      vim.fn.jobstart = orig_jobstart
+      assert.equals(0, pa.get_running_count())
+
+      local found = false
+      for _, n in ipairs(notifications) do
+        if n.msg:find("invalid command arguments") and n.level == vim.log.levels.ERROR then
+          found = true
+        end
+      end
+      assert.is_true(found)
+      os.remove(tmpfile)
+    end)
+
+    it("reports error when jobstart returns -1 (not executable)", function()
+      local tmpfile = test_tmp_dir .. "/pa_jobfail_neg.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": true, "command": "echo <PROMPT>"}}')
+      f:close()
+      config.config_path = tmpfile
+
+      pa._open_task_input = function(on_submit) on_submit("test task") end
+
+      local orig_jobstart = vim.fn.jobstart
+      vim.fn.jobstart = function() return -1 end
+
+      local notifications = mocks.mock_notify()
+
+      pa.dispatch({ repo_path = "/tmp" })
+
+      vim.fn.jobstart = orig_jobstart
+      assert.equals(0, pa.get_running_count())
+
+      local found = false
+      for _, n in ipairs(notifications) do
+        if n.msg:find("command not executable") and n.level == vim.log.levels.ERROR then
+          found = true
+        end
+      end
+      assert.is_true(found)
+      os.remove(tmpfile)
+    end)
+
+    it("reports non-zero exit code with stderr in notification", function()
+      local tmpfile = test_tmp_dir .. "/pa_exit_fail.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": true, "command": "echo <PROMPT>"}}')
+      f:close()
+      config.config_path = tmpfile
+
+      pa._open_task_input = function(on_submit) on_submit("failing task") end
+
+      mocks.mock_jobstart({ [".*"] = {
+        exit_code = 1,
+        stderr = { "error: something went wrong", "fatal: cannot continue" },
+      }})
+
+      local notifications = mocks.mock_notify()
+
+      pa.dispatch({ repo_path = "/tmp" })
+
+      -- Wait for on_exit to fire via vim.schedule
+      vim.wait(100, function()
+        for _, n in ipairs(notifications) do
+          if n.msg:find("exit 1") then return true end
+        end
+        return false
+      end)
+
+      local found = false
+      for _, n in ipairs(notifications) do
+        if n.msg:find("exit 1") and n.msg:find("something went wrong") and n.level == vim.log.levels.WARN then
+          found = true
+        end
+      end
+      assert.is_true(found)
+      os.remove(tmpfile)
+    end)
+  end)
+
   describe("dispatch guards", function()
     it("notifies when not enabled", function()
       local tmpfile = test_tmp_dir .. "/pa_disabled.json"
@@ -258,14 +359,15 @@ describe("raccoon.parallel_agents", function()
       os.remove(tmpfile)
     end)
 
-    it("warns when claude command lacks permission flags", function()
+    it("blocks dispatch when claude command lacks permission flags", function()
       local tmpfile = test_tmp_dir .. "/pa_no_perms.json"
       local f = io.open(tmpfile, "w")
       f:write('{"parallel_agents": {"enabled": true, "command": "claude -p <PROMPT>"}}')
       f:close()
       config.config_path = tmpfile
 
-      pa._open_task_input = function() end -- prevent input popup
+      local input_opened = false
+      pa._open_task_input = function() input_opened = true end
 
       local warned = false
       local orig_notify = vim.notify
@@ -280,6 +382,7 @@ describe("raccoon.parallel_agents", function()
       vim.notify = orig_notify
       pa._open_task_input = nil
       assert.is_true(warned)
+      assert.is_false(input_opened)
       os.remove(tmpfile)
     end)
 
