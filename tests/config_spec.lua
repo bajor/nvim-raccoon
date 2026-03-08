@@ -719,7 +719,7 @@ describe("raccoon.config", function()
       assert.is_false(pa.enabled)
       assert.equals("", pa.command)
       assert.equals("", pa.suffix_prompt)
-      assert.equals("<leader>a", pa.shortcut)
+      assert.equals("<leader>aa", pa.shortcut)
     end)
 
     it("returns defaults for invalid JSON", function()
@@ -731,7 +731,7 @@ describe("raccoon.config", function()
       config.config_path = tmpfile
       local pa = config.load_parallel_agents()
       assert.is_false(pa.enabled)
-      assert.equals("<leader>a", pa.shortcut)
+      assert.equals("<leader>aa", pa.shortcut)
 
       os.remove(tmpfile)
     end)
@@ -753,7 +753,7 @@ describe("raccoon.config", function()
       assert.is_true(pa.enabled)
       assert.equals('claude -p <PROMPT>', pa.command)
       assert.equals("Always push.", pa.suffix_prompt)
-      assert.equals("<leader>a", pa.shortcut) -- default kept
+      assert.equals("<leader>aa", pa.shortcut) -- default kept
 
       os.remove(tmpfile)
     end)
@@ -776,7 +776,7 @@ describe("raccoon.config", function()
       assert.is_false(pa.enabled) -- default
       assert.equals("", pa.command) -- default
       assert.equals("", pa.suffix_prompt) -- default
-      assert.equals("<leader>a", pa.shortcut) -- default
+      assert.equals("<leader>aa", pa.shortcut) -- default
 
       os.remove(tmpfile)
     end)

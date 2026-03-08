@@ -34,7 +34,7 @@ M.defaults = {
     enabled = false,
     command = "",
     suffix_prompt = "",
-    shortcut = "<leader>a",
+    shortcut = "<leader>aa",
   },
   shortcuts = {
     -- Global

@@ -12,7 +12,7 @@ Add a `parallel_agents` section to `~/.config/raccoon/config.json`:
     "enabled": true,
     "command": "claude -p <PROMPT>",
     "suffix_prompt": "Commit and push when done.",
-    "shortcut": "<leader>a"
+    "shortcut": "<leader>aa"
   }
 }
 ```
@@ -22,7 +22,7 @@ Add a `parallel_agents` section to `~/.config/raccoon/config.json`:
 | `enabled` | boolean | `false` | Enable the feature. When false, no keymaps are registered. |
 | `command` | string | `""` | Shell command template. Must contain `<PROMPT>` as a placeholder — it will be replaced with the assembled prompt (shell-escaped). |
 | `suffix_prompt` | string | `""` | Text appended to every agent prompt. Use this for instructions like "always commit and push when done". |
-| `shortcut` | string or false | `"<leader>a"` | Keymap to trigger agent dispatch in maximized diff view. Set to `false` to disable. |
+| `shortcut` | string or false | `"<leader>aa"` | Keymap to trigger agent dispatch in maximized diff view. Set to `false` to disable. |
 
 The `command` field is a shell string executed via `sh -c`. The `<PROMPT>` placeholder is replaced with a shell-escaped prompt containing the user's task description, commit context, and optionally the visual selection.
 
