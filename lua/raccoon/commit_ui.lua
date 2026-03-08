@@ -476,6 +476,9 @@ function M.close_win_pair(s, win_key, buf_key)
   end
   s[win_key] = nil
   if buf_key then s[buf_key] = nil end
+  if win_key == "maximize_win" then
+    s.maximize_workdir_opts = nil
+  end
 end
 
 --- Close all grid windows
@@ -557,6 +560,15 @@ function M.open_maximize(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    if opts.is_working_dir then
+      opts.state.maximize_workdir_opts = {
+        ns_id = opts.ns_id,
+        repo_path = opts.repo_path,
+        filename = opts.filename,
+      }
+    else
+      opts.state.maximize_workdir_opts = nil
+    end
 
     M.apply_diff_highlights(opts.ns_id, buf, hl_lines)
 
@@ -607,6 +619,52 @@ function M.open_maximize(opts)
     end
 
     setup_parallel_agent_keymap(buf, opts)
+  end)
+end
+
+--- Refresh the maximize window in-place for working directory changes
+--- Only works when maximize_workdir_opts is set (i.e. viewing "Current changes")
+---@param s table State table
+function M.refresh_maximize(s)
+  local mopts = s.maximize_workdir_opts
+  if not mopts then return end
+  if not s.maximize_buf or not vim.api.nvim_buf_is_valid(s.maximize_buf) then return end
+  if not s.maximize_win or not vim.api.nvim_win_is_valid(s.maximize_win) then return end
+
+  local git = require("raccoon.git")
+  local buf = s.maximize_buf
+  local win = s.maximize_win
+
+  git.diff_working_dir_file(mopts.repo_path, mopts.filename, function(patch, err)
+    if not s.maximize_workdir_opts then return end
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+
+    if err or not patch or patch == "" then return end
+
+    local hunks = diff.parse_patch(patch)
+    if #hunks == 0 then return end
+
+    local lines = {}
+    local hl_lines = {}
+    for _, hunk in ipairs(hunks) do
+      for _, line_data in ipairs(hunk.lines) do
+        table.insert(lines, line_data.content or "")
+        table.insert(hl_lines, { type = line_data.type })
+      end
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(win)
+
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+
+    M.apply_diff_highlights(mopts.ns_id, buf, hl_lines)
+
+    -- Restore cursor, clamped to new line count
+    local max_line = vim.api.nvim_buf_line_count(buf)
+    if cursor[1] > max_line then cursor[1] = max_line end
+    pcall(vim.api.nvim_win_set_cursor, win, cursor)
   end)
 end
 
