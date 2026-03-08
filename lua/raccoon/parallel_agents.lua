@@ -166,7 +166,16 @@ function M.dispatch(opts)
     local stdout_lines = {}
     local stderr_lines = {}
 
-    local job_id = vim.fn.jobstart({ "sh", "-c", final_cmd }, {
+    -- Log the command being run for debugging
+    local f0 = io.open(log_path, "a")
+    if f0 then
+      f0:write(string.format("\n[%s] STARTING task=%s cwd=%s\ncmd: %s\n",
+        os.date("%Y-%m-%d %H:%M:%S"), task_text, opts.repo_path or "?", final_cmd))
+      f0:close()
+    end
+
+    -- Redirect stdin from /dev/null so the child process doesn't hang waiting for input
+    local job_id = vim.fn.jobstart({ "sh", "-c", final_cmd .. " </dev/null" }, {
       cwd = opts.repo_path,
       on_stdout = function(_, data)
         if data then
