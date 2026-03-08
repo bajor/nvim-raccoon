@@ -70,7 +70,8 @@ local function open_task_input(on_submit, view_state)
   local col = math.floor((vim.o.columns - width) / 2)
 
   local save_key = config.is_enabled(shortcuts.comment_save) and shortcuts.comment_save or "<leader>s"
-  local title = string.format(" Agent Task (%s=send, Esc=cancel) ", save_key)
+  local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "q"
+  local title = string.format(" Agent Task (%s=send, %s=cancel) ", save_key, close_key)
 
   -- Set flag before open_win so the WinEnter focus lock sees it
   if view_state then view_state.popup_win = true end
@@ -113,8 +114,10 @@ local function open_task_input(on_submit, view_state)
   if config.is_enabled(shortcuts.comment_save) then
     vim.keymap.set("n", shortcuts.comment_save, submit, buf_opts)
   end
-  vim.keymap.set("n", "<Esc>", close, buf_opts)
   vim.keymap.set("n", "q", close, buf_opts)
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set("n", shortcuts.close, close, buf_opts)
+  end
 end
 
 --- Dispatch an agent process
@@ -151,8 +154,20 @@ function M.dispatch(opts)
 
     local final_cmd = M.build_command(pa_cfg.command, prompt)
 
+    local log_dir = vim.fn.stdpath("log") or vim.fn.stdpath("data")
+    local log_path = vim.fs.joinpath(log_dir, "raccoon-agent.log")
+    local stderr_lines = {}
+
     local job_id = vim.fn.jobstart({ "sh", "-c", final_cmd }, {
       cwd = opts.repo_path,
+      on_stdout = function() end,
+      on_stderr = function(_, data)
+        if data then
+          for _, line in ipairs(data) do
+            if line ~= "" then table.insert(stderr_lines, line) end
+          end
+        end
+      end,
       on_exit = function(id, exit_code)
         vim.schedule(function()
           for i, agent in ipairs(agents) do
@@ -161,11 +176,24 @@ function M.dispatch(opts)
               break
             end
           end
+
+          -- Append to log file for debugging
+          local f = io.open(log_path, "a")
+          if f then
+            f:write(string.format("\n[%s] task=%s exit=%d cwd=%s\n",
+              os.date("%Y-%m-%d %H:%M:%S"), task_text, exit_code, opts.repo_path or "?"))
+            if #stderr_lines > 0 then
+              f:write("stderr:\n" .. table.concat(stderr_lines, "\n") .. "\n")
+            end
+            f:close()
+          end
+
           local level = exit_code == 0 and vim.log.levels.INFO or vim.log.levels.WARN
-          vim.notify(
-            string.format("Agent finished (exit %d): %s", exit_code, task_text),
-            level
-          )
+          local msg = string.format("Agent finished (exit %d): %s", exit_code, task_text)
+          if exit_code ~= 0 and #stderr_lines > 0 then
+            msg = msg .. "\n" .. table.concat(stderr_lines, "\n")
+          end
+          vim.notify(msg, level)
         end)
       end,
     })
