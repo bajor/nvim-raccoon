@@ -258,6 +258,11 @@ Partial overrides are merged with defaults — you only need to specify keys you
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
   },
+  "parallel_agents": {
+    "enabled": true,
+    "command": "claude -p <PROMPT>",
+    "suffix_prompt": "Commit and push when done."
+  },
   "shortcuts": {
     "pr_list": "<leader>pr",
     "next_point": "<C-n>",

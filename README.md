@@ -40,6 +40,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 - Merge, squash, or rebase PRs
 - Auto-sync to detect new commits pushed to the branch
 - Local commit viewer (`:Raccoon local`) for browsing any git repo's history with live "Current changes" view
+- Dispatch CLI agents (claude, amp, aider) from commit viewer diffs with context injection
 - Statusline integration showing file position and sync status
 
 ## Requirements
@@ -92,6 +93,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.grid.rows` | number | `2` | Rows in the commit viewer diff grid |
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
+| `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
 
@@ -148,6 +150,11 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
+  },
+  "parallel_agents": {
+    "enabled": true,
+    "command": "claude -p <PROMPT>",
+    "suffix_prompt": "Commit and push when done."
   },
   "shortcuts": {
     "pr_list": "<leader>pr",
@@ -300,6 +307,12 @@ The first entry in the sidebar is **"Current changes"** — a live view of all u
 When a new commit is made (e.g. by an AI agent in another terminal), it appears in the sidebar automatically (10-second HEAD poll). Your selection stays on whatever commit you were viewing — new commits just shift the list without stealing focus.
 
 Local mode works alongside an active PR review — entering `:Raccoon local` pauses the PR session, and exiting resumes it.
+
+## Parallel Agents
+
+Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. Review a commit, optionally select code lines, and press `<leader>a` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
+
+Configure with the `parallel_agents` block in `config.json`. Set `command` to your CLI agent template (e.g. `claude -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
 
 ## Statusline
 
