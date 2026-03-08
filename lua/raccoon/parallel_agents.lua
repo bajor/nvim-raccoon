@@ -140,6 +140,13 @@ function M.dispatch(opts)
     return
   end
 
+  if pa_cfg.command:find("claude", 1, true) and not pa_cfg.command:find("%-%-dangerously%-skip%-permissions") then
+    vim.notify(
+      "Parallel agents: command contains 'claude' without '--dangerously-skip-permissions'.\nBackground agents cannot answer permission prompts.",
+      vim.log.levels.WARN
+    )
+  end
+
   local get_input = M._open_task_input or open_task_input
   get_input(function(task_text)
     local prompt = M.build_prompt({
@@ -156,11 +163,18 @@ function M.dispatch(opts)
 
     local log_dir = vim.fn.stdpath("log") or vim.fn.stdpath("data")
     local log_path = vim.fs.joinpath(log_dir, "raccoon-agent.log")
+    local stdout_lines = {}
     local stderr_lines = {}
 
     local job_id = vim.fn.jobstart({ "sh", "-c", final_cmd }, {
       cwd = opts.repo_path,
-      on_stdout = function() end,
+      on_stdout = function(_, data)
+        if data then
+          for _, line in ipairs(data) do
+            if line ~= "" then table.insert(stdout_lines, line) end
+          end
+        end
+      end,
       on_stderr = function(_, data)
         if data then
           for _, line in ipairs(data) do
@@ -182,6 +196,9 @@ function M.dispatch(opts)
           if f then
             f:write(string.format("\n[%s] task=%s exit=%d cwd=%s\n",
               os.date("%Y-%m-%d %H:%M:%S"), task_text, exit_code, opts.repo_path or "?"))
+            if #stdout_lines > 0 then
+              f:write("stdout:\n" .. table.concat(stdout_lines, "\n") .. "\n")
+            end
             if #stderr_lines > 0 then
               f:write("stderr:\n" .. table.concat(stderr_lines, "\n") .. "\n")
             end
@@ -190,8 +207,11 @@ function M.dispatch(opts)
 
           local level = exit_code == 0 and vim.log.levels.INFO or vim.log.levels.WARN
           local msg = string.format("Agent finished (exit %d): %s", exit_code, task_text)
-          if exit_code ~= 0 and #stderr_lines > 0 then
-            msg = msg .. "\n" .. table.concat(stderr_lines, "\n")
+          if exit_code ~= 0 then
+            if #stderr_lines > 0 then
+              msg = msg .. "\n" .. table.concat(stderr_lines, "\n")
+            end
+            msg = msg .. "\nLog: " .. log_path
           end
           vim.notify(msg, level)
         end)

@@ -258,6 +258,77 @@ describe("raccoon.parallel_agents", function()
       os.remove(tmpfile)
     end)
 
+    it("warns when claude command lacks --dangerously-skip-permissions", function()
+      local tmpfile = test_tmp_dir .. "/pa_no_perms.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": true, "command": "claude -p <PROMPT>"}}')
+      f:close()
+      config.config_path = tmpfile
+
+      pa._open_task_input = function() end -- prevent input popup
+
+      local warned = false
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        if msg:find("dangerously%-skip%-permissions") and level == vim.log.levels.WARN then
+          warned = true
+        end
+      end
+
+      pa.dispatch({ repo_path = "/tmp" })
+
+      vim.notify = orig_notify
+      pa._open_task_input = nil
+      assert.is_true(warned)
+      os.remove(tmpfile)
+    end)
+
+    it("does not warn when --dangerously-skip-permissions is present", function()
+      local tmpfile = test_tmp_dir .. "/pa_with_perms.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": true, "command": "claude --dangerously-skip-permissions -p <PROMPT>"}}')
+      f:close()
+      config.config_path = tmpfile
+
+      pa._open_task_input = function() end
+
+      local warned = false
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        if msg:find("dangerously%-skip%-permissions") then warned = true end
+      end
+
+      pa.dispatch({ repo_path = "/tmp" })
+
+      vim.notify = orig_notify
+      pa._open_task_input = nil
+      assert.is_false(warned)
+      os.remove(tmpfile)
+    end)
+
+    it("does not warn for non-claude commands", function()
+      local tmpfile = test_tmp_dir .. "/pa_non_claude.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": true, "command": "amp -x <PROMPT>"}}')
+      f:close()
+      config.config_path = tmpfile
+
+      pa._open_task_input = function() end
+
+      local warned = false
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        if msg:find("dangerously%-skip%-permissions") then warned = true end
+      end
+
+      pa.dispatch({ repo_path = "/tmp" })
+
+      vim.notify = orig_notify
+      pa._open_task_input = nil
+      assert.is_false(warned)
+      os.remove(tmpfile)
+    end)
+
     it("notifies when command lacks placeholder", function()
       local tmpfile = test_tmp_dir .. "/pa_no_placeholder.json"
       local f = io.open(tmpfile, "w")
