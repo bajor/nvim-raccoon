@@ -503,6 +503,7 @@ function M.open_maximize(opts)
       col = col,
       style = "minimal",
       border = "rounded",
+      zindex = 50,
     })
 
     opts.state.maximize_win = win
@@ -516,12 +517,23 @@ function M.open_maximize(opts)
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
 
+    local pa_cfg = config.load_parallel_agents()
     local skip_keys = nil
     if #change_starts > 0 then
       skip_keys = {
         [shortcuts.commit_mode.next_page] = true,
         [shortcuts.commit_mode.prev_page] = true,
       }
+    end
+    -- Don't block the suffix of the parallel agents shortcut
+    if pa_cfg.enabled and config.is_enabled(pa_cfg.shortcut) then
+      local suffix = pa_cfg.shortcut:match("<leader>(.+)")
+      if suffix then
+        skip_keys = skip_keys or {}
+        for i = 1, #suffix do
+          skip_keys[suffix:sub(i, i)] = true
+        end
+      end
     end
     M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols, skip_keys)
 
@@ -895,6 +907,7 @@ function M.setup_focus_lock(s, augroup_name)
       if s.popup_win and cur_win == s.popup_win then return end
       if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
         vim.schedule(function()
+          if s.popup_win then return end
           if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
             vim.api.nvim_set_current_win(s.maximize_win)
           end

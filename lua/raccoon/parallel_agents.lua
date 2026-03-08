@@ -66,11 +66,14 @@ local function open_task_input(on_submit, view_state)
 
   local width = 80
   local height = 5
-  local row = math.floor((vim.o.lines - height) / 2)
+  local row = 1
   local col = math.floor((vim.o.columns - width) / 2)
 
   local save_key = config.is_enabled(shortcuts.comment_save) and shortcuts.comment_save or "<leader>s"
   local title = string.format(" Agent Task (%s=send, Esc=cancel) ", save_key)
+
+  -- Set flag before open_win so the WinEnter focus lock sees it
+  if view_state then view_state.popup_win = true end
 
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
@@ -82,7 +85,7 @@ local function open_task_input(on_submit, view_state)
     border = "rounded",
     title = title,
     title_pos = "center",
-    zindex = 100,
+    zindex = 200,
   })
 
   if view_state then view_state.popup_win = win end
