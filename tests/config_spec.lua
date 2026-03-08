@@ -711,6 +711,155 @@ describe("raccoon.config", function()
     end)
   end)
 
+  describe("load_parallel_agents", function()
+    it("returns defaults when config file does not exist", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local pa = config.load_parallel_agents()
+      assert.is_table(pa)
+      assert.is_false(pa.enabled)
+      assert.equals("", pa.command)
+      assert.equals("", pa.suffix_prompt)
+      assert.equals("<leader>aa", pa.shortcut)
+    end)
+
+    it("returns defaults for invalid JSON", function()
+      local tmpfile = test_tmp_dir .. "/pa_invalid.json"
+      local f = io.open(tmpfile, "w")
+      f:write("{ bad json }")
+      f:close()
+
+      config.config_path = tmpfile
+      local pa = config.load_parallel_agents()
+      assert.is_false(pa.enabled)
+      assert.equals("<leader>aa", pa.shortcut)
+
+      os.remove(tmpfile)
+    end)
+
+    it("merges user overrides correctly", function()
+      local tmpfile = test_tmp_dir .. "/pa_override.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "parallel_agents": {
+          "enabled": true,
+          "command": "claude -p <PROMPT>",
+          "suffix_prompt": "Always push."
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local pa = config.load_parallel_agents()
+      assert.is_true(pa.enabled)
+      assert.equals('claude -p <PROMPT>', pa.command)
+      assert.equals("Always push.", pa.suffix_prompt)
+      assert.equals("<leader>aa", pa.shortcut) -- default kept
+
+      os.remove(tmpfile)
+    end)
+
+    it("handles invalid types gracefully", function()
+      local tmpfile = test_tmp_dir .. "/pa_bad_types.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "parallel_agents": {
+          "enabled": "yes",
+          "command": 42,
+          "suffix_prompt": true,
+          "shortcut": 99
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local pa = config.load_parallel_agents()
+      assert.is_false(pa.enabled) -- default
+      assert.equals("", pa.command) -- default
+      assert.equals("", pa.suffix_prompt) -- default
+      assert.equals("<leader>aa", pa.shortcut) -- default
+
+      os.remove(tmpfile)
+    end)
+
+    it("shortcut false disables shortcut", function()
+      local tmpfile = test_tmp_dir .. "/pa_no_shortcut.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "parallel_agents": {
+          "enabled": true,
+          "command": "test",
+          "shortcut": false
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local pa = config.load_parallel_agents()
+      assert.is_false(pa.shortcut)
+      assert.is_false(config.is_enabled(pa.shortcut))
+
+      os.remove(tmpfile)
+    end)
+
+    it("empty suffix_prompt is valid", function()
+      local tmpfile = test_tmp_dir .. "/pa_empty_suffix.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "parallel_agents": {
+          "enabled": true,
+          "command": "test",
+          "suffix_prompt": ""
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local pa = config.load_parallel_agents()
+      assert.equals("", pa.suffix_prompt)
+
+      os.remove(tmpfile)
+    end)
+
+    it("returns defaults when parallel_agents is not a table", function()
+      local tmpfile = test_tmp_dir .. "/pa_scalar.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": "invalid"}')
+      f:close()
+
+      config.config_path = tmpfile
+      local pa = config.load_parallel_agents()
+      assert.is_false(pa.enabled)
+      assert.equals("", pa.command)
+
+      os.remove(tmpfile)
+    end)
+
+    it("returns independent copies (no mutation)", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local p1 = config.load_parallel_agents()
+      local p2 = config.load_parallel_agents()
+      p1.command = "MUTATED"
+      assert.is_not_equal("MUTATED", p2.command)
+    end)
+
+    it("respects enabled=false even when default is true", function()
+      local original_default = config.defaults.parallel_agents.enabled
+      config.defaults.parallel_agents.enabled = true
+
+      local tmpfile = test_tmp_dir .. "/pa_enabled_false.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"parallel_agents": {"enabled": false}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local pa = config.load_parallel_agents()
+      assert.is_false(pa.enabled)
+
+      os.remove(tmpfile)
+      config.defaults.parallel_agents.enabled = original_default
+    end)
+  end)
+
   describe("multi-host tokens", function()
     it("get_token_for_owner returns token and default host for string token", function()
       local cfg = {

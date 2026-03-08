@@ -29,6 +29,14 @@ M.defaults = {
   commit_viewer = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
+    sidebar_width = 50,
+  },
+  parallel_agents = {
+    enabled = false,
+    command = "",
+    suffix_prompt = "",
+    shortcut = "<leader>aa",
+    popup_width = 70,
   },
   shortcuts = {
     -- Global
@@ -202,6 +210,34 @@ function M.create_default()
   return true, nil
 end
 
+--- Read and parse the JSON config file.
+--- Returns the parsed table, or nil on any failure.
+---@return table?
+local function read_config_json()
+  local path = M.config_path
+  local stat = vim.uv.fs_stat(path)
+  if not stat then return nil end
+  local file = io.open(path, "r")
+  if not file then return nil end
+  local content = file:read("*a")
+  file:close()
+  local ok, parsed = pcall(vim.json.decode, content)
+  if not ok or type(parsed) ~= "table" then
+    vim.notify("Raccoon: failed to parse config.json, using defaults", vim.log.levels.WARN)
+    return nil
+  end
+  return parsed
+end
+
+--- Return val if it is a boolean, otherwise return default.
+---@param val any
+---@param default boolean
+---@return boolean
+local function bool_field(val, default)
+  if type(val) == "boolean" then return val end
+  return default
+end
+
 --- Sanitize merged shortcuts against the defaults structure.
 --- Each leaf must be a non-empty string (valid binding) or false (disabled).
 --- Anything else (vim.NIL, numbers, empty strings, tables at leaf positions) falls back to the default.
@@ -230,27 +266,48 @@ end
 --- Unlike load(), this does not require valid tokens.
 ---@return table shortcuts
 function M.load_shortcuts()
-  local path = M.config_path
-  local stat = vim.uv.fs_stat(path)
-  if not stat then
-    return vim.deepcopy(M.defaults.shortcuts)
-  end
-
-  local file = io.open(path, "r")
-  if not file then
-    return vim.deepcopy(M.defaults.shortcuts)
-  end
-
-  local content = file:read("*a")
-  file:close()
-
-  local ok, parsed = pcall(vim.json.decode, content)
-  if not ok or type(parsed) ~= "table" then
+  local parsed = read_config_json()
+  if not parsed then
     return vim.deepcopy(M.defaults.shortcuts)
   end
 
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
   return sanitize_shortcuts(merged, M.defaults.shortcuts)
+end
+
+--- Load parallel_agents config, falling back to defaults gracefully.
+--- Unlike load(), this does not require valid tokens.
+---@return table parallel_agents
+function M.load_parallel_agents()
+  local defaults = M.defaults.parallel_agents
+
+  local parsed = read_config_json()
+  if not parsed then
+    return vim.deepcopy(defaults)
+  end
+
+  local user = parsed.parallel_agents
+  if type(user) ~= "table" then
+    return vim.deepcopy(defaults)
+  end
+
+  local shortcut
+  if user.shortcut == false then
+    shortcut = false
+  elseif type(user.shortcut) == "string" and user.shortcut ~= "" then
+    shortcut = user.shortcut
+  else
+    shortcut = defaults.shortcut
+  end
+
+  return {
+    enabled = bool_field(user.enabled, defaults.enabled),
+    command = type(user.command) == "string" and user.command or defaults.command,
+    suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
+    shortcut = shortcut,
+    popup_width = type(user.popup_width) == "number" and user.popup_width > 0
+      and math.floor(user.popup_width) or defaults.popup_width,
+  }
 end
 
 --- Get the token and host for a given owner/org from the tokens table

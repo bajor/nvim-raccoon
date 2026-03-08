@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10] - 2026-03-08
+
+### Added
+- Parallel agents — dispatch fire-and-forget CLI agents (e.g., `claude -p`, `amp -x`) from the commit viewer's maximized diff view via `<leader>aa` (configurable)
+- Visual selection context — select code lines before dispatching to include them in the agent prompt
+- Agent prompt assembly with task description, visual selection, commit context (SHA, message, filename), and configurable suffix prompt
+- Statusline indicator showing `[N agent(s)]` count while agents are running
+- `parallel_agents` config block: `enabled`, `command`, `suffix_prompt`, `shortcut`, `popup_width`
+- `commit_viewer.sidebar_width` config option to control the width of commit list and file tree panels (default 50, range 20–120)
+- `read_config_json()` helper extracted for config file reading reuse
+- `bool_field()` helper for boolean config validation
+
+### Fixed
+- `enabled=false` config value now correctly respected when the default is `true`
+
 ## [0.9.8] - 2026-02-18
 
 ### Added

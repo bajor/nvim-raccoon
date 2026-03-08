@@ -91,10 +91,45 @@ function M.lock_buf(buf)
   end
 end
 
+--- Set up the parallel agent dispatch keymap on a maximize buffer.
+---@param buf number Buffer to bind the keymap on
+---@param opts table {repo_path, sha, commit_message, filename, state}
+---@param pa_cfg? table Pre-loaded parallel_agents config (avoids re-reading disk)
+local function setup_parallel_agent_keymap(buf, opts, pa_cfg)
+  pa_cfg = pa_cfg or config.load_parallel_agents()
+  if not pa_cfg.enabled or not config.is_enabled(pa_cfg.shortcut) then return end
+  local pa = require("raccoon.parallel_agents")
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+  local function dispatch_fn()
+    local visual_lines, line_start, line_end
+    local mode = vim.fn.mode()
+    if mode == "v" or mode == "V" or mode == "\22" then
+      vim.api.nvim_feedkeys(
+        vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false
+      )
+      line_start = vim.fn.line("'<")
+      line_end = vim.fn.line("'>")
+      visual_lines = vim.api.nvim_buf_get_lines(buf, line_start - 1, line_end, false)
+    end
+    pa.dispatch({
+      repo_path = opts.repo_path,
+      commit_sha = opts.sha,
+      commit_message = opts.commit_message or "",
+      filename = opts.filename,
+      visual_lines = visual_lines,
+      line_start = line_start,
+      line_end = line_end,
+      view_state = opts.state,
+    })
+  end
+  vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
+end
+
 --- Block editing and commit-mode navigation keys in a maximize floating window
 ---@param buf number Buffer ID
 ---@param grid_rows number Grid row count (for maximize prefix blocking)
 ---@param grid_cols number Grid column count
+---@param skip_keys? table<string, boolean> Keys to exclude from blocking
 function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local shortcuts = config.load_shortcuts()
@@ -116,7 +151,9 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
     end
   end
   for _, key in ipairs(blocked) do
-    vim.keymap.set(NORMAL_MODE, key, nop, opts)
+    if not (skip_keys and skip_keys[key]) then
+      vim.keymap.set(NORMAL_MODE, key, nop, opts)
+    end
   end
   if config.is_enabled(shortcuts.commit_mode.maximize_prefix) then
     local cells = grid_rows * grid_cols
@@ -427,6 +464,10 @@ function M.close_win_pair(s, win_key, buf_key)
   end
   s[win_key] = nil
   if buf_key then s[buf_key] = nil end
+  if win_key == "maximize_win" then
+    M.stop_maximize_watcher(s)
+    s.maximize_workdir_opts = nil
+  end
 end
 
 --- Close all grid windows
@@ -442,7 +483,7 @@ function M.close_grid(s)
 end
 
 --- Open a maximize floating window for a full-file diff
----@param opts table {ns_id, repo_path, sha, filename, generation, get_generation, state, is_working_dir}
+---@param opts table {ns_id, repo_path, sha, filename, commit_message, generation, ...}
 function M.open_maximize(opts)
   local git = require("raccoon.git")
 
@@ -503,10 +544,22 @@ function M.open_maximize(opts)
       col = col,
       style = "minimal",
       border = "rounded",
+      zindex = 50,
     })
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    M.stop_maximize_watcher(opts.state)
+    if opts.is_working_dir then
+      opts.state.maximize_workdir_opts = {
+        ns_id = opts.ns_id,
+        repo_path = opts.repo_path,
+        filename = opts.filename,
+      }
+      M.start_maximize_watcher(opts.state)
+    else
+      opts.state.maximize_workdir_opts = nil
+    end
 
     M.apply_diff_highlights(opts.ns_id, buf, hl_lines)
 
@@ -516,7 +569,8 @@ function M.open_maximize(opts)
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
 
-    local skip_keys = nil
+    local pa_cfg = config.load_parallel_agents()
+    local skip_keys
     if #change_starts > 0 then
       skip_keys = {
         [shortcuts.commit_mode.next_page] = true,
@@ -556,6 +610,91 @@ function M.open_maximize(opts)
         end
       end, buf_opts)
     end
+
+    setup_parallel_agent_keymap(buf, opts, pa_cfg)
+  end)
+end
+
+--- Stop the file watcher for the maximize window
+---@param s table State table
+function M.stop_maximize_watcher(s)
+  if s.maximize_fs_event then
+    pcall(function()
+      s.maximize_fs_event:stop()
+      if not s.maximize_fs_event:is_closing() then
+        s.maximize_fs_event:close()
+      end
+    end)
+    s.maximize_fs_event = nil
+  end
+end
+
+--- Start a file watcher that refreshes the maximize window on file changes
+---@param s table State table (must have maximize_workdir_opts set)
+function M.start_maximize_watcher(s)
+  local mopts = s.maximize_workdir_opts
+  if not mopts then return end
+
+  local filepath = vim.fs.joinpath(mopts.repo_path, mopts.filename)
+  local handle = vim.uv.new_fs_event()
+  if not handle then return end
+
+  s.maximize_fs_event = handle
+  handle:start(filepath, {}, vim.schedule_wrap(function(err)
+    if err then return end
+    if not s.maximize_workdir_opts then return end
+    M.refresh_maximize(s)
+  end))
+end
+
+--- Refresh the maximize window in-place for working directory changes
+--- Only works when maximize_workdir_opts is set (i.e. viewing "Current changes")
+---@param s table State table
+function M.refresh_maximize(s)
+  local mopts = s.maximize_workdir_opts
+  if not mopts then return end
+  if not s.maximize_buf or not vim.api.nvim_buf_is_valid(s.maximize_buf) then return end
+  if not s.maximize_win or not vim.api.nvim_win_is_valid(s.maximize_win) then return end
+
+  local git = require("raccoon.git")
+  local buf = s.maximize_buf
+  local win = s.maximize_win
+
+  git.diff_working_dir_file(mopts.repo_path, mopts.filename, function(patch, err)
+    if not s.maximize_workdir_opts then return end
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+
+    if err or not patch or patch == "" then
+      vim.bo[buf].modifiable = true
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+      vim.bo[buf].modifiable = false
+      return
+    end
+
+    local hunks = diff.parse_patch(patch)
+    if #hunks == 0 then return end
+
+    local lines = {}
+    local hl_lines = {}
+    for _, hunk in ipairs(hunks) do
+      for _, line_data in ipairs(hunk.lines) do
+        table.insert(lines, line_data.content or "")
+        table.insert(hl_lines, { type = line_data.type })
+      end
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(win)
+
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+
+    M.apply_diff_highlights(mopts.ns_id, buf, hl_lines)
+
+    -- Restore cursor, clamped to new line count
+    local max_line = vim.api.nvim_buf_line_count(buf)
+    if cursor[1] > max_line then cursor[1] = max_line end
+    pcall(vim.api.nvim_win_set_cursor, win, cursor)
   end)
 end
 
@@ -593,6 +732,7 @@ function M.open_file_content(opts)
       col = col,
       style = "minimal",
       border = "rounded",
+      zindex = 50,
     })
 
     opts.state.maximize_win = win
@@ -603,6 +743,7 @@ function M.open_file_content(opts)
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].wrap = true
 
+    local pa_cfg = config.load_parallel_agents()
     M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
 
     local buf_opts = { buffer = buf, noremap = true, silent = true }
@@ -613,6 +754,8 @@ function M.open_file_content(opts)
       vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
     end
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+
+    setup_parallel_agent_keymap(buf, opts, pa_cfg)
   end)
 end
 
@@ -863,8 +1006,10 @@ function M.setup_focus_lock(s, augroup_name)
       if not s.active then return end
       local cur_win = vim.api.nvim_get_current_win()
       if cur_win == s.maximize_win then return end
+      if s.popup_win and cur_win == s.popup_win then return end
       if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
         vim.schedule(function()
+          if s.popup_win then return end
           if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
             vim.api.nvim_set_current_win(s.maximize_win)
           end
@@ -946,12 +1091,14 @@ function M.setup_filetree_nav(s, opts)
     local sha = opts.get_sha()
     if not repo_path then return end
     local is_changed = s.commit_files and s.commit_files[path]
+    local commit_msg = opts.get_commit_message and opts.get_commit_message() or ""
     if is_changed then
       M.open_maximize({
         ns_id = opts.ns_id,
         repo_path = repo_path,
         sha = sha,
         filename = path,
+        commit_message = commit_msg,
         generation = s.select_generation,
         get_generation = function() return s.select_generation end,
         state = s,

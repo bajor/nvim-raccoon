@@ -156,6 +156,7 @@ local function maximize_cell(cell_num)
     repo_path = clone_path,
     sha = commit.sha,
     filename = filename,
+    commit_message = commit.message or "",
     generation = commit_state.select_generation,
     get_generation = function() return commit_state.select_generation end,
     state = commit_state,
@@ -386,6 +387,10 @@ local function setup_keymaps()
       local c = get_commit(commit_state.selected_index)
       return c and c.sha
     end,
+    get_commit_message = function()
+      local c = get_commit(commit_state.selected_index)
+      return c and c.message or ""
+    end,
   })
 
   -- Focus lock autocmd
@@ -430,6 +435,7 @@ local function enter_commit_mode()
       cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
     end
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
+    ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
   end
 
   local base_branch = pr.base.ref

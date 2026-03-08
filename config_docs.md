@@ -195,6 +195,51 @@ Number of recent base branch commits shown in the commit viewer sidebar. These a
 }
 ```
 
+#### `commit_viewer.sidebar_width`
+
+| Type | Default |
+|------|---------|
+| number | `50` |
+
+Width in columns of the commit list sidebar (right) and file tree panel (left). Clamped to 20–120.
+
+```json
+{
+  "commit_viewer": {
+    "sidebar_width": 40
+  }
+}
+```
+
+### `parallel_agents`
+
+| Type | Default |
+|------|---------|
+| object | see below |
+
+Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized diff view. See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable the feature |
+| `command` | string | `""` | Shell command template containing `<PROMPT>` placeholder |
+| `suffix_prompt` | string | `""` | Text appended to every agent prompt |
+| `shortcut` | string or false | `"<leader>aa"` | Keymap to trigger dispatch. Set to `false` to disable. |
+| `popup_width` | number | `70` | Width of the task input popup (clamped to terminal width). |
+
+```json
+{
+  "parallel_agents": {
+    "enabled": true,
+    "command": "claude --dangerously-skip-permissions -p <PROMPT>",
+    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request.",
+    "shortcut": "<leader>aa"
+  }
+}
+```
+
+In **PR commit viewer** mode, agents run inside the shallow clone checked out to the PR branch (`{clone_root}/{owner}/{repo}/pr-{number}`), so "commit and push" pushes directly to the PR. In **local commit viewer** mode, agents run in your working directory.
+
 ### `shortcuts`
 
 | Type | Default |
@@ -229,6 +274,11 @@ Partial overrides are merged with defaults — you only need to specify keys you
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
+  },
+  "parallel_agents": {
+    "enabled": true,
+    "command": "claude --dangerously-skip-permissions -p <PROMPT>",
+    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request."
   },
   "shortcuts": {
     "pr_list": "<leader>pr",
