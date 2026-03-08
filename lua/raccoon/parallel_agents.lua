@@ -81,6 +81,7 @@ local function open_task_input(on_submit)
     border = "rounded",
     title = title,
     title_pos = "center",
+    zindex = 100,
   })
 
   vim.cmd("startinsert")
