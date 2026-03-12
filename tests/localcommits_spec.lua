@@ -1,3 +1,4 @@
+local commit_ui = require("raccoon.commit_ui")
 local git = require("raccoon.git")
 local localcommits = require("raccoon.localcommits")
 local state = require("raccoon.state")
@@ -61,6 +62,58 @@ describe("raccoon.localcommits", function()
     it("has nil workdir_poll_timer", function()
       local ls = localcommits._get_state()
       assert.is_nil(ls.workdir_poll_timer)
+    end)
+  end)
+
+  describe("context pass-through", function()
+    local original_show_commit, original_diff_working_dir, original_list_files
+    local captured_context
+
+    before_each(function()
+      original_show_commit = git.show_commit
+      original_diff_working_dir = git.diff_working_dir
+      original_list_files = git.list_files
+      git.show_commit = function(_, _, ctx, cb)
+        captured_context = ctx
+        cb({}, nil)
+      end
+      git.diff_working_dir = function(_, ctx, cb)
+        captured_context = ctx
+        cb({}, nil)
+      end
+      git.list_files = function(_, _, cb) cb({}, nil) end
+      local ls = localcommits._get_state()
+      ls.branch_commits = { { sha = "aaaa", message = "commit 1" } }
+      ls.active = true
+      ls.repo_path = "/tmp/fake"
+      ls.grid_bufs = {}
+      ls.grid_wins = {}
+      ls.all_hunks = {}
+      ls.select_generation = 0
+    end)
+
+    after_each(function()
+      git.show_commit = original_show_commit
+      git.diff_working_dir = original_diff_working_dir
+      git.list_files = original_list_files
+      state.reset()
+    end)
+
+    it("passes computed grid context to show_commit for SHA commits", function()
+      local ls = localcommits._get_state()
+      ls.grid_rows = 2
+      local expected = commit_ui.compute_grid_context(2)
+      localcommits._select_commit(1)
+      assert.equals(expected, captured_context)
+    end)
+
+    it("passes computed grid context to diff_working_dir for working dir", function()
+      local ls = localcommits._get_state()
+      ls.branch_commits = { { sha = nil, message = "uncommitted changes" } }
+      ls.grid_rows = 3
+      local expected = commit_ui.compute_grid_context(3)
+      localcommits._select_commit(1)
+      assert.equals(expected, captured_context)
     end)
   end)
 end)
@@ -192,7 +245,7 @@ describe("raccoon.git local commit functions", function()
       local done = false
       local result_files = nil
 
-      git.diff_working_dir(vim.fn.getcwd(), function(files, err)
+      git.diff_working_dir(vim.fn.getcwd(), nil, function(files, err)
         result_files = files
         done = true
       end)

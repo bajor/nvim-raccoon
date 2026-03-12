@@ -182,7 +182,8 @@ local function select_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
-  git.show_commit(clone_path, commit.sha, function(files, err)
+  local context = ui.compute_grid_context(commit_state.grid_rows)
+  git.show_commit(clone_path, commit.sha, context, function(files, err)
     if generation ~= commit_state.select_generation then return end
 
     if err then

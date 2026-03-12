@@ -152,9 +152,10 @@ local function select_commit(index)
   local commit = get_commit(index)
   if not local_state.repo_path then return end
 
+  local context = ui.compute_grid_context(local_state.grid_rows)
   local fetch_diff = commit.sha
-    and function(cb) git.show_commit(local_state.repo_path, commit.sha, cb) end
-    or function(cb) git.diff_working_dir(local_state.repo_path, cb) end
+    and function(cb) git.show_commit(local_state.repo_path, commit.sha, context, cb) end
+    or function(cb) git.diff_working_dir(local_state.repo_path, context, cb) end
 
   fetch_diff(function(files, err)
     if generation ~= local_state.select_generation then return end
@@ -846,5 +847,6 @@ end
 
 -- Exposed for testing
 M._get_state = function() return local_state end
+M._select_commit = select_commit
 
 return M

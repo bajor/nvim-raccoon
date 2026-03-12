@@ -9,6 +9,28 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
+local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
+local MIN_DIFF_CONTEXT = 3 -- git's default context line count
+
+--- Approximate usable editor height for grid layout.
+--- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
+--- header content height and inter-row separators since this feeds a heuristic, not exact layout.
+---@return number
+function M.grid_total_height()
+  return math.max(1, vim.o.lines - vim.o.cmdheight - GRID_CHROME_LINES)
+end
+
+--- Compute the diff context line count for grid cells based on available row height.
+--- Uses floor(row_height / 2) as a heuristic: with N context lines a single hunk produces
+--- roughly 2N+1 output lines plus the hunk header, so halving is a reasonable approximation.
+---@param rows number Number of grid rows
+---@return number context Lines of context to pass to git diff (-U<N>, always >= 3)
+function M.compute_grid_context(rows)
+  rows = rows or 1
+  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
+  return math.max(MIN_DIFF_CONTEXT, math.floor(row_height / 2))
+end
+
 --- Compute per-file addition/deletion counts from diff patches
 ---@param files table[] Array of {filename, patch}
 ---@return table<string, {additions: number, deletions: number}>
@@ -440,8 +462,7 @@ function M.create_grid_layout(s, rows, cols)
     vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
   end
   vim.api.nvim_win_set_height(s.header_win, 1)
-  local total_height = vim.o.lines - vim.o.cmdheight - 2
-  local row_height = math.floor(total_height / rows)
+  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
   for _, win in ipairs(grid_wins) do
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_set_height(win, row_height)

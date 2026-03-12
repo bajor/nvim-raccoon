@@ -1,3 +1,4 @@
+local commit_ui = require("raccoon.commit_ui")
 local commits = require("raccoon.commits")
 local config = require("raccoon.config")
 local git = require("raccoon.git")
@@ -146,7 +147,7 @@ describe("raccoon.git commit operations", function()
       done = false
       local result_files = nil
 
-      git.show_commit(vim.fn.getcwd(), sha, function(files, err)
+      git.show_commit(vim.fn.getcwd(), sha, nil, function(files, err)
         result_files = files
         done = true
       end)
@@ -180,7 +181,7 @@ describe("raccoon.git commit operations", function()
       done = false
       local result_files = nil
 
-      git.show_commit(vim.fn.getcwd(), sha, function(files, err)
+      git.show_commit(vim.fn.getcwd(), sha, nil, function(files, err)
         result_files = files
         done = true
       end)
@@ -214,7 +215,7 @@ describe("raccoon.git commit operations", function()
       assert.is_not_nil(sha)
 
       done = false
-      git.show_commit(vim.fn.getcwd(), sha, function(files, err)
+      git.show_commit(vim.fn.getcwd(), sha, nil, function(files, err)
         if files and #files > 0 then
           first_filename = files[1].filename
         end
@@ -433,6 +434,45 @@ describe("raccoon.commits select_generation guard", function()
     assert.equals(0, cs.select_generation)
   end)
 
+  describe("context pass-through", function()
+    local original_show_commit
+    local original_list_files
+    local captured_context
+
+    before_each(function()
+      original_show_commit = git.show_commit
+      original_list_files = git.list_files
+      git.show_commit = function(_, _, ctx, cb)
+        captured_context = ctx
+        cb({}, nil)
+      end
+      git.list_files = function(_, _, cb) cb({}, nil) end
+      local cs = commits._get_state()
+      cs.pr_commits = { { sha = "aaaa", message = "commit 1" } }
+      cs.active = true
+      cs.grid_bufs = {}
+      cs.grid_wins = {}
+      cs.all_hunks = {}
+      cs.select_generation = 0
+      state.session = state.session or {}
+      state.session.clone_path = "/tmp/fake"
+    end)
+
+    after_each(function()
+      git.show_commit = original_show_commit
+      git.list_files = original_list_files
+      state.reset()
+    end)
+
+    it("passes computed grid context to show_commit", function()
+      local cs = commits._get_state()
+      cs.grid_rows = 2
+      local expected = commit_ui.compute_grid_context(2)
+      commits._select_commit(1)
+      assert.equals(expected, captured_context)
+    end)
+  end)
+
   describe("stale callback handling", function()
     local original_show_commit
     local original_list_files
@@ -441,7 +481,7 @@ describe("raccoon.commits select_generation guard", function()
     before_each(function()
       original_show_commit = git.show_commit
       original_list_files = git.list_files
-      git.show_commit = function(_, _, cb)
+      git.show_commit = function(_, _, _, cb)
         captured_callback = cb
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
@@ -961,7 +1001,7 @@ describe("raccoon.commits commit_files tracking", function()
     state.reset()
     original_show_commit = git.show_commit
     original_list_files = git.list_files
-    git.show_commit = function(_, _, cb)
+    git.show_commit = function(_, _, _, cb)
       captured_callback = cb
     end
     git.list_files = function(_, _, cb) cb({}, nil) end
@@ -1151,7 +1191,7 @@ describe("raccoon.commits render_filetree early return path", function()
     require("raccoon").setup()
     original_show_commit = git.show_commit
     original_list_files = git.list_files
-    git.show_commit = function(_, _, cb)
+    git.show_commit = function(_, _, _, cb)
       captured_callback = cb
     end
     git.list_files = function(_, _, cb) cb({}, nil) end
