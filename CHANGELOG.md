@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.2] - 2026-03-12
+
+### Removed
+- `VERSION` file — release version is now derived solely from CHANGELOG.md
+- "Update VERSION file" step from release workflow, eliminating the extra bot commit per release
+
 ## [0.10.1] - 2026-03-12
 
 ### Fixed
