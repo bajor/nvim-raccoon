@@ -283,9 +283,6 @@ function M.show_pr_list()
     return
   end
 
-  -- Tell any active focus lock to allow this popup (sentinel before open_win)
-  commit_ui.global_popup_win = -1
-
   -- Create floating window
   local win, buf = M.create_floating_window({
     width_pct = 0.7,
@@ -300,7 +297,7 @@ function M.show_pr_list()
   M.state.prs = {}
   M.state.selected = 1
 
-  -- Replace sentinel with real window handle
+  -- Tell any active focus lock to allow this popup
   commit_ui.global_popup_win = win
 
   -- Show loading state

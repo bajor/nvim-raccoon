@@ -528,7 +528,10 @@ function M.open_maximize(opts)
       vim.notify("Failed to get full file diff: " .. err, vim.log.levels.ERROR)
       return
     end
-    if not patch or patch == "" then return end
+    if not patch or patch == "" then
+      vim.notify("No diff content for " .. opts.filename, vim.log.levels.INFO)
+      return
+    end
 
     local hunks = diff.parse_patch(patch)
     if #hunks == 0 then return end

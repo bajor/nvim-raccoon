@@ -14,7 +14,7 @@ local ui = require("raccoon.commit_ui")
 local COMBINED_DIFF_SHA = git.COMBINED_DIFF_SHA
 
 --- Compute the base ref for combined diff operations.
----@return string base_ref e.g. "origin/main"
+---@return string base_ref
 local function get_base_ref()
   local pr = state.get_pr()
   return pr and ("origin/" .. pr.base.ref) or "origin/main"
@@ -23,52 +23,8 @@ end
 --- Namespace for commit viewer highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_commits")
 
---- Module-local state
-local commit_state = {
-  active = false,
-  sidebar_win = nil,
-  sidebar_buf = nil,
-  pr_commits = {},
-  base_commits = {},
-  selected_index = 1,
-  grid_wins = {},
-  grid_bufs = {},
-  all_hunks = {},
-  commit_files = {},
-  file_stats = {},
-  current_page = 1,
-  saved_buf = nil,
-  saved_laststatus = nil,
-  grid_rows = 2,
-  grid_cols = 2,
-  maximize_win = nil,
-  maximize_buf = nil,
-  focus_augroup = nil,
-  header_win = nil,
-  header_buf = nil,
-  filetree_win = nil,
-  filetree_buf = nil,
-  select_generation = 0,
-  cached_sha = nil,
-  cached_tree_lines = nil,
-  cached_line_paths = nil,
-  cached_stat_lines = nil,
-  cached_file_count = nil,
-  focus_target = "sidebar",
-  poll_timer = nil,
-  last_head_sha = nil,
-  base_branch = nil,
-  base_count = 20,
-  sync_interval_ms = 60000,
-}
-
---- Commit mode keymaps (global)
-local commit_mode_keymaps = {}
-
---- Reset module state
-local function reset_state()
-  stop_poll_timer()
-  commit_state = {
+local function make_initial_state()
+  return {
     active = false,
     sidebar_win = nil,
     sidebar_buf = nil,
@@ -105,6 +61,21 @@ local function reset_state()
     base_count = 20,
     sync_interval_ms = 60000,
   }
+end
+
+--- Module-local state
+local commit_state = make_initial_state()
+
+--- Commit mode keymaps (global)
+local commit_mode_keymaps = {}
+
+--- Forward declarations
+local stop_poll_timer
+
+--- Reset module state
+local function reset_state()
+  stop_poll_timer()
+  commit_state = make_initial_state()
 end
 
 --- Calculate total pages
@@ -348,10 +319,12 @@ build_filetree_cache = function()
 end
 
 --- Stop the background sync timer
-local function stop_poll_timer()
+function stop_poll_timer()
   if commit_state.poll_timer then
-    commit_state.poll_timer:stop()
-    commit_state.poll_timer:close()
+    pcall(function()
+      commit_state.poll_timer:stop()
+      commit_state.poll_timer:close()
+    end)
     commit_state.poll_timer = nil
   end
 end
@@ -386,8 +359,9 @@ local function refresh_commits()
   local new_pr, new_base
 
   local function on_both_ready()
-    commit_state.pr_commits = new_pr or {}
-    commit_state.base_commits = new_base or {}
+    if not new_pr and not new_base then return end
+    commit_state.pr_commits = new_pr or commit_state.pr_commits
+    commit_state.base_commits = new_base or commit_state.base_commits
 
     if #commit_state.pr_commits > 1 then
       table.insert(commit_state.pr_commits, 1, git.make_combined_diff_entry())
@@ -419,7 +393,8 @@ local function refresh_commits()
 end
 
 --- Start the background sync timer.
---- On each tick: fetch PR + base branches from origin, check if HEAD changed, reset and refresh if so.
+--- On each tick: fetch PR branch from origin (required), optionally refresh base branch,
+--- then check if HEAD changed and reset/refresh if so.
 local function start_poll_timer()
   stop_poll_timer()
   if not commit_state.active then return end
@@ -432,39 +407,52 @@ local function start_poll_timer()
   local pr_branch = pr.head.ref
   local base_branch = commit_state.base_branch
 
-  -- Seed last_head_sha
+  -- Seed last_head_sha before starting the timer to avoid spurious reset on first tick
   git.get_current_sha(clone_path, function(sha, _)
+    if not commit_state.active then return end
     if sha then commit_state.last_head_sha = sha end
-  end)
 
-  commit_state.poll_timer = vim.uv.new_timer()
-  commit_state.poll_timer:start(commit_state.sync_interval_ms, commit_state.sync_interval_ms,
-    vim.schedule_wrap(function()
-      if not commit_state.active then return end
+    commit_state.poll_timer = vim.uv.new_timer()
+    commit_state.poll_timer:start(commit_state.sync_interval_ms, commit_state.sync_interval_ms,
+      vim.schedule_wrap(function()
+        if not commit_state.active then return end
 
-      -- Fetch PR branch from origin
-      git.fetch_branch(clone_path, pr_branch, function(_, fetch_err)
-        if fetch_err or not commit_state.active then return end
-
-        -- Also fetch base branch to keep it current
-        git.fetch_branch(clone_path, base_branch, function(_, _)
+        -- Fetch PR branch from origin
+        git.fetch_branch(clone_path, pr_branch, function(_, fetch_err)
           if not commit_state.active then return end
+          if fetch_err then
+            vim.notify("Sync: failed to fetch PR branch", vim.log.levels.DEBUG)
+            return
+          end
 
-          -- Check if origin/<pr_branch> has new commits
-          git.ref_sha(clone_path, "origin/" .. pr_branch, function(remote_sha, _)
-            if not remote_sha or not commit_state.active then return end
-            if remote_sha == commit_state.last_head_sha then return end
+          -- Also fetch base branch to keep it current (non-blocking on failure)
+          git.fetch_branch(clone_path, base_branch, function(_, _)
+            if not commit_state.active then return end
 
-            -- New commits detected — reset local to match origin
-            git.reset_hard(clone_path, "origin/" .. pr_branch, function(ok, _)
-              if not ok or not commit_state.active then return end
-              commit_state.last_head_sha = remote_sha
-              refresh_commits()
+            -- Check if origin/<pr_branch> has new commits
+            git.ref_sha(clone_path, "origin/" .. pr_branch, function(remote_sha, _)
+              if not remote_sha or not commit_state.active then return end
+              if not commit_state.last_head_sha then
+                commit_state.last_head_sha = remote_sha
+                return
+              end
+              if remote_sha == commit_state.last_head_sha then return end
+
+              -- New commits detected — reset local to match origin
+              git.reset_hard(clone_path, "origin/" .. pr_branch, function(ok, reset_err)
+                if not commit_state.active then return end
+                if not ok then
+                  vim.notify("Sync: failed to reset to remote: " .. (reset_err or ""), vim.log.levels.DEBUG)
+                  return
+                end
+                commit_state.last_head_sha = remote_sha
+                refresh_commits()
+              end)
             end)
           end)
         end)
-      end)
-    end))
+      end))
+  end)
 end
 
 --- Setup commit mode keymaps (buffer-local to all commit-mode buffers)
@@ -624,8 +612,8 @@ local function enter_commit_mode()
           return
         end
 
-        -- Add combined diff entry at the top when there are multiple PR commits
-        if #commit_state.pr_commits > 1 then
+        local real_pr_count = #commit_state.pr_commits
+        if real_pr_count > 1 then
           table.insert(commit_state.pr_commits, 1, git.make_combined_diff_entry())
         end
 
@@ -635,7 +623,7 @@ local function enter_commit_mode()
         select_commit(1)
         start_poll_timer()
         vim.notify(string.format("Commit viewer: %d PR commits, %d base commits",
-          #commit_state.pr_commits, #commit_state.base_commits))
+          real_pr_count, #commit_state.base_commits))
       end
 
       local function check_done()

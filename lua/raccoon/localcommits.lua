@@ -73,6 +73,7 @@ local local_state = make_initial_state()
 local local_mode_keymaps = {}
 
 --- Compute the base ref for combined diff operations.
+--- Prefers merge-base SHA (exact ancestor) when available; falls back to branch name.
 ---@return string|nil base_ref
 local function get_base_ref()
   return local_state.merge_base_sha or local_state.base_branch
@@ -168,6 +169,10 @@ local function select_commit(index)
   local fetch_diff
   if commit.sha == COMBINED_DIFF_SHA then
     local base_ref = get_base_ref()
+    if not base_ref then
+      vim.notify("Combined diff requires a base branch", vim.log.levels.WARN)
+      return
+    end
     fetch_diff = function(cb) git.diff_combined(local_state.repo_path, base_ref, context, cb) end
   elseif commit.sha then
     fetch_diff = function(cb) git.show_commit(local_state.repo_path, commit.sha, context, cb) end

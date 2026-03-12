@@ -241,7 +241,11 @@ function M.ref_sha(path, ref, callback)
       if code == 0 and #stdout > 0 then
         callback(stdout[1], nil)
       else
-        callback(nil, table.concat(stderr, "\n"))
+        local err_msg = table.concat(stderr, "\n")
+        if err_msg == "" then
+          err_msg = "Failed to resolve ref: " .. ref
+        end
+        callback(nil, err_msg)
       end
     end,
   })
@@ -258,7 +262,11 @@ function M.reset_hard(path, ref, callback)
       if code == 0 then
         callback(true, nil)
       else
-        callback(false, table.concat(stderr, "\n"))
+        local err_msg = table.concat(stderr, "\n")
+        if err_msg == "" then
+          err_msg = "Failed to reset to ref: " .. ref
+        end
+        callback(false, err_msg)
       end
     end,
   })
@@ -586,6 +594,7 @@ function M.log_base_commits(path, base_branch, count, callback)
 end
 
 --- Extract only the patch body from git diff output (skip diff headers, start from first @@ line).
+--- Intended for single-file diff output (e.g. after -- filename filtering).
 ---@param stdout string[] Raw git output lines
 ---@return string patch Concatenated patch lines
 local function strip_to_patch(stdout)
@@ -995,7 +1004,7 @@ function M.find_repo_root(path, callback)
   })
 end
 
---- Sentinel SHA used for the "combined diff" synthetic commit entry.
+--- Sentinel value used in place of a real SHA for the "combined diff" synthetic commit entry.
 --- Must not collide with real SHAs or nil (which means working directory).
 M.COMBINED_DIFF_SHA = "__combined_diff__"
 
