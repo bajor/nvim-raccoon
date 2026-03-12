@@ -584,12 +584,12 @@ end
 --- Get diff for a single commit, split into per-file patches
 ---@param path string Repository path
 ---@param sha string Commit SHA
----@param context number|nil Lines of surrounding context (nil = git default of 3)
+---@param context number|nil Lines of surrounding context (nil omits -U flag, deferring to git's default)
 ---@param callback fun(files: table[]|nil, err: string|nil)
 function M.show_commit(path, sha, context, callback)
   local args = { "diff-tree", "-p", "-m", "--first-parent", "--no-commit-id" }
-  if context then
-    table.insert(args, "-U" .. tostring(context))
+  if context and context > 0 then
+    table.insert(args, "-U" .. tostring(math.floor(context)))
   end
   table.insert(args, sha)
   run_git(args, {
@@ -794,12 +794,12 @@ end
 --- Get diff of working directory vs HEAD, split into per-file patches
 --- Includes both tracked modifications and untracked (new) files
 ---@param path string Repository path
----@param context number|nil Lines of surrounding context (nil = git default of 3)
+---@param context number|nil Lines of surrounding context (nil omits -U flag, deferring to git's default)
 ---@param callback fun(files: table[]|nil, err: string|nil)
 function M.diff_working_dir(path, context, callback)
   local args = { "diff" }
-  if context then
-    table.insert(args, "-U" .. tostring(context))
+  if context and context > 0 then
+    table.insert(args, "-U" .. tostring(math.floor(context)))
   end
   table.insert(args, "HEAD")
   run_git(args, {

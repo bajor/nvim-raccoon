@@ -1,3 +1,4 @@
+local commit_ui = require("raccoon.commit_ui")
 local commits = require("raccoon.commits")
 local config = require("raccoon.config")
 local git = require("raccoon.git")
@@ -431,6 +432,45 @@ describe("raccoon.commits select_generation guard", function()
     local cs = commits._get_state()
     assert.is_number(cs.select_generation)
     assert.equals(0, cs.select_generation)
+  end)
+
+  describe("context pass-through", function()
+    local original_show_commit
+    local original_list_files
+    local captured_context
+
+    before_each(function()
+      original_show_commit = git.show_commit
+      original_list_files = git.list_files
+      git.show_commit = function(_, _, ctx, cb)
+        captured_context = ctx
+        cb({}, nil)
+      end
+      git.list_files = function(_, _, cb) cb({}, nil) end
+      local cs = commits._get_state()
+      cs.pr_commits = { { sha = "aaaa", message = "commit 1" } }
+      cs.active = true
+      cs.grid_bufs = {}
+      cs.grid_wins = {}
+      cs.all_hunks = {}
+      cs.select_generation = 0
+      state.session = state.session or {}
+      state.session.clone_path = "/tmp/fake"
+    end)
+
+    after_each(function()
+      git.show_commit = original_show_commit
+      git.list_files = original_list_files
+      state.reset()
+    end)
+
+    it("passes computed grid context to show_commit", function()
+      local cs = commits._get_state()
+      cs.grid_rows = 2
+      local expected = commit_ui.compute_grid_context(2)
+      commits._select_commit(1)
+      assert.equals(expected, captured_context)
+    end)
   end)
 
   describe("stale callback handling", function()

@@ -281,6 +281,38 @@ describe("raccoon.git command format", function()
     assert.equals(1, #recorded)
     assert.is_nil(recorded[1].cmd:match("%-U%d"))
   end)
+
+  it("show_commit omits -U flag when context is 0", function()
+    git.show_commit("/tmp", "abc123", 0, function() end)
+    assert.equals(1, #recorded)
+    assert.is_nil(recorded[1].cmd:match("%-U"))
+  end)
+
+  it("show_commit omits -U flag when context is negative", function()
+    git.show_commit("/tmp", "abc123", -5, function() end)
+    assert.equals(1, #recorded)
+    assert.is_nil(recorded[1].cmd:match("%-U"))
+  end)
+
+  it("show_commit floors fractional context values", function()
+    git.show_commit("/tmp", "abc123", 11.7, function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("%-U11"))
+    assert.is_nil(recorded[1].cmd:match("%-U11%."))
+  end)
+
+  it("diff_working_dir omits -U flag when context is 0", function()
+    git.diff_working_dir("/tmp", 0, function() end)
+    assert.equals(1, #recorded)
+    assert.is_nil(recorded[1].cmd:match("%-U"))
+  end)
+
+  it("diff_working_dir floors fractional context values", function()
+    git.diff_working_dir("/tmp", 7.9, function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("%-U7"))
+    assert.is_nil(recorded[1].cmd:match("%-U7%."))
+  end)
 end)
 
 -- Long-path error enhancement tests

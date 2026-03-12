@@ -382,6 +382,55 @@ describe("raccoon.ui", function()
     end)
   end)
 
+  describe("grid_total_height", function()
+    local saved_lines, saved_cmdheight
+
+    before_each(function()
+      saved_lines = vim.o.lines
+      saved_cmdheight = vim.o.cmdheight
+    end)
+
+    after_each(function()
+      vim.o.lines = saved_lines
+      vim.o.cmdheight = saved_cmdheight
+    end)
+
+    it("subtracts cmdheight and chrome lines from total lines", function()
+      vim.o.lines = 50
+      vim.o.cmdheight = 1
+      -- 50 - 1 - 2 (statusline + header separator) = 47
+      assert.equals(47, commit_ui.grid_total_height())
+    end)
+
+    it("accounts for cmdheight=2", function()
+      vim.o.lines = 50
+      vim.o.cmdheight = 2
+      -- 50 - 2 - 2 = 46
+      assert.equals(46, commit_ui.grid_total_height())
+    end)
+
+    it("accounts for cmdheight=0", function()
+      vim.o.lines = 50
+      vim.o.cmdheight = 0
+      -- 50 - 0 - 2 = 48
+      assert.equals(48, commit_ui.grid_total_height())
+    end)
+
+    it("clamps to minimum of 1 on tiny terminals", function()
+      vim.o.lines = 3
+      vim.o.cmdheight = 1
+      -- 3 - 1 - 2 = 0, clamped to 1
+      assert.equals(1, commit_ui.grid_total_height())
+    end)
+
+    it("clamps to minimum of 1 when cmdheight is large", function()
+      vim.o.lines = 5
+      vim.o.cmdheight = 4
+      -- 5 - 4 - 2 = -1, clamped to 1
+      assert.equals(1, commit_ui.grid_total_height())
+    end)
+  end)
+
   describe("compute_grid_context", function()
     local saved_lines, saved_cmdheight
 
@@ -416,6 +465,23 @@ describe("raccoon.ui", function()
     it("handles rows=0 without division by zero", function()
       -- math.max(1, 0) = 1, so same as rows=1
       assert.equals(23, commit_ui.compute_grid_context(0))
+    end)
+
+    it("handles negative rows", function()
+      -- math.max(1, -1) = 1, so same as rows=1
+      assert.equals(23, commit_ui.compute_grid_context(-1))
+    end)
+
+    it("handles nil rows", function()
+      -- nil defaults to 1, so same as rows=1
+      assert.equals(23, commit_ui.compute_grid_context(nil))
+    end)
+
+    it("adjusts for cmdheight=2", function()
+      vim.o.cmdheight = 2
+      -- grid_total_height = 50 - 2 - 2 = 46
+      -- row_height = floor(46 / 2) = 23, context = floor(23 / 2) = 11
+      assert.equals(11, commit_ui.compute_grid_context(2))
     end)
 
     it("always returns an integer", function()

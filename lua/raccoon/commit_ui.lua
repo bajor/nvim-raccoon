@@ -9,20 +9,25 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
+local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header window separator
+local MIN_DIFF_CONTEXT = 3 -- git's default context line count
+
 --- Total editor height available for grid rows.
---- Subtracts cmdheight and 2 lines for the global statusline and header/separator.
+--- Subtracts cmdheight, the global statusline (laststatus=3), and the header window separator.
 ---@return number
 function M.grid_total_height()
-  return vim.o.lines - vim.o.cmdheight - 2
+  return math.max(1, vim.o.lines - vim.o.cmdheight - GRID_CHROME_LINES)
 end
 
 --- Compute the diff context line count for grid cells based on available row height.
---- Uses floor(row_height / 2) so a single-line change with symmetric context fills one cell.
+--- Uses floor(row_height / 2) as a heuristic: with N context lines a single hunk produces
+--- roughly 2N+1 output lines plus the hunk header, so halving is a reasonable approximation.
 ---@param rows number Number of grid rows
----@return number context Lines of context to pass to git diff (-U<N>, always >= 3 to match git default)
+---@return number context Lines of context to pass to git diff (-U<N>, always >= 3)
 function M.compute_grid_context(rows)
+  rows = rows or 1
   local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
-  return math.max(3, math.floor(row_height / 2))
+  return math.max(MIN_DIFF_CONTEXT, math.floor(row_height / 2))
 end
 
 --- Compute per-file addition/deletion counts from diff patches
