@@ -59,17 +59,25 @@ jobs:
 
       - name: Create and push tag
         if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false'
+        id: tag
         run: |
+          git fetch --tags origin
+          if git show-ref --verify --quiet "refs/tags/${{ steps.version.outputs.tag }}"; then
+            echo "Tag ${{ steps.version.outputs.tag }} was created since the earlier check. Skipping."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git tag "${{ steps.version.outputs.tag }}"
-          git push --force origin "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
 
       - name: Extract release notes
-        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false' && steps.version.outputs.is_release == 'true'
+        if: steps.tag.outputs.pushed == 'true' && steps.version.outputs.is_release == 'true'
         run: |
           awk '/^## \[/{if(found) exit; found=1; next} found && /^## /{exit} found' CHANGELOG.md > /tmp/release_notes.md
 
       - name: Create GitHub release
-        if: steps.check.outputs.changed == 'true' && steps.tag_check.outputs.exists == 'false' && steps.version.outputs.is_release == 'true'
+        if: steps.tag.outputs.pushed == 'true' && steps.version.outputs.is_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
