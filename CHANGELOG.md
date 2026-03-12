@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.1] - 2026-03-12
+
+### Fixed
+- Local mode branch commits now display newest-first (was oldest-first), consistent with PR commit mode
+
 ## [0.10] - 2026-03-08
 
 ### Added
