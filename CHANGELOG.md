@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.3] - 2026-03-12
+
+### Fixed
+- Grid cells now fill available space with diff content instead of showing only a few lines with empty space below — context lines are dynamically computed from the cell height
+
 ## [0.10.2] - 2026-03-12
 
 ### Removed
