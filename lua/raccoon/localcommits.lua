@@ -850,6 +850,7 @@ local function exit_local_mode()
   local_mode_keymaps = {}
   ui.close_grid(local_state)
   ui.close_win_pair(local_state, "sidebar_win", "sidebar_buf")
+  ui.close_win_pair(local_state, "header_win", "header_buf")
   ui.close_win_pair(local_state, "filetree_win", "filetree_buf")
 
   if local_state.saved_laststatus then

@@ -534,6 +534,45 @@ describe("raccoon.commits select_generation guard", function()
   end)
 end)
 
+describe("raccoon.commits error messages include error details", function()
+  local original_show_commit
+  local captured_callback
+  local notified_msg
+
+  before_each(function()
+    state.reset()
+    original_show_commit = git.show_commit
+    git.show_commit = function(_, _, _, cb)
+      captured_callback = cb
+    end
+    notified_msg = nil
+    vim.notify = function(msg, _) notified_msg = msg end
+
+    local cs = commits._get_state()
+    cs.pr_commits = { { sha = "abc123", message = "test commit" } }
+    cs.active = true
+    cs.grid_bufs = {}
+    cs.grid_wins = {}
+    cs.all_hunks = {}
+    cs.select_generation = 0
+    state.session = state.session or {}
+    state.session.clone_path = "/tmp/fake"
+  end)
+
+  after_each(function()
+    git.show_commit = original_show_commit
+    state.reset()
+  end)
+
+  it("includes error string in diff failure notification", function()
+    commits._select_commit(1)
+    captured_callback(nil, "fatal: bad object abc123")
+
+    assert.is_not_nil(notified_msg)
+    assert.is_truthy(notified_msg:match("fatal: bad object abc123"),
+      "expected error detail in notification, got: " .. (notified_msg or ""))
+  end)
+end)
 
 describe("raccoon.config commit_viewer defaults", function()
   it("has commit_viewer in defaults", function()
@@ -548,6 +587,10 @@ describe("raccoon.config commit_viewer defaults", function()
 
   it("has base_commits_count default", function()
     assert.equals(20, config.defaults.commit_viewer.base_commits_count)
+  end)
+
+  it("has sync_interval default", function()
+    assert.equals(60, config.defaults.commit_viewer.sync_interval)
   end)
 end)
 

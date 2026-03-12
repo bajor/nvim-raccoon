@@ -258,6 +258,11 @@ function M.get_statusline_component()
   return table.concat(parts, " │ ")
 end
 
+--- Shared popup window handle. When set, all focus locks allow this window.
+--- Lives in state (rather than a UI module) to avoid coupling between ui.lua and commit_ui.lua.
+---@type number|nil
+M.global_popup_win = nil
+
 --- Check if commit viewer mode is active
 ---@return boolean
 function M.is_commit_mode()

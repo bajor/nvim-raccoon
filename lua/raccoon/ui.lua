@@ -4,7 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
-local commit_ui = require("raccoon.commit_ui")
+local state = require("raccoon.state")
 local NORMAL_MODE = config.NORMAL
 
 --- Current floating window state
@@ -70,7 +70,7 @@ end
 
 --- Close the PR list window
 function M.close_pr_list()
-  commit_ui.global_popup_win = nil
+  state.global_popup_win = nil
   if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
     vim.api.nvim_win_close(M.state.win, true)
   end
@@ -298,7 +298,7 @@ function M.show_pr_list()
   M.state.selected = 1
 
   -- Tell any active focus lock to allow this popup
-  commit_ui.global_popup_win = win
+  state.global_popup_win = win
 
   -- Show loading state
   vim.bo[buf].modifiable = true
