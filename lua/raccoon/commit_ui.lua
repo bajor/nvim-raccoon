@@ -1050,7 +1050,9 @@ function M.setup_focus_lock(s, augroup_name)
       end
       if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
         vim.schedule(function()
-          if s.popup_win or (state.global_popup_win and vim.api.nvim_win_is_valid(state.global_popup_win)) then return end
+          local has_popup = s.popup_win
+            or (state.global_popup_win and vim.api.nvim_win_is_valid(state.global_popup_win))
+          if has_popup then return end
           if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
             vim.api.nvim_set_current_win(s.maximize_win)
           end
@@ -1060,7 +1062,9 @@ function M.setup_focus_lock(s, augroup_name)
       local target = (s.focus_target == "filetree" and s.filetree_win) or s.sidebar_win
       if cur_win ~= target then
         vim.schedule(function()
-          if s.popup_win or (state.global_popup_win and vim.api.nvim_win_is_valid(state.global_popup_win)) then return end
+          local has_popup = s.popup_win
+            or (state.global_popup_win and vim.api.nvim_win_is_valid(state.global_popup_win))
+          if has_popup then return end
           if target and vim.api.nvim_win_is_valid(target) then
             vim.api.nvim_set_current_win(target)
           end

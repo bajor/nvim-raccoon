@@ -846,20 +846,19 @@ local function exit_local_mode()
     pcall(vim.api.nvim_del_augroup_by_id, local_state.focus_augroup)
   end
 
+  -- Close floating maximize window (not affected by :only)
   ui.close_win_pair(local_state, "maximize_win", "maximize_buf")
   local_mode_keymaps = {}
-  ui.close_grid(local_state)
-  ui.close_win_pair(local_state, "sidebar_win", "sidebar_buf")
-  ui.close_win_pair(local_state, "header_win", "header_buf")
-  ui.close_win_pair(local_state, "filetree_win", "filetree_buf")
+
+  -- Close all splits in one shot; scratch buffers auto-wipe (bufhidden=wipe)
+  vim.cmd("only")
+
+  if local_state.saved_buf and vim.api.nvim_buf_is_valid(local_state.saved_buf) then
+    vim.api.nvim_set_current_buf(local_state.saved_buf)
+  end
 
   if local_state.saved_laststatus then
     vim.o.laststatus = local_state.saved_laststatus
-  end
-
-  vim.cmd("only")
-  if local_state.saved_buf and vim.api.nvim_buf_is_valid(local_state.saved_buf) then
-    vim.api.nvim_set_current_buf(local_state.saved_buf)
   end
 
   -- Restore PR session if it was active

@@ -724,22 +724,21 @@ local function exit_commit_mode()
     pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
   end
 
+  -- Close floating maximize window (not affected by :only)
   ui.close_win_pair(commit_state, "maximize_win", "maximize_buf")
   commit_mode_keymaps = {}
-  ui.close_grid(commit_state)
-  ui.close_win_pair(commit_state, "sidebar_win", "sidebar_buf")
-  ui.close_win_pair(commit_state, "header_win", "header_buf")
-  ui.close_win_pair(commit_state, "filetree_win", "filetree_buf")
 
   state.set_commit_mode(false)
 
-  if commit_state.saved_laststatus then
-    vim.o.laststatus = commit_state.saved_laststatus
-  end
-
+  -- Close all splits in one shot; scratch buffers auto-wipe (bufhidden=wipe)
   vim.cmd("only")
+
   if commit_state.saved_buf and vim.api.nvim_buf_is_valid(commit_state.saved_buf) then
     vim.api.nvim_set_current_buf(commit_state.saved_buf)
+  end
+
+  if commit_state.saved_laststatus then
+    vim.o.laststatus = commit_state.saved_laststatus
   end
 
   keymaps.setup()
