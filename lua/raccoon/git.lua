@@ -230,6 +230,40 @@ function M.get_current_sha(path, callback)
   })
 end
 
+--- Get the SHA for an arbitrary git ref (branch, tag, remote tracking ref, etc.)
+---@param path string Repository path
+---@param ref string Git ref (e.g. "origin/main", "HEAD", tag name)
+---@param callback fun(sha: string|nil, err: string|nil)
+function M.ref_sha(path, ref, callback)
+  run_git({ "rev-parse", ref }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code == 0 and #stdout > 0 then
+        callback(stdout[1], nil)
+      else
+        callback(nil, table.concat(stderr, "\n"))
+      end
+    end,
+  })
+end
+
+--- Hard-reset the current branch to a given ref
+---@param path string Repository path
+---@param ref string Target ref (e.g. "origin/feature-branch")
+---@param callback fun(success: boolean, err: string|nil)
+function M.reset_hard(path, ref, callback)
+  run_git({ "reset", "--hard", ref }, {
+    cwd = path,
+    on_exit = function(code, _, stderr)
+      if code == 0 then
+        callback(true, nil)
+      else
+        callback(false, table.concat(stderr, "\n"))
+      end
+    end,
+  })
+end
+
 --- Check if a path is a git repository
 ---@param path string|nil Path to check
 ---@return boolean
@@ -551,6 +585,23 @@ function M.log_base_commits(path, base_branch, count, callback)
   })
 end
 
+--- Extract only the patch body from git diff output (skip diff headers, start from first @@ line).
+---@param stdout string[] Raw git output lines
+---@return string patch Concatenated patch lines
+local function strip_to_patch(stdout)
+  local lines = {}
+  local in_patch = false
+  for _, line in ipairs(stdout) do
+    if line:match("^@@") then
+      in_patch = true
+    end
+    if in_patch then
+      table.insert(lines, line)
+    end
+  end
+  return table.concat(lines, "\n")
+end
+
 --- Parse raw diff output into per-file patches
 ---@param stdout string[] Lines of unified diff output
 ---@return table[] files Array of {filename, patch}
@@ -617,17 +668,7 @@ function M.show_commit_file(path, sha, filename, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local lines = {}
-      local in_patch = false
-      for _, line in ipairs(stdout) do
-        if line:match("^@@") then
-          in_patch = true
-        end
-        if in_patch then
-          table.insert(lines, line)
-        end
-      end
-      callback(table.concat(lines, "\n"), nil)
+      callback(strip_to_patch(stdout), nil)
     end,
   })
 end
@@ -849,17 +890,7 @@ function M.diff_working_dir_file(path, filename, callback)
             callback(nil, table.concat(stderr, "\n"))
             return
           end
-          local lines = {}
-          local in_patch = false
-          for _, line in ipairs(stdout) do
-            if line:match("^@@") then
-              in_patch = true
-            end
-            if in_patch then
-              table.insert(lines, line)
-            end
-          end
-          callback(table.concat(lines, "\n"), nil)
+          callback(strip_to_patch(stdout), nil)
         end,
       })
     end,
@@ -968,6 +999,12 @@ end
 --- Must not collide with real SHAs or nil (which means working directory).
 M.COMBINED_DIFF_SHA = "__combined_diff__"
 
+--- Create a synthetic "COMBINED DIFF" commit entry.
+---@return table entry {sha, message}
+function M.make_combined_diff_entry()
+  return { sha = M.COMBINED_DIFF_SHA, message = "COMBINED DIFF" }
+end
+
 --- Get the combined diff of all branch changes vs a base ref.
 --- Uses three-dot diff (merge-base to HEAD), matching what GitHub shows in "Files changed".
 ---@param path string Repository path
@@ -1005,17 +1042,7 @@ function M.diff_combined_file(path, base_ref, filename, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local lines = {}
-      local in_patch = false
-      for _, line in ipairs(stdout) do
-        if line:match("^@@") then
-          in_patch = true
-        end
-        if in_patch then
-          table.insert(lines, line)
-        end
-      end
-      callback(table.concat(lines, "\n"), nil)
+      callback(strip_to_patch(stdout), nil)
     end,
   })
 end

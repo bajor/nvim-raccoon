@@ -792,6 +792,8 @@ end
 ---@param sha string|nil Commit SHA, or nil for working directory
 function M.build_filetree_cache(s, repo_path, sha)
   local git = require("raccoon.git")
+  -- Combined diff sentinel is not a real git ref; use HEAD for file listing
+  if sha == git.COMBINED_DIFF_SHA then sha = "HEAD" end
   local cache_key = sha or "WORKDIR"
   if s.cached_sha == cache_key then return end
 
@@ -1045,6 +1047,7 @@ function M.setup_focus_lock(s, augroup_name)
       local target = (s.focus_target == "filetree" and s.filetree_win) or s.sidebar_win
       if cur_win ~= target then
         vim.schedule(function()
+          if s.popup_win then return end
           if target and vim.api.nvim_win_is_valid(target) then
             vim.api.nvim_set_current_win(target)
           end

@@ -13,6 +13,13 @@ local ui = require("raccoon.commit_ui")
 
 local COMBINED_DIFF_SHA = git.COMBINED_DIFF_SHA
 
+--- Compute the base ref for combined diff operations.
+---@return string base_ref e.g. "origin/main"
+local function get_base_ref()
+  local pr = state.get_pr()
+  return pr and ("origin/" .. pr.base.ref) or "origin/main"
+end
+
 --- Namespace for commit viewer highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_commits")
 
@@ -48,6 +55,11 @@ local commit_state = {
   cached_stat_lines = nil,
   cached_file_count = nil,
   focus_target = "sidebar",
+  poll_timer = nil,
+  last_head_sha = nil,
+  base_branch = nil,
+  base_count = 20,
+  sync_interval_ms = 60000,
 }
 
 --- Commit mode keymaps (global)
@@ -86,6 +98,11 @@ local function reset_state()
     cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
+    poll_timer = nil,
+    last_head_sha = nil,
+    base_branch = nil,
+    base_count = 20,
+    sync_interval_ms = 60000,
   }
 end
 
@@ -153,9 +170,6 @@ local function maximize_cell(cell_num)
   local clone_path = state.get_clone_path()
   if not commit or not clone_path then return end
 
-  local pr = state.get_pr()
-  local base_ref = pr and ("origin/" .. pr.base.ref) or "origin/main"
-
   ui.open_maximize({
     ns_id = ns_id,
     repo_path = clone_path,
@@ -166,7 +180,7 @@ local function maximize_cell(cell_num)
     get_generation = function() return commit_state.select_generation end,
     state = commit_state,
     is_combined_diff = commit.sha == COMBINED_DIFF_SHA,
-    base_ref = base_ref,
+    base_ref = get_base_ref(),
   })
 end
 
@@ -190,12 +204,14 @@ local function select_commit(index)
   if not clone_path then return end
 
   local context = ui.compute_grid_context(commit_state.grid_rows)
-  local pr = state.get_pr()
-  local base_ref = pr and ("origin/" .. pr.base.ref) or "origin/main"
 
-  local fetch_diff = commit.sha == COMBINED_DIFF_SHA
-    and function(cb) git.diff_combined(clone_path, base_ref, context, cb) end
-    or function(cb) git.show_commit(clone_path, commit.sha, context, cb) end
+  local fetch_diff
+  if commit.sha == COMBINED_DIFF_SHA then
+    local base_ref = get_base_ref()
+    fetch_diff = function(cb) git.diff_combined(clone_path, base_ref, context, cb) end
+  else
+    fetch_diff = function(cb) git.show_commit(clone_path, commit.sha, context, cb) end
+  end
 
   fetch_diff(function(files, err)
     if generation ~= commit_state.select_generation then return end
@@ -327,9 +343,127 @@ build_filetree_cache = function()
   if not clone_path then return end
   local commit = get_commit(commit_state.selected_index)
   local sha = commit and commit.sha or "HEAD"
-  -- Combined diff sentinel is not a real git ref; use HEAD for file listing
-  if sha == COMBINED_DIFF_SHA then sha = "HEAD" end
   ui.build_filetree_cache(commit_state, clone_path, sha)
+end
+
+--- Stop the background sync timer
+local function stop_poll_timer()
+  if commit_state.poll_timer then
+    commit_state.poll_timer:stop()
+    commit_state.poll_timer:close()
+    commit_state.poll_timer = nil
+  end
+end
+
+--- Preserve selected commit across a refresh
+local function restore_selection_by_sha(selected_sha)
+  if selected_sha then
+    for i = 1, total_commits() do
+      local c = get_commit(i)
+      if c and c.sha == selected_sha then
+        commit_state.selected_index = i
+        return
+      end
+    end
+  end
+  if commit_state.selected_index > total_commits() then
+    commit_state.selected_index = math.max(1, total_commits())
+  end
+end
+
+--- Refresh commits after detecting remote changes.
+--- Fetches updated commit lists and rebuilds the sidebar, preserving selection.
+local function refresh_commits()
+  local clone_path = state.get_clone_path()
+  local base_branch = commit_state.base_branch
+  if not clone_path or not base_branch then return end
+
+  local selected_sha = get_commit(commit_state.selected_index)
+    and get_commit(commit_state.selected_index).sha
+
+  local pending = 2
+  local new_pr, new_base
+
+  local function on_both_ready()
+    commit_state.pr_commits = new_pr or {}
+    commit_state.base_commits = new_base or {}
+
+    if #commit_state.pr_commits > 1 then
+      table.insert(commit_state.pr_commits, 1, git.make_combined_diff_entry())
+    end
+
+    restore_selection_by_sha(selected_sha)
+    render_sidebar()
+
+    -- Re-select current commit to refresh the grid diff
+    if total_commits() > 0 then
+      select_commit(commit_state.selected_index)
+    end
+  end
+
+  local function check_done()
+    pending = pending - 1
+    if pending == 0 then on_both_ready() end
+  end
+
+  git.log_commits(clone_path, base_branch, function(commits, err)
+    new_pr = (not err) and commits or {}
+    check_done()
+  end)
+
+  git.log_base_commits(clone_path, base_branch, commit_state.base_count, function(commits, err)
+    new_base = (not err) and commits or {}
+    check_done()
+  end)
+end
+
+--- Start the background sync timer.
+--- On each tick: fetch PR + base branches from origin, check if HEAD changed, reset and refresh if so.
+local function start_poll_timer()
+  stop_poll_timer()
+  if not commit_state.active then return end
+  if commit_state.sync_interval_ms <= 0 then return end
+
+  local clone_path = state.get_clone_path()
+  local pr = state.get_pr()
+  if not clone_path or not pr then return end
+
+  local pr_branch = pr.head.ref
+  local base_branch = commit_state.base_branch
+
+  -- Seed last_head_sha
+  git.get_current_sha(clone_path, function(sha, _)
+    if sha then commit_state.last_head_sha = sha end
+  end)
+
+  commit_state.poll_timer = vim.uv.new_timer()
+  commit_state.poll_timer:start(commit_state.sync_interval_ms, commit_state.sync_interval_ms,
+    vim.schedule_wrap(function()
+      if not commit_state.active then return end
+
+      -- Fetch PR branch from origin
+      git.fetch_branch(clone_path, pr_branch, function(_, fetch_err)
+        if fetch_err or not commit_state.active then return end
+
+        -- Also fetch base branch to keep it current
+        git.fetch_branch(clone_path, base_branch, function(_, _)
+          if not commit_state.active then return end
+
+          -- Check if origin/<pr_branch> has new commits
+          git.ref_sha(clone_path, "origin/" .. pr_branch, function(remote_sha, _)
+            if not remote_sha or not commit_state.active then return end
+            if remote_sha == commit_state.last_head_sha then return end
+
+            -- New commits detected — reset local to match origin
+            git.reset_hard(clone_path, "origin/" .. pr_branch, function(ok, _)
+              if not ok or not commit_state.active then return end
+              commit_state.last_head_sha = remote_sha
+              refresh_commits()
+            end)
+          end)
+        end)
+      end)
+    end))
 end
 
 --- Setup commit mode keymaps (buffer-local to all commit-mode buffers)
@@ -411,10 +545,7 @@ local function setup_keymaps()
       local c = get_commit(commit_state.selected_index)
       return c and c.message or ""
     end,
-    get_base_ref = function()
-      local pr = state.get_pr()
-      return pr and ("origin/" .. pr.base.ref) or "origin/main"
-    end,
+    get_base_ref = get_base_ref,
   })
 
   -- Focus lock autocmd
@@ -453,6 +584,7 @@ local function enter_commit_mode()
   local rows = 2
   local cols = 2
   local base_count = 20
+  local sync_interval = 60
   if cfg and cfg.commit_viewer then
     if cfg.commit_viewer.grid then
       rows = ui.clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
@@ -460,9 +592,13 @@ local function enter_commit_mode()
     end
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
     ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
+    sync_interval = ui.clamp_int(cfg.commit_viewer.sync_interval, 60, 10, 3600)
   end
 
   local base_branch = pr.base.ref
+  commit_state.base_branch = base_branch
+  commit_state.base_count = base_count
+  commit_state.sync_interval_ms = sync_interval * 1000
 
   vim.notify("Entering commit viewer mode...", vim.log.levels.INFO)
 
@@ -489,14 +625,14 @@ local function enter_commit_mode()
 
         -- Add combined diff entry at the top when there are multiple PR commits
         if #commit_state.pr_commits > 1 then
-          table.insert(commit_state.pr_commits, 1,
-            { sha = COMBINED_DIFF_SHA, message = "COMBINED DIFF" })
+          table.insert(commit_state.pr_commits, 1, git.make_combined_diff_entry())
         end
 
         ui.create_grid_layout(commit_state, rows, cols)
         render_sidebar()
         setup_keymaps()
         select_commit(1)
+        start_poll_timer()
         vim.notify(string.format("Commit viewer: %d PR commits, %d base commits",
           #commit_state.pr_commits, #commit_state.base_commits))
       end
@@ -532,6 +668,8 @@ end
 
 --- Exit commit viewer mode
 local function exit_commit_mode()
+  stop_poll_timer()
+
   if commit_state.focus_augroup then
     pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
   end
@@ -558,6 +696,12 @@ local function exit_commit_mode()
 
   reset_state()
   vim.notify("Exited commit viewer mode", vim.log.levels.INFO)
+end
+
+--- Register or clear an external popup window so the focus lock allows it.
+---@param win? number Window handle, or nil to clear
+function M.set_popup_win(win)
+  commit_state.popup_win = win
 end
 
 --- Toggle commit viewer mode

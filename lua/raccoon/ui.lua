@@ -4,6 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local app_state = require("raccoon.state")
 local NORMAL_MODE = config.NORMAL
 
 --- Current floating window state
@@ -69,6 +70,9 @@ end
 
 --- Close the PR list window
 function M.close_pr_list()
+  if app_state.is_commit_mode() then
+    require("raccoon.commits").set_popup_win(nil)
+  end
   if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
     vim.api.nvim_win_close(M.state.win, true)
   end
@@ -281,6 +285,11 @@ function M.show_pr_list()
     return
   end
 
+  -- Tell commit mode focus lock to allow this popup (sentinel before open_win)
+  if app_state.is_commit_mode() then
+    require("raccoon.commits").set_popup_win(-1)
+  end
+
   -- Create floating window
   local win, buf = M.create_floating_window({
     width_pct = 0.7,
@@ -295,6 +304,11 @@ function M.show_pr_list()
   M.state.prs = {}
   M.state.selected = 1
 
+  -- Replace sentinel with real window handle
+  if app_state.is_commit_mode() then
+    require("raccoon.commits").set_popup_win(win)
+  end
+
   -- Show loading state
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  Loading..." })
@@ -302,6 +316,16 @@ function M.show_pr_list()
 
   -- Load shortcuts from config
   local shortcuts = config.load_shortcuts()
+
+  -- Update title to include close hint (derived from config, like other plugin windows)
+  local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or Esc") or "Esc"
+  vim.api.nvim_win_set_config(win, {
+    title = {
+      { " Pull Requests  ", "FloatTitle" },
+      { close_hint .. " to close ", "FloatBorder" },
+    },
+    title_pos = "center",
+  })
 
   -- Setup buffer-local keymaps
   local opts = { buffer = buf, noremap = true, silent = true }
