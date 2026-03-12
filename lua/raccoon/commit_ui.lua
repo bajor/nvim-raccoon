@@ -9,6 +9,16 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
+--- Compute the diff context line count for grid cells based on available row height.
+--- Uses roughly half the row height so that an isolated change fills most of the cell.
+---@param rows number Number of grid rows
+---@return number context Lines of context to pass to git diff (-U<N>)
+function M.compute_grid_context(rows)
+  local total_height = vim.o.lines - vim.o.cmdheight - 2
+  local row_height = math.floor(total_height / math.max(1, rows))
+  return math.max(3, math.floor(row_height / 2))
+end
+
 --- Compute per-file addition/deletion counts from diff patches
 ---@param files table[] Array of {filename, patch}
 ---@return table<string, {additions: number, deletions: number}>

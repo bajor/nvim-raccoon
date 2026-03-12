@@ -146,7 +146,7 @@ describe("raccoon.git commit operations", function()
       done = false
       local result_files = nil
 
-      git.show_commit(vim.fn.getcwd(), sha, function(files, err)
+      git.show_commit(vim.fn.getcwd(), sha, nil, function(files, err)
         result_files = files
         done = true
       end)
@@ -180,7 +180,7 @@ describe("raccoon.git commit operations", function()
       done = false
       local result_files = nil
 
-      git.show_commit(vim.fn.getcwd(), sha, function(files, err)
+      git.show_commit(vim.fn.getcwd(), sha, nil, function(files, err)
         result_files = files
         done = true
       end)
@@ -214,7 +214,7 @@ describe("raccoon.git commit operations", function()
       assert.is_not_nil(sha)
 
       done = false
-      git.show_commit(vim.fn.getcwd(), sha, function(files, err)
+      git.show_commit(vim.fn.getcwd(), sha, nil, function(files, err)
         if files and #files > 0 then
           first_filename = files[1].filename
         end
@@ -441,7 +441,7 @@ describe("raccoon.commits select_generation guard", function()
     before_each(function()
       original_show_commit = git.show_commit
       original_list_files = git.list_files
-      git.show_commit = function(_, _, cb)
+      git.show_commit = function(_, _, _, cb)
         captured_callback = cb
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
@@ -961,7 +961,7 @@ describe("raccoon.commits commit_files tracking", function()
     state.reset()
     original_show_commit = git.show_commit
     original_list_files = git.list_files
-    git.show_commit = function(_, _, cb)
+    git.show_commit = function(_, _, _, cb)
       captured_callback = cb
     end
     git.list_files = function(_, _, cb) cb({}, nil) end
@@ -1151,7 +1151,7 @@ describe("raccoon.commits render_filetree early return path", function()
     require("raccoon").setup()
     original_show_commit = git.show_commit
     original_list_files = git.list_files
-    git.show_commit = function(_, _, cb)
+    git.show_commit = function(_, _, _, cb)
       captured_callback = cb
     end
     git.list_files = function(_, _, cb) cb({}, nil) end

@@ -192,7 +192,7 @@ describe("raccoon.git local commit functions", function()
       local done = false
       local result_files = nil
 
-      git.diff_working_dir(vim.fn.getcwd(), function(files, err)
+      git.diff_working_dir(vim.fn.getcwd(), nil, function(files, err)
         result_files = files
         done = true
       end)
