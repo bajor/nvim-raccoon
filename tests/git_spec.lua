@@ -307,6 +307,12 @@ describe("raccoon.git command format", function()
     assert.is_nil(recorded[1].cmd:match("%-U"))
   end)
 
+  it("diff_working_dir omits -U flag when context is negative", function()
+    git.diff_working_dir("/tmp", -5, function() end)
+    assert.equals(1, #recorded)
+    assert.is_nil(recorded[1].cmd:match("%-U"))
+  end)
+
   it("diff_working_dir floors fractional context values", function()
     git.diff_working_dir("/tmp", 7.9, function() end)
     assert.equals(1, #recorded)

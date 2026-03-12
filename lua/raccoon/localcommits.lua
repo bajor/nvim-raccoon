@@ -847,5 +847,6 @@ end
 
 -- Exposed for testing
 M._get_state = function() return local_state end
+M._select_commit = select_commit
 
 return M

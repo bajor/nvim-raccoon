@@ -9,11 +9,12 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
-local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header window separator
+local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 
---- Total editor height available for grid rows.
---- Subtracts cmdheight, the global statusline (laststatus=3), and the header window separator.
+--- Approximate usable editor height for grid layout.
+--- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
+--- header content height and inter-row separators since this feeds a heuristic, not exact layout.
 ---@return number
 function M.grid_total_height()
   return math.max(1, vim.o.lines - vim.o.cmdheight - GRID_CHROME_LINES)
