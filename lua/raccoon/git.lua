@@ -668,7 +668,7 @@ end
 ---@param base_ref string Base ref (SHA or branch name)
 ---@param callback fun(commits: table[]|nil, err: string|nil)
 function M.log_branch_commits(path, base_ref, callback)
-  run_git({ "log", "--format=%H %s", "--reverse", base_ref .. "..HEAD" }, {
+  run_git({ "log", "--format=%H %s", base_ref .. "..HEAD" }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
