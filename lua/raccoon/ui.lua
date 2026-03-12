@@ -4,7 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
-local app_state = require("raccoon.state")
+local commit_ui = require("raccoon.commit_ui")
 local NORMAL_MODE = config.NORMAL
 
 --- Current floating window state
@@ -70,9 +70,7 @@ end
 
 --- Close the PR list window
 function M.close_pr_list()
-  if app_state.is_commit_mode() then
-    require("raccoon.commits").set_popup_win(nil)
-  end
+  commit_ui.global_popup_win = nil
   if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
     vim.api.nvim_win_close(M.state.win, true)
   end
@@ -285,10 +283,8 @@ function M.show_pr_list()
     return
   end
 
-  -- Tell commit mode focus lock to allow this popup (sentinel before open_win)
-  if app_state.is_commit_mode() then
-    require("raccoon.commits").set_popup_win(-1)
-  end
+  -- Tell any active focus lock to allow this popup (sentinel before open_win)
+  commit_ui.global_popup_win = -1
 
   -- Create floating window
   local win, buf = M.create_floating_window({
@@ -305,9 +301,7 @@ function M.show_pr_list()
   M.state.selected = 1
 
   -- Replace sentinel with real window handle
-  if app_state.is_commit_mode() then
-    require("raccoon.commits").set_popup_win(win)
-  end
+  commit_ui.global_popup_win = win
 
   -- Show loading state
   vim.bo[buf].modifiable = true

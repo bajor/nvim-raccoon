@@ -67,6 +67,7 @@ local commit_mode_keymaps = {}
 
 --- Reset module state
 local function reset_state()
+  stop_poll_timer()
   commit_state = {
     active = false,
     sidebar_win = nil,
@@ -217,7 +218,7 @@ local function select_commit(index)
     if generation ~= commit_state.select_generation then return end
 
     if err then
-      vim.notify("Failed to get commit diff", vim.log.levels.ERROR)
+      vim.notify("Failed to get commit diff: " .. (err or "unknown error"), vim.log.levels.ERROR)
       return
     end
 
@@ -696,12 +697,6 @@ local function exit_commit_mode()
 
   reset_state()
   vim.notify("Exited commit viewer mode", vim.log.levels.INFO)
-end
-
---- Register or clear an external popup window so the focus lock allows it.
----@param win? number Window handle, or nil to clear
-function M.set_popup_win(win)
-  commit_state.popup_win = win
 end
 
 --- Toggle commit viewer mode

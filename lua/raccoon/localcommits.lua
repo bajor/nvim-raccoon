@@ -12,7 +12,7 @@ local state = require("raccoon.state")
 local ui = require("raccoon.commit_ui")
 
 local COMBINED_DIFF_SHA = git.COMBINED_DIFF_SHA
-local CURRENT_CHANGES_MSG = "CURRENT CHANGES"
+local CURRENT_CHANGES_MSG = "UNCOMMITTED CHANGES"
 
 local ns_id = vim.api.nvim_create_namespace("raccoon_local_commits")
 
@@ -179,7 +179,7 @@ local function select_commit(index)
     if generation ~= local_state.select_generation then return end
 
     if err then
-      vim.notify("Failed to get commit diff", vim.log.levels.ERROR)
+      vim.notify("Failed to get commit diff: " .. (err or "unknown error"), vim.log.levels.ERROR)
       return
     end
 

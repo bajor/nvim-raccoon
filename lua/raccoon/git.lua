@@ -1012,6 +1012,10 @@ end
 ---@param context number|nil Lines of surrounding context
 ---@param callback fun(files: table[]|nil, err: string|nil)
 function M.diff_combined(path, base_ref, context, callback)
+  if not base_ref then
+    callback(nil, "No base ref available for combined diff")
+    return
+  end
   local args = { "diff" }
   if context and context > 0 then
     table.insert(args, "-U" .. tostring(math.floor(context)))
@@ -1035,6 +1039,10 @@ end
 ---@param filename string File path within the repo
 ---@param callback fun(patch: string|nil, err: string|nil)
 function M.diff_combined_file(path, base_ref, filename, callback)
+  if not base_ref then
+    callback(nil, "No base ref available for combined diff")
+    return
+  end
   run_git({ "diff", "-U99999", base_ref .. "...HEAD", "--", filename }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)

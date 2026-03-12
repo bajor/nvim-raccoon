@@ -9,6 +9,10 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
+--- Shared popup window handle. When set, all focus locks allow this window.
+---@type number|nil
+M.global_popup_win = nil
+
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 
@@ -520,10 +524,11 @@ function M.open_maximize(opts)
   fetch_patch(function(patch, err)
     if opts.get_generation() ~= opts.generation then return end
 
-    if err or not patch or patch == "" then
-      vim.notify("Failed to get full file diff", vim.log.levels.ERROR)
+    if err then
+      vim.notify("Failed to get full file diff: " .. err, vim.log.levels.ERROR)
       return
     end
+    if not patch or patch == "" then return end
 
     local hunks = diff.parse_patch(patch)
     if #hunks == 0 then return end
@@ -1034,10 +1039,18 @@ function M.setup_focus_lock(s, augroup_name)
       if not s.active then return end
       local cur_win = vim.api.nvim_get_current_win()
       if cur_win == s.maximize_win then return end
+      -- Allow focus on per-state or global popups (e.g. PR picker)
       if s.popup_win and cur_win == s.popup_win then return end
+      if M.global_popup_win then
+        if not vim.api.nvim_win_is_valid(M.global_popup_win) then
+          M.global_popup_win = nil
+        elseif cur_win == M.global_popup_win then
+          return
+        end
+      end
       if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
         vim.schedule(function()
-          if s.popup_win then return end
+          if s.popup_win or (M.global_popup_win and vim.api.nvim_win_is_valid(M.global_popup_win)) then return end
           if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
             vim.api.nvim_set_current_win(s.maximize_win)
           end
@@ -1047,7 +1060,7 @@ function M.setup_focus_lock(s, augroup_name)
       local target = (s.focus_target == "filetree" and s.filetree_win) or s.sidebar_win
       if cur_win ~= target then
         vim.schedule(function()
-          if s.popup_win then return end
+          if s.popup_win or (M.global_popup_win and vim.api.nvim_win_is_valid(M.global_popup_win)) then return end
           if target and vim.api.nvim_win_is_valid(target) then
             vim.api.nvim_set_current_win(target)
           end
