@@ -797,10 +797,11 @@ end
 ---@param context number|nil Lines of surrounding context (nil = git default of 3)
 ---@param callback fun(files: table[]|nil, err: string|nil)
 function M.diff_working_dir(path, context, callback)
-  local args = { "diff", "HEAD" }
+  local args = { "diff" }
   if context then
     table.insert(args, "-U" .. tostring(context))
   end
+  table.insert(args, "HEAD")
   run_git(args, {
     cwd = path,
     on_exit = function(code, stdout, stderr)

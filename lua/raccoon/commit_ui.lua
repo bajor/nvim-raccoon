@@ -9,16 +9,17 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
---- Total editor height available for grid rows (excludes tabline, statusline, cmdline).
+--- Total editor height available for grid rows.
+--- Subtracts cmdheight and 2 lines for the global statusline and header/separator.
 ---@return number
 function M.grid_total_height()
   return vim.o.lines - vim.o.cmdheight - 2
 end
 
 --- Compute the diff context line count for grid cells based on available row height.
---- Uses roughly half the row height so that an isolated change fills most of the cell.
+--- Uses floor(row_height / 2) so a single-line change with symmetric context fills one cell.
 ---@param rows number Number of grid rows
----@return number context Lines of context to pass to git diff (-U<N>, always >= 3)
+---@return number context Lines of context to pass to git diff (-U<N>, always >= 3 to match git default)
 function M.compute_grid_context(rows)
   local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
   return math.max(3, math.floor(row_height / 2))
@@ -455,7 +456,7 @@ function M.create_grid_layout(s, rows, cols)
     vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
   end
   vim.api.nvim_win_set_height(s.header_win, 1)
-  local row_height = math.floor(M.grid_total_height() / rows)
+  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
   for _, win in ipairs(grid_wins) do
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_set_height(win, row_height)
