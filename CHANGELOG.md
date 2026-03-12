@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11] - 2026-03-12
+
+### Added
+- **Combined diff entry** in commit viewer sidebar — a synthetic "COMBINED DIFF" row at the top showing the three-dot diff (`base...HEAD`) of the entire PR, matching GitHub's "Files changed" view
+- **Background sync for PR commit viewer** — automatically fetches new commits from origin at a configurable interval and refreshes the sidebar and grid when changes are detected
+- `commit_viewer.sync_interval` config option (default 60 seconds, range 10–3600) to control background sync frequency
+- `git.ref_sha()`, `git.reset_hard()`, `git.diff_combined()`, `git.diff_combined_file()` helpers for combined diff and remote sync operations
+- PR list popup now opens correctly from within commit viewer mode without being blocked by focus lock (`global_popup_win`)
+- PR list floating window title now shows a close-key hint derived from config
+
+### Changed
+- Extracted `strip_to_patch()` helper in `git.lua`, removing duplicated patch-extraction logic from `show_commit_file` and `diff_working_dir_file`
+- "Current changes" label in local mode normalized to `CURRENT_CHANGES_MSG` constant
+- Combined diff entry appears in both PR commit mode and local commit mode when there are multiple branch commits
+- Error messages in commit/diff operations now include the actual error string
+
 ## [0.10.3] - 2026-03-12
 
 ### Fixed

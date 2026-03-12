@@ -604,9 +604,11 @@ local function refresh_commits()
     -- Branch mode: refresh branch commits only (base stays static)
     git.log_branch_commits(local_state.repo_path, local_state.merge_base_sha, function(new_branch, err)
       if err or not new_branch then return end
-      table.insert(new_branch, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
-      if #new_branch > 2 then
-        table.insert(new_branch, 2, git.make_combined_diff_entry())
+      if #new_branch > 1 then
+        table.insert(new_branch, 1, git.make_combined_diff_entry())
+        table.insert(new_branch, 2, { sha = nil, message = CURRENT_CHANGES_MSG })
+      else
+        table.insert(new_branch, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
       end
       local_state.branch_commits = new_branch
       local_state.last_status_output = ""
@@ -792,11 +794,12 @@ local function enter_local_mode()
           local function on_both_ready()
             local branch_commits = branch_result or {}
             local base_commits = base_result or {}
-            table.insert(branch_commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
-            -- Add combined diff entry when there are multiple branch commits
-            if #branch_commits > 2 then -- >2 because index 1 is CURRENT CHANGES
-              table.insert(branch_commits, 2,
-                git.make_combined_diff_entry())
+            -- Combined diff on top when there are multiple branch commits
+            if #branch_commits > 1 then
+              table.insert(branch_commits, 1, git.make_combined_diff_entry())
+              table.insert(branch_commits, 2, { sha = nil, message = CURRENT_CHANGES_MSG })
+            else
+              table.insert(branch_commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
             end
             local_state.current_branch = current_branch
             local_state.base_branch = default_branch
