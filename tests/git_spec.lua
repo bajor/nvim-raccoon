@@ -241,6 +241,38 @@ describe("raccoon.git command format", function()
     assert.equals(1, #recorded)
     assert.truthy(recorded[1].cmd:match("%-%-branch feat"))
   end)
+
+  it("show_commit includes -U flag when context is provided", function()
+    git.show_commit("/tmp", "abc123", 20, function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("%-U20"))
+  end)
+
+  it("show_commit omits -U flag when context is nil", function()
+    git.show_commit("/tmp", "abc123", nil, function() end)
+    assert.equals(1, #recorded)
+    assert.is_nil(recorded[1].cmd:match("%-U%d"))
+  end)
+
+  it("show_commit places -U flag before the SHA", function()
+    git.show_commit("/tmp", "abc123", 15, function() end)
+    assert.equals(1, #recorded)
+    local u_pos = recorded[1].cmd:find("%-U15")
+    local sha_pos = recorded[1].cmd:find("abc123")
+    assert.is_true(u_pos < sha_pos)
+  end)
+
+  it("diff_working_dir includes -U flag when context is provided", function()
+    git.diff_working_dir("/tmp", 15, function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("%-U15"))
+  end)
+
+  it("diff_working_dir omits -U flag when context is nil", function()
+    git.diff_working_dir("/tmp", nil, function() end)
+    assert.equals(1, #recorded)
+    assert.is_nil(recorded[1].cmd:match("%-U%d"))
+  end)
 end)
 
 -- Long-path error enhancement tests
