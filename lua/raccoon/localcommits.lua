@@ -11,6 +11,8 @@ local open = require("raccoon.open")
 local state = require("raccoon.state")
 local ui = require("raccoon.commit_ui")
 
+local COMBINED_DIFF_SHA = git.COMBINED_DIFF_SHA
+
 local ns_id = vim.api.nvim_create_namespace("raccoon_local_commits")
 
 local BATCH_SIZE = 100
@@ -127,6 +129,8 @@ local function maximize_cell(cell_num)
   local commit = get_commit(local_state.selected_index)
   if not commit or not local_state.repo_path then return end
 
+  local base_ref = local_state.merge_base_sha or local_state.base_branch
+
   ui.open_maximize({
     ns_id = ns_id,
     repo_path = local_state.repo_path,
@@ -137,6 +141,8 @@ local function maximize_cell(cell_num)
     get_generation = function() return local_state.select_generation end,
     state = local_state,
     is_working_dir = commit.sha == nil,
+    is_combined_diff = commit.sha == COMBINED_DIFF_SHA,
+    base_ref = base_ref,
   })
 end
 
@@ -153,9 +159,16 @@ local function select_commit(index)
   if not local_state.repo_path then return end
 
   local context = ui.compute_grid_context(local_state.grid_rows)
-  local fetch_diff = commit.sha
-    and function(cb) git.show_commit(local_state.repo_path, commit.sha, context, cb) end
-    or function(cb) git.diff_working_dir(local_state.repo_path, context, cb) end
+  local base_ref = local_state.merge_base_sha or local_state.base_branch
+
+  local fetch_diff
+  if commit.sha == COMBINED_DIFF_SHA then
+    fetch_diff = function(cb) git.diff_combined(local_state.repo_path, base_ref, context, cb) end
+  elseif commit.sha then
+    fetch_diff = function(cb) git.show_commit(local_state.repo_path, commit.sha, context, cb) end
+  else
+    fetch_diff = function(cb) git.diff_working_dir(local_state.repo_path, context, cb) end
+  end
 
   fetch_diff(function(files, err)
     if generation ~= local_state.select_generation then return end
@@ -252,7 +265,7 @@ local function render_sidebar()
       section2_header = "── " .. local_state.base_branch .. " ──",
       section2_commits = local_state.base_commits,
       commit_hl_fn = function(commit)
-        if commit.sha == nil then return "DiagnosticInfo" end
+        if commit.sha == nil or commit.sha == COMBINED_DIFF_SHA then return "DiagnosticInfo" end
       end,
       loading = local_state.loading_more,
     })
@@ -358,6 +371,8 @@ build_filetree_cache = function()
   if not local_state.repo_path then return end
   local commit = get_commit(local_state.selected_index)
   local sha = (commit and commit.sha) or nil
+  -- Combined diff sentinel is not a real git ref; use HEAD for file listing
+  if sha == COMBINED_DIFF_SHA then sha = "HEAD" end
   ui.build_filetree_cache(local_state, local_state.repo_path, sha)
 end
 
@@ -494,6 +509,9 @@ local function setup_keymaps()
       local c = get_commit(local_state.selected_index)
       return c and c.message or ""
     end,
+    get_base_ref = function()
+      return local_state.merge_base_sha or local_state.base_branch
+    end,
   })
 
   -- Focus lock autocmd
@@ -585,7 +603,10 @@ local function refresh_commits()
     -- Branch mode: refresh branch commits only (base stays static)
     git.log_branch_commits(local_state.repo_path, local_state.merge_base_sha, function(new_branch, err)
       if err or not new_branch then return end
-      table.insert(new_branch, 1, { sha = nil, message = "Current changes" })
+      table.insert(new_branch, 1, { sha = nil, message = "CURRENT CHANGES" })
+      if #new_branch > 2 then
+        table.insert(new_branch, 2, { sha = COMBINED_DIFF_SHA, message = "COMBINED DIFF" })
+      end
       local_state.branch_commits = new_branch
       local_state.last_status_output = ""
       restore_selection_by_sha(selected_sha)
@@ -596,7 +617,7 @@ local function refresh_commits()
     local count = math.max(total_commits() - 1, BATCH_SIZE)
     git.log_all_commits(local_state.repo_path, count, 0, function(new_commits, err)
       if err or not new_commits then return end
-      table.insert(new_commits, 1, { sha = nil, message = "Current changes" })
+      table.insert(new_commits, 1, { sha = nil, message = "CURRENT CHANGES" })
       local_state.branch_commits = new_commits
       local_state.last_status_output = ""
       restore_selection_by_sha(selected_sha)
@@ -719,7 +740,7 @@ local function enter_local_mode()
             vim.notify("No commits found", vim.log.levels.WARN)
             return
           end
-          table.insert(commits, 1, { sha = nil, message = "Current changes" })
+          table.insert(commits, 1, { sha = nil, message = "CURRENT CHANGES" })
           local_state.branch_commits = commits
           activate_mode(repo_root, rows, cols,
             string.format("Local commit viewer: %d commits loaded", #commits - 1))
@@ -737,7 +758,7 @@ local function enter_local_mode()
               return
             end
             local_state.current_branch = current_branch
-            table.insert(commits, 1, { sha = nil, message = "Current changes" })
+            table.insert(commits, 1, { sha = nil, message = "CURRENT CHANGES" })
             local_state.branch_commits = commits
             activate_mode(repo_root, rows, cols,
               string.format("Local commit viewer: %d commits loaded", #commits - 1))
@@ -755,7 +776,7 @@ local function enter_local_mode()
                 return
               end
               local_state.current_branch = current_branch
-              table.insert(commits, 1, { sha = nil, message = "Current changes" })
+              table.insert(commits, 1, { sha = nil, message = "CURRENT CHANGES" })
               local_state.branch_commits = commits
               activate_mode(repo_root, rows, cols,
                 string.format("Local commit viewer: %d commits loaded", #commits - 1))
@@ -770,7 +791,12 @@ local function enter_local_mode()
           local function on_both_ready()
             local branch_commits = branch_result or {}
             local base_commits = base_result or {}
-            table.insert(branch_commits, 1, { sha = nil, message = "Current changes" })
+            table.insert(branch_commits, 1, { sha = nil, message = "CURRENT CHANGES" })
+            -- Add combined diff entry when there are multiple branch commits
+            if #branch_commits > 2 then -- >2 because index 1 is CURRENT CHANGES
+              table.insert(branch_commits, 2,
+                { sha = COMBINED_DIFF_SHA, message = "COMBINED DIFF" })
+            end
             local_state.current_branch = current_branch
             local_state.base_branch = default_branch
             local_state.merge_base_sha = merge_sha

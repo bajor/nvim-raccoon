@@ -964,4 +964,60 @@ function M.find_repo_root(path, callback)
   })
 end
 
+--- Sentinel SHA used for the "combined diff" synthetic commit entry.
+--- Must not collide with real SHAs or nil (which means working directory).
+M.COMBINED_DIFF_SHA = "__combined_diff__"
+
+--- Get the combined diff of all branch changes vs a base ref.
+--- Uses three-dot diff (merge-base to HEAD), matching what GitHub shows in "Files changed".
+---@param path string Repository path
+---@param base_ref string Base ref (e.g. "origin/main" or a SHA)
+---@param context number|nil Lines of surrounding context
+---@param callback fun(files: table[]|nil, err: string|nil)
+function M.diff_combined(path, base_ref, context, callback)
+  local args = { "diff" }
+  if context and context > 0 then
+    table.insert(args, "-U" .. tostring(math.floor(context)))
+  end
+  table.insert(args, base_ref .. "...HEAD")
+  run_git(args, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      callback(parse_diff_output(stdout), nil)
+    end,
+  })
+end
+
+--- Get the combined diff for a single file (full context, for maximize view).
+---@param path string Repository path
+---@param base_ref string Base ref (e.g. "origin/main" or a SHA)
+---@param filename string File path within the repo
+---@param callback fun(patch: string|nil, err: string|nil)
+function M.diff_combined_file(path, base_ref, filename, callback)
+  run_git({ "diff", "-U99999", base_ref .. "...HEAD", "--", filename }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      local lines = {}
+      local in_patch = false
+      for _, line in ipairs(stdout) do
+        if line:match("^@@") then
+          in_patch = true
+        end
+        if in_patch then
+          table.insert(lines, line)
+        end
+      end
+      callback(table.concat(lines, "\n"), nil)
+    end,
+  })
+end
+
 return M

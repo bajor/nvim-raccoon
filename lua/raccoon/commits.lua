@@ -11,6 +11,8 @@ local open = require("raccoon.open")
 local state = require("raccoon.state")
 local ui = require("raccoon.commit_ui")
 
+local COMBINED_DIFF_SHA = git.COMBINED_DIFF_SHA
+
 --- Namespace for commit viewer highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_commits")
 
@@ -151,6 +153,9 @@ local function maximize_cell(cell_num)
   local clone_path = state.get_clone_path()
   if not commit or not clone_path then return end
 
+  local pr = state.get_pr()
+  local base_ref = pr and ("origin/" .. pr.base.ref) or "origin/main"
+
   ui.open_maximize({
     ns_id = ns_id,
     repo_path = clone_path,
@@ -160,6 +165,8 @@ local function maximize_cell(cell_num)
     generation = commit_state.select_generation,
     get_generation = function() return commit_state.select_generation end,
     state = commit_state,
+    is_combined_diff = commit.sha == COMBINED_DIFF_SHA,
+    base_ref = base_ref,
   })
 end
 
@@ -183,7 +190,14 @@ local function select_commit(index)
   if not clone_path then return end
 
   local context = ui.compute_grid_context(commit_state.grid_rows)
-  git.show_commit(clone_path, commit.sha, context, function(files, err)
+  local pr = state.get_pr()
+  local base_ref = pr and ("origin/" .. pr.base.ref) or "origin/main"
+
+  local fetch_diff = commit.sha == COMBINED_DIFF_SHA
+    and function(cb) git.diff_combined(clone_path, base_ref, context, cb) end
+    or function(cb) git.show_commit(clone_path, commit.sha, context, cb) end
+
+  fetch_diff(function(files, err)
     if generation ~= commit_state.select_generation then return end
 
     if err then
@@ -254,6 +268,9 @@ local function render_sidebar()
     section1_commits = commit_state.pr_commits,
     section2_header = "── Base Branch ──",
     section2_commits = commit_state.base_commits,
+    commit_hl_fn = function(commit)
+      if commit.sha == COMBINED_DIFF_SHA then return "DiagnosticInfo" end
+    end,
   })
   ui.update_sidebar_winbar(commit_state, total_commits())
   update_sidebar_selection()
@@ -310,6 +327,8 @@ build_filetree_cache = function()
   if not clone_path then return end
   local commit = get_commit(commit_state.selected_index)
   local sha = commit and commit.sha or "HEAD"
+  -- Combined diff sentinel is not a real git ref; use HEAD for file listing
+  if sha == COMBINED_DIFF_SHA then sha = "HEAD" end
   ui.build_filetree_cache(commit_state, clone_path, sha)
 end
 
@@ -392,6 +411,10 @@ local function setup_keymaps()
       local c = get_commit(commit_state.selected_index)
       return c and c.message or ""
     end,
+    get_base_ref = function()
+      local pr = state.get_pr()
+      return pr and ("origin/" .. pr.base.ref) or "origin/main"
+    end,
   })
 
   -- Focus lock autocmd
@@ -462,6 +485,12 @@ local function enter_commit_mode()
           vim.notify("No commits found on PR branch", vim.log.levels.WARN)
           M.toggle()
           return
+        end
+
+        -- Add combined diff entry at the top when there are multiple PR commits
+        if #commit_state.pr_commits > 1 then
+          table.insert(commit_state.pr_commits, 1,
+            { sha = COMBINED_DIFF_SHA, message = "COMBINED DIFF" })
         end
 
         ui.create_grid_layout(commit_state, rows, cols)

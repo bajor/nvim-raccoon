@@ -508,9 +508,14 @@ end
 function M.open_maximize(opts)
   local git = require("raccoon.git")
 
-  local fetch_patch = opts.is_working_dir
-    and function(cb) git.diff_working_dir_file(opts.repo_path, opts.filename, cb) end
-    or function(cb) git.show_commit_file(opts.repo_path, opts.sha, opts.filename, cb) end
+  local fetch_patch
+  if opts.is_working_dir then
+    fetch_patch = function(cb) git.diff_working_dir_file(opts.repo_path, opts.filename, cb) end
+  elseif opts.is_combined_diff then
+    fetch_patch = function(cb) git.diff_combined_file(opts.repo_path, opts.base_ref, opts.filename, cb) end
+  else
+    fetch_patch = function(cb) git.show_commit_file(opts.repo_path, opts.sha, opts.filename, cb) end
+  end
 
   fetch_patch(function(patch, err)
     if opts.get_generation() ~= opts.generation then return end
@@ -1113,6 +1118,9 @@ function M.setup_filetree_nav(s, opts)
     if not repo_path then return end
     local is_changed = s.commit_files and s.commit_files[path]
     local commit_msg = opts.get_commit_message and opts.get_commit_message() or ""
+    local git = require("raccoon.git")
+    local is_combined = sha == git.COMBINED_DIFF_SHA
+    local base_ref = opts.get_base_ref and opts.get_base_ref()
     if is_changed then
       M.open_maximize({
         ns_id = opts.ns_id,
@@ -1124,11 +1132,13 @@ function M.setup_filetree_nav(s, opts)
         get_generation = function() return s.select_generation end,
         state = s,
         is_working_dir = sha == nil,
+        is_combined_diff = is_combined,
+        base_ref = base_ref,
       })
     else
       M.open_file_content({
         repo_path = repo_path,
-        sha = sha,
+        sha = is_combined and "HEAD" or sha,
         filename = path,
         generation = s.select_generation,
         get_generation = function() return s.select_generation end,
