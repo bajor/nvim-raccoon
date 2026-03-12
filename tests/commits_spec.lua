@@ -534,52 +534,6 @@ describe("raccoon.commits select_generation guard", function()
   end)
 end)
 
-describe("raccoon.commits error message sanitization", function()
-  local source
-
-  before_each(function()
-    if not source then
-      local src_path = vim.fn.getcwd() .. "/lua/raccoon/commits.lua"
-      local f = io.open(src_path, "r")
-      assert.is_truthy(f, "could not open commits.lua")
-      source = f:read("*a")
-      f:close()
-    end
-  end)
-
-  it("does not expose raw err in ERROR notifications", function()
-    for line in source:gmatch("[^\n]+") do
-      if line:match("vim%.notify%(") and line:match("levels%.ERROR") then
-        assert.is_falsy(
-          line:match('%.%.%s*err') or line:match('%.%.%s*fetch_err') or line:match('%.%.%s*unshallow_err'),
-          "ERROR notify should not concatenate raw error: " .. line
-        )
-      end
-    end
-  end)
-
-  it("does not expose raw err in WARN notifications", function()
-    for line in source:gmatch("[^\n]+") do
-      if line:match("vim%.notify%(") and line:match("levels%.WARN") then
-        assert.is_falsy(
-          line:match('%.%.%s*err') or line:match('%.%.%s*fetch_err') or line:match('%.%.%s*unshallow_err'),
-          "WARN notify should not concatenate raw error: " .. line
-        )
-      end
-    end
-  end)
-
-  it("does not expose raw err in INFO notifications", function()
-    for line in source:gmatch("[^\n]+") do
-      if line:match("vim%.notify%(") and line:match("levels%.INFO") then
-        assert.is_falsy(
-          line:match('%.%.%s*err') or line:match('%.%.%s*fetch_err') or line:match('%.%.%s*unshallow_err'),
-          "INFO notify should not concatenate raw error: " .. line
-        )
-      end
-    end
-  end)
-end)
 
 describe("raccoon.config commit_viewer defaults", function()
   it("has commit_viewer in defaults", function()

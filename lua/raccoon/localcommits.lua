@@ -184,7 +184,7 @@ local function select_commit(index)
     if generation ~= local_state.select_generation then return end
 
     if err then
-      vim.notify("Failed to get commit diff: " .. (err or "unknown error"), vim.log.levels.ERROR)
+      vim.notify("Failed to get commit diff: " .. err, vim.log.levels.ERROR)
       return
     end
 
