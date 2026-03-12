@@ -7,7 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.10.3] - 2026-03-12
 
 ### Fixed
-- Grid cells now fill available space with diff content instead of showing only a few lines with empty space below — context lines are dynamically computed from the cell height
+- Grid cells now fill available space with diff content instead of showing only a few lines with empty space below — diff context lines (`-U<N>`) are dynamically computed from cell height in both PR and local commit modes
+
+### Changed
+- `git.show_commit` and `git.diff_working_dir` accept an optional `context` parameter to control the `-U` flag
+- Extracted `commit_ui.grid_total_height()` and `commit_ui.compute_grid_context()` helpers for grid layout calculations
 
 ## [0.10.2] - 2026-03-12
 
