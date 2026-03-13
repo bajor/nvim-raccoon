@@ -19,12 +19,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Extracted `commit_ui.apply_diff_result()` shared helper — diff result processing (error handling, state updates, cache building, grid rendering) is now shared between PR and local commit viewers
 - Extracted combined-diff helpers (`make_combined_diff_entry`, `is_combined_diff`, `maybe_prepend_combined_diff`) into `git.lua`
 - Extracted shared exit teardown into `commit_ui.teardown_viewer()` to prevent ghost windows on exit
+- Added `state.set_mode_exit()` / `state.exit_active_mode()` callback mechanism so viewer modes register their cleanup with central state, avoiding circular dependencies between `open.lua` and viewer modules
 - Extracted `strip_to_patch()` helper in `git.lua`, removing duplicated patch-extraction logic from `show_commit_file` and `diff_working_dir_file`
 - "Current changes" label in local mode normalized to `CURRENT_CHANGES_MSG` constant
 - Combined diff entry appears in both PR commit mode and local commit mode when there are multiple branch commits
 - Error messages in commit/diff operations now include the actual error string
 
 ### Fixed
+- **Opening a new PR now properly exits any active viewer mode first** — selecting a PR from the picker while in commit viewer or local commit mode no longer opens the new PR inside the grid/filetree windows; the viewer is fully torn down before the new session starts
+- Closing a PR session (`:Raccoon close` / `<leader>q`) now exits commit viewer or local commit mode first, preventing orphaned viewer windows
+- **Maximize window blinking** — the focus-lock autocmd and fs_event file watcher now use debounce timers (50ms / 150ms) to prevent rapid screen redraws that caused the floating window to flicker, especially on macOS where libuv fires multiple callbacks per file change
 - Commit viewer exit now switches to sidebar before `:only` so file tree doesn't survive teardown
 - Header window is closed on commit mode exit to prevent ghost UI
 - Poll timer seeded inside SHA callback to prevent race condition on first tick

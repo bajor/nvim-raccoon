@@ -222,7 +222,7 @@ When you open a PR, raccoon shallow-clones the PR branch into a local directory 
 
 The per-PR directory means previous clones stay on disk — reopening a PR is fast because it fetches updates instead of cloning from scratch. Neovim's working directory changes to the clone path during a review session, so LSP, treesitter, and other tools work on the actual source code.
 
-One review session is active at a time. Opening a second PR closes the first.
+One review session is active at a time. Opening a second PR closes the first — this works seamlessly from any mode, including commit viewer and local commit viewer.
 
 ## Commands
 
