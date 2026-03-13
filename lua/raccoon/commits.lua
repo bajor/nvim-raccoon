@@ -640,7 +640,7 @@ local function enter_commit_mode()
   open.pause_sync()
   state.set_commit_mode(true)
   commit_state.active = true
-  state.set_mode_exit(exit_commit_mode)
+  state.set_mode_exit(function() exit_commit_mode() end)
 
   local vcfg = ui.parse_viewer_config()
   ui.SIDEBAR_WIDTH = vcfg.sidebar_width
