@@ -153,7 +153,7 @@ The sync check compares the HEAD SHA — if nothing changed, no further API call
 
 ### `commit_viewer`
 
-Nested object controlling the commit viewer grid layout.
+Nested object controlling the commit viewer grid layout and background sync.
 
 #### `commit_viewer.grid.rows`
 
@@ -207,6 +207,24 @@ Width in columns of the commit list sidebar (right) and file tree panel (left). 
 {
   "commit_viewer": {
     "sidebar_width": 40
+  }
+}
+```
+
+#### `commit_viewer.sync_interval`
+
+| Type | Default |
+|------|---------|
+| number | `60` |
+
+How often (in seconds) the PR commit viewer checks for new commits pushed to the PR branch while commit viewer mode is active. On each tick, the plugin fetches the PR and base branches from origin, compares SHAs, and refreshes the sidebar and grid if changes are detected. Your selection is preserved across refreshes.
+
+Set lower for faster detection, higher to reduce network traffic. Clamped to 10–3600. This is separate from `pull_changes_interval`, which controls auto-sync during normal review mode.
+
+```json
+{
+  "commit_viewer": {
+    "sync_interval": 30
   }
 }
 ```
@@ -273,7 +291,8 @@ Partial overrides are merged with defaults — you only need to specify keys you
   "pull_changes_interval": 120,
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
-    "base_commits_count": 30
+    "base_commits_count": 30,
+    "sync_interval": 60
   },
   "parallel_agents": {
     "enabled": true,

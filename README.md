@@ -36,9 +36,10 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 - Create and view inline comments on specific lines
 - Jump between diff hunks and comment threads
 - Step through individual commits in a grid layout (commit viewer mode)
+- Combined diff view showing the full PR diff (`base...HEAD`), matching GitHub's "Files changed" tab
 - View PR descriptions and metadata
 - Merge, squash, or rebase PRs
-- Auto-sync to detect new commits pushed to the branch
+- Auto-sync to detect new commits pushed to the branch (both in review mode and commit viewer mode)
 - Local commit viewer (`:Raccoon local`) for browsing any git repo's history with live "Current changes" view
 - Dispatch CLI agents (claude, amp, aider) from commit viewer diffs with context injection
 - Statusline integration showing file position and sync status
@@ -94,6 +95,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 | `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (20–120) |
+| `commit_viewer.sync_interval` | number | `60` | Background sync frequency in seconds for PR commit viewer (10–3600) |
 | `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
@@ -150,7 +152,8 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
   "pull_changes_interval": 120,
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
-    "base_commits_count": 30
+    "base_commits_count": 30,
+    "sync_interval": 60
   },
   "parallel_agents": {
     "enabled": true,
@@ -265,6 +268,10 @@ All keymaps are configurable via the `shortcuts` field in `config.json`. The val
 Inspired by chess game review, where you step through moves to understand the sequence that led to the final position. Instead of seeing the PR as a flat diff, commit viewer lets you replay the author's thought process one commit at a time — understanding *how* the code got to where it is, not just *what* changed.
 
 Press `<leader>cm` during a PR review to enter commit viewer mode. A file tree on the left shows all PR files with three-level highlighting: files in the current commit are brighter, and files currently visible in the grid are highlighted the strongest. The main area displays a configurable grid of diff hunks. A sidebar on the right lists all commits from the PR branch and recent base branch commits.
+
+When the PR has multiple commits, a **COMBINED DIFF** entry appears at the top of the sidebar showing the three-dot diff (`base...HEAD`) of the entire PR — matching GitHub's "Files changed" view. This gives you the full picture alongside individual commit diffs.
+
+**Background sync** automatically fetches new commits from origin and refreshes the sidebar and grid when changes are detected. The sync interval is configurable via `commit_viewer.sync_interval` (default 60 seconds). Your selection is preserved across refreshes.
 
 ### Commit viewer keymaps
 

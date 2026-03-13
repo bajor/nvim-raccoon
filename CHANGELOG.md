@@ -4,21 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.11] - 2026-03-12
+## [0.11] - 2026-03-13
 
 ### Added
 - **Combined diff entry** in commit viewer sidebar — a synthetic "COMBINED DIFF" row at the top showing the three-dot diff (`base...HEAD`) of the entire PR, matching GitHub's "Files changed" view
-- **Background sync for PR commit viewer** — automatically fetches new commits from origin at a configurable interval and refreshes the sidebar and grid when changes are detected
+- **Background sync for PR commit viewer** — automatically fetches new commits from origin at a configurable interval and refreshes the sidebar and grid when changes are detected; selection is preserved across refreshes
 - `commit_viewer.sync_interval` config option (default 60 seconds, range 10–3600) to control background sync frequency
 - `git.ref_sha()`, `git.reset_hard()`, `git.diff_combined()`, `git.diff_combined_file()` helpers for combined diff and remote sync operations
 - PR list popup now opens correctly from within commit viewer mode without being blocked by focus lock (`global_popup_win`)
 - PR list floating window title now shows a close-key hint derived from config
+- Tests for combined diff helpers, `status_porcelain`, and `apply_diff_result` stale-callback handling
 
 ### Changed
+- Extracted `commit_ui.apply_diff_result()` shared helper — diff result processing (error handling, state updates, cache building, grid rendering) is now shared between PR and local commit viewers
+- Extracted combined-diff helpers (`make_combined_diff_entry`, `is_combined_diff`, `maybe_prepend_combined_diff`) into `git.lua`
+- Extracted shared exit teardown into `commit_ui.teardown_viewer()` to prevent ghost windows on exit
 - Extracted `strip_to_patch()` helper in `git.lua`, removing duplicated patch-extraction logic from `show_commit_file` and `diff_working_dir_file`
 - "Current changes" label in local mode normalized to `CURRENT_CHANGES_MSG` constant
 - Combined diff entry appears in both PR commit mode and local commit mode when there are multiple branch commits
 - Error messages in commit/diff operations now include the actual error string
+
+### Fixed
+- Commit viewer exit now switches to sidebar before `:only` so file tree doesn't survive teardown
+- Header window is closed on commit mode exit to prevent ghost UI
+- Poll timer seeded inside SHA callback to prevent race condition on first tick
+- `on_complete` threaded through `refresh_commits` to prevent `sync_in_flight` deadlock
+- Error handling added for silent failures across commit modules (diff, commit, and file operations)
 
 ## [0.10.3] - 2026-03-12
 
