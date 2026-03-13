@@ -671,13 +671,14 @@ end
 ---@param s table State table
 function M.stop_maximize_watcher(s)
   if s.maximize_fs_event then
+    local handle = s.maximize_fs_event
+    s.maximize_fs_event = nil
+    pcall(handle.stop, handle)
     pcall(function()
-      s.maximize_fs_event:stop()
-      if not s.maximize_fs_event:is_closing() then
-        s.maximize_fs_event:close()
+      if not handle:is_closing() then
+        handle:close()
       end
     end)
-    s.maximize_fs_event = nil
   end
 end
 
@@ -693,7 +694,10 @@ function M.start_maximize_watcher(s)
 
   s.maximize_fs_event = handle
   handle:start(filepath, {}, vim.schedule_wrap(function(err)
-    if err then return end
+    if err then
+      vim.notify("File watcher error: " .. tostring(err), vim.log.levels.DEBUG)
+      return
+    end
     if not s.maximize_workdir_opts then return end
     M.refresh_maximize(s)
   end))
@@ -825,7 +829,10 @@ function M.build_filetree_cache(s, repo_path, sha)
 
   s.cached_sha = cache_key
 
-  git.list_files(repo_path, sha, function(raw, _)
+  git.list_files(repo_path, sha, function(raw, list_err)
+    if list_err then
+      vim.notify("Failed to list files for tree: " .. tostring(list_err), vim.log.levels.DEBUG)
+    end
     if s.cached_sha ~= cache_key then return end
 
     table.sort(raw)

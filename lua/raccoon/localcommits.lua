@@ -576,7 +576,12 @@ start_workdir_poll_timer = function()
     if not local_state.active then return end
 
     git.status_porcelain(local_state.repo_path, function(output, err)
-      if err or not local_state.active then
+      if not local_state.active then
+        start_workdir_poll_timer()
+        return
+      end
+      if err then
+        vim.notify("Workdir poll: status_porcelain failed", vim.log.levels.DEBUG)
         start_workdir_poll_timer()
         return
       end
@@ -612,7 +617,10 @@ local function refresh_commits()
   if local_state.base_branch and local_state.merge_base_sha then
     -- Branch mode: refresh branch commits only (base stays static)
     git.log_branch_commits(local_state.repo_path, local_state.merge_base_sha, function(new_branch, err)
-      if err or not new_branch then return end
+      if err or not new_branch then
+        vim.notify("Local sync: failed to refresh branch commits", vim.log.levels.WARN)
+        return
+      end
       prepend_synthetic_entries(new_branch)
       local_state.branch_commits = new_branch
       local_state.last_status_output = ""
@@ -623,7 +631,10 @@ local function refresh_commits()
     -- Flat mode: refresh all commits
     local count = math.max(total_commits() - 1, BATCH_SIZE)
     git.log_all_commits(local_state.repo_path, count, 0, function(new_commits, err)
-      if err or not new_commits then return end
+      if err or not new_commits then
+        vim.notify("Local sync: failed to refresh commits", vim.log.levels.WARN)
+        return
+      end
       table.insert(new_commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
       local_state.branch_commits = new_commits
       local_state.last_status_output = ""
@@ -680,7 +691,11 @@ load_more_commits = function()
       BATCH_SIZE, local_state.total_base_loaded,
       function(new_commits, err)
         local_state.loading_more = false
-        if err or not new_commits or #new_commits == 0 then return end
+        if err then
+          vim.notify("Failed to load more base commits", vim.log.levels.DEBUG)
+          return
+        end
+        if not new_commits or #new_commits == 0 then return end
         for _, commit in ipairs(new_commits) do
           table.insert(local_state.base_commits, commit)
         end
@@ -693,7 +708,11 @@ load_more_commits = function()
     local skip = #local_state.branch_commits - 1 -- -1 for "Current changes"
     git.log_all_commits(local_state.repo_path, BATCH_SIZE, skip, function(new_commits, err)
       local_state.loading_more = false
-      if err or not new_commits or #new_commits == 0 then return end
+      if err then
+        vim.notify("Failed to load more commits", vim.log.levels.DEBUG)
+        return
+      end
+      if not new_commits or #new_commits == 0 then return end
       for _, commit in ipairs(new_commits) do
         table.insert(local_state.branch_commits, commit)
       end
@@ -827,12 +846,18 @@ local function enter_local_mode()
             if pending == 0 then on_both_ready() end
           end
 
-          git.log_branch_commits(repo_root, merge_sha, function(commits, _)
+          git.log_branch_commits(repo_root, merge_sha, function(commits, err)
+            if err then
+              vim.notify("Failed to load branch commits", vim.log.levels.WARN)
+            end
             branch_result = commits
             check_done()
           end)
 
-          git.log_from_ref(repo_root, merge_sha, base_count, 0, function(commits, _)
+          git.log_from_ref(repo_root, merge_sha, base_count, 0, function(commits, err)
+            if err then
+              vim.notify("Failed to load base commits", vim.log.levels.WARN)
+            end
             base_result = commits
             check_done()
           end)

@@ -357,6 +357,13 @@ local function refresh_commits(on_complete)
   local new_pr, new_base
 
   local function on_both_ready()
+    -- When both calls failed, skip re-render to avoid clobbering valid state
+    if not new_pr and not new_base then
+      vim.notify("Sync: failed to refresh commits", vim.log.levels.WARN)
+      if on_complete then on_complete() end
+      return
+    end
+
     commit_state.pr_commits = new_pr or commit_state.pr_commits
     commit_state.base_commits = new_base or commit_state.base_commits
 
@@ -723,6 +730,7 @@ local function enter_commit_mode()
 
       git.log_base_commits(clone_path, base_branch, base_count, function(commits, err)
         if err then
+          vim.notify("Failed to get base commits", vim.log.levels.WARN)
           commit_state.base_commits = {}
         else
           commit_state.base_commits = commits or {}
