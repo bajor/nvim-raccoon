@@ -9,6 +9,14 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
+--- Extract the first line (subject) from a possibly multiline commit message.
+---@param message string Full commit message
+---@return string subject First line of the message
+function M.commit_subject(message)
+  local nl = message:find("\n")
+  return nl and message:sub(1, nl - 1) or message
+end
+
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 local MAX_HEADER_LINES = 15 -- cap header height to avoid overwhelming the grid
@@ -1199,9 +1207,7 @@ function M.render_split_sidebar(buf, opts)
 
   -- Section 1 commits (show first line only in sidebar)
   for _, commit in ipairs(opts.section1_commits) do
-    local msg = commit.message
-    local nl = msg:find("\n")
-    if nl then msg = msg:sub(1, nl - 1) end
+    local msg = M.commit_subject(commit.message or "")
     if #msg > M.SIDEBAR_WIDTH - 2 then
       msg = msg:sub(1, M.SIDEBAR_WIDTH - 5) .. "..."
     end
@@ -1221,9 +1227,7 @@ function M.render_split_sidebar(buf, opts)
 
   -- Section 2 commits (dimmed, first line only)
   for _, commit in ipairs(opts.section2_commits) do
-    local msg = commit.message
-    local nl = msg:find("\n")
-    if nl then msg = msg:sub(1, nl - 1) end
+    local msg = M.commit_subject(commit.message or "")
     if #msg > M.SIDEBAR_WIDTH - 2 then
       msg = msg:sub(1, M.SIDEBAR_WIDTH - 5) .. "..."
     end

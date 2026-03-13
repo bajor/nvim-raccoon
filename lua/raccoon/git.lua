@@ -267,9 +267,11 @@ local LOG_FORMAT = "--format=%H%x00%B%x01"
 
 --- Parse git log output into commit tables.
 --- Expects output from --format=%H%x00%B%x01 (SHA, null byte, full message, record separator).
---- The job buffering in run_git drops empty lines, so the blank line between subject and body
---- is lost; we reconstruct it by inserting a blank line after the first line when a body exists.
----@param stdout string[] Lines from run_git (empty lines dropped by job buffering)
+--- The job buffering in run_git drops all empty lines, so blank lines within the commit message
+--- (including the conventional separator between subject and body) are lost. We reconstruct the
+--- subject/body separator by inserting a blank line after the first line when a body exists,
+--- but interior blank lines within the body are not recovered.
+---@param stdout string[] Lines from run_git (joined and re-split by record delimiter internally)
 ---@return table[] commits Array of {sha, message}
 local function parse_commit_log(stdout)
   local commits = {}
@@ -282,19 +284,24 @@ local function parse_commit_log(stdout)
     if record:byte(41) ~= FIELD_SEP:byte() then goto continue end
     if not sha:match("^%x+$") then goto continue end
     local body = vim.trim(record:sub(42))
-    if #body == 0 then goto continue end
-    local msg_lines = vim.split(body, "\n", { trimempty = true })
     local message
-    if #msg_lines > 1 then
-      message = msg_lines[1] .. "\n\n" .. table.concat(msg_lines, "\n", 2)
+    if #body == 0 then
+      message = ""
     else
-      message = msg_lines[1] or ""
+      local msg_lines = vim.split(body, "\n", { trimempty = true })
+      if #msg_lines > 1 then
+        message = msg_lines[1] .. "\n\n" .. table.concat(msg_lines, "\n", 2)
+      else
+        message = msg_lines[1]
+      end
     end
     table.insert(commits, { sha = sha, message = message })
     ::continue::
   end
   return commits
 end
+
+M._parse_commit_log = parse_commit_log
 
 --- Parse owner/repo from a git remote URL
 ---@param url string|nil Git remote URL (SSH or HTTPS)

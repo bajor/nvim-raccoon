@@ -267,9 +267,7 @@ local function render_sidebar()
     table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
     for i, commit in ipairs(local_state.branch_commits) do
-      local msg = commit.message
-      local nl = msg:find("\n")
-      if nl then msg = msg:sub(1, nl - 1) end
+      local msg = ui.commit_subject(commit.message or "")
       if #msg > ui.SIDEBAR_WIDTH - 2 then
         msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
       end
@@ -441,10 +439,7 @@ local function setup_keymaps()
         for i = 1, total_commits() do
           local c = get_commit(i)
           if c then
-            local msg = c.message
-            local nl = msg:find("\n")
-            if nl then msg = msg:sub(1, nl - 1) end
-            table.insert(items, { display = "  " .. msg, value = i })
+            table.insert(items, { display = "  " .. ui.commit_subject(c.message or ""), value = i })
           end
         end
         ui.open_maximize_list({

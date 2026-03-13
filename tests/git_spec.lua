@@ -593,4 +593,93 @@ describe("raccoon.git functions", function()
       assert.is_function(git.get_sync_status)
     end)
   end)
+
+  describe("_parse_commit_log", function()
+    local parse = git._parse_commit_log
+    local sha1 = "a" .. string.rep("0", 39)
+    local sha2 = "b" .. string.rep("0", 39)
+
+    it("parses single commit with subject only", function()
+      -- Simulates run_git output for a commit with no body:
+      -- git produces: <sha>\0Subject\n\1
+      -- run_git splits by \n and drops empties, yielding one line
+      local stdout = { sha1 .. "\0Subject line\1" }
+      local commits = parse(stdout)
+      assert.equals(1, #commits)
+      assert.equals(sha1, commits[1].sha)
+      assert.equals("Subject line", commits[1].message)
+    end)
+
+    it("parses single commit with subject and body", function()
+      -- git produces: <sha>\0Subject\n\nBody line 1\nBody line 2\n\1
+      -- run_git drops the empty line between subject and body
+      local stdout = {
+        sha1 .. "\0Subject",
+        "Body line 1",
+        "Body line 2",
+        "\1",
+      }
+      local commits = parse(stdout)
+      assert.equals(1, #commits)
+      assert.equals(sha1, commits[1].sha)
+      assert.equals("Subject\n\nBody line 1\nBody line 2", commits[1].message)
+    end)
+
+    it("parses multiple commits", function()
+      local stdout = {
+        sha1 .. "\0First commit\1" .. sha2 .. "\0Second commit\1",
+      }
+      local commits = parse(stdout)
+      assert.equals(2, #commits)
+      assert.equals(sha1, commits[1].sha)
+      assert.equals("First commit", commits[1].message)
+      assert.equals(sha2, commits[2].sha)
+      assert.equals("Second commit", commits[2].message)
+    end)
+
+    it("parses multiple commits with bodies across lines", function()
+      local stdout = {
+        sha1 .. "\0First subject",
+        "First body",
+        "\1" .. sha2 .. "\0Second subject\1",
+      }
+      local commits = parse(stdout)
+      assert.equals(2, #commits)
+      assert.equals("First subject\n\nFirst body", commits[1].message)
+      assert.equals("Second subject", commits[2].message)
+    end)
+
+    it("handles commit with empty message", function()
+      local stdout = { sha1 .. "\0\1" }
+      local commits = parse(stdout)
+      assert.equals(1, #commits)
+      assert.equals(sha1, commits[1].sha)
+      assert.equals("", commits[1].message)
+    end)
+
+    it("skips malformed records with short length", function()
+      local stdout = { "short\1" .. sha1 .. "\0Valid commit\1" }
+      local commits = parse(stdout)
+      assert.equals(1, #commits)
+      assert.equals("Valid commit", commits[1].message)
+    end)
+
+    it("skips records with missing field separator", function()
+      local stdout = { sha1 .. "XNo null byte here\1" }
+      local commits = parse(stdout)
+      assert.equals(0, #commits)
+    end)
+
+    it("skips records with non-hex SHA", function()
+      local bad_sha = "g" .. string.rep("0", 39)
+      local stdout = { bad_sha .. "\0Some message\1" }
+      local commits = parse(stdout)
+      assert.equals(0, #commits)
+    end)
+
+    it("handles empty input", function()
+      local commits = parse({})
+      assert.equals(0, #commits)
+    end)
+  end)
 end)
