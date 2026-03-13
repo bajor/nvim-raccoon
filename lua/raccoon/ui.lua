@@ -630,8 +630,6 @@ function M.show_description()
     return
   end
 
-  local state = require("raccoon.state")
-
   if not state.is_active() then
     vim.notify("No active PR review session", vim.log.levels.WARN)
     return
