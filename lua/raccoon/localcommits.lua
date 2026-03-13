@@ -540,12 +540,12 @@ start_workdir_poll_timer = function()
         return
       end
 
-      if output == local_state.last_status_output then
+      if (output or "") == local_state.last_status_output then
         start_workdir_poll_timer()
         return
       end
 
-      local_state.last_status_output = output
+      local_state.last_status_output = output or ""
       local_state.last_change_time = vim.uv.now()
       render_sidebar()
 

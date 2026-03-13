@@ -299,6 +299,16 @@ function M.show_pr_list()
 
   -- Tell any active focus lock to allow this popup
   state.global_popup_win = win
+  -- Clear the global reference when the window is closed (e.g. by :q or user)
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(win),
+    once = true,
+    callback = function()
+      if state.global_popup_win == win then
+        state.global_popup_win = nil
+      end
+    end,
+  })
 
   -- Show loading state
   vim.bo[buf].modifiable = true

@@ -895,13 +895,13 @@ end
 
 --- Get git status in porcelain format (cheap change detection)
 ---@param path string Repository path
----@param callback fun(output: string, err: string|nil)
+---@param callback fun(output: string|nil, err: string|nil)
 function M.status_porcelain(path, callback)
   run_git({ "status", "--porcelain" }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
-        callback("", table.concat(stderr, "\n"))
+        callback(nil, table.concat(stderr, "\n"))
         return
       end
       callback(table.concat(stdout, "\n"), nil)
@@ -996,7 +996,7 @@ end
 M.COMBINED_DIFF_SHA = "__combined_diff__"
 
 --- Create a synthetic "COMBINED DIFF" commit entry.
----@return table entry {sha, message}
+---@return table entry {sha: string, message: string} sha is COMBINED_DIFF_SHA sentinel
 function M.make_combined_diff_entry()
   return { sha = M.COMBINED_DIFF_SHA, message = "COMBINED DIFF" }
 end
@@ -1023,7 +1023,7 @@ end
 --- since GitHub computed its merge-base.
 ---@param path string Repository path
 ---@param base_ref string Base ref (e.g. "origin/main" or a SHA)
----@param context number|nil Lines of surrounding context
+---@param context number|nil Lines of surrounding context (nil omits -U flag, deferring to git's default)
 ---@param callback fun(files: table[]|nil, err: string|nil)
 function M.diff_combined(path, base_ref, context, callback)
   if not base_ref then

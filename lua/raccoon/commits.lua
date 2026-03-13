@@ -58,8 +58,8 @@ local function make_initial_state()
     last_head_sha = nil,
     last_base_sha = nil,
     base_branch = nil,
-    base_count = 20,
-    sync_interval_ms = 60000,
+    base_count = nil,
+    sync_interval_ms = nil,
   }
 end
 
@@ -449,7 +449,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
 end
 
 --- Start the background sync timer.
---- On each tick: fetch PR branch from origin, check for new commits, reset and refresh if needed.
+--- On each tick: fetch PR and base branches from origin, check for new commits, reset and refresh if needed.
 local function start_poll_timer()
   stop_poll_timer()
   if not commit_state.active then return end

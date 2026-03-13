@@ -10,7 +10,7 @@ local state = require("raccoon.state")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 
-local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
+local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header window (1-line split)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 
 --- Approximate usable editor height for grid layout.
@@ -1228,7 +1228,6 @@ end
 --- Works for both PR viewer ("PR Branch"/"Base Branch") and local viewer ("feat-xyz"/"main").
 ---@param buf number Buffer ID
 ---@param opts table {section1_header, section1_commits, section2_header, section2_commits, commit_hl_fn?, loading?}
----@return table highlights Array of {line, hl} used for highlight application
 function M.render_split_sidebar(buf, opts)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
