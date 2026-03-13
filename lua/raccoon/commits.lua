@@ -620,6 +620,7 @@ local function enter_commit_mode()
   open.pause_sync()
   state.set_commit_mode(true)
   commit_state.active = true
+  state.set_mode_exit(function() exit_commit_mode() end)
 
   local vcfg = ui.parse_viewer_config()
   ui.SIDEBAR_WIDTH = vcfg.sidebar_width
@@ -704,6 +705,7 @@ local function exit_commit_mode()
     on_before_only = function()
       commit_mode_keymaps = {}
       state.set_commit_mode(false)
+      state.set_mode_exit(nil)
     end,
     on_after = function()
       keymaps.setup()

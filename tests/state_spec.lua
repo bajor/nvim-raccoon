@@ -410,6 +410,39 @@ describe("raccoon.state", function()
     end)
   end)
 
+  describe("mode_exit", function()
+    it("exit_active_mode calls registered cleanup", function()
+      local called = false
+      state.set_mode_exit(function() called = true end)
+      state.exit_active_mode()
+      assert.is_true(called)
+    end)
+
+    it("exit_active_mode clears callback after calling", function()
+      local count = 0
+      state.set_mode_exit(function() count = count + 1 end)
+      state.exit_active_mode()
+      state.exit_active_mode()
+      assert.equals(1, count)
+    end)
+
+    it("exit_active_mode is no-op when nothing registered", function()
+      state.set_mode_exit(nil)
+      -- Should not error
+      state.exit_active_mode()
+    end)
+
+    it("set_mode_exit replaces previous callback", function()
+      local first_called = false
+      local second_called = false
+      state.set_mode_exit(function() first_called = true end)
+      state.set_mode_exit(function() second_called = true end)
+      state.exit_active_mode()
+      assert.is_false(first_called)
+      assert.is_true(second_called)
+    end)
+  end)
+
   describe("github_host", function()
     it("defaults to nil", function()
       assert.is_nil(state.get_github_host())

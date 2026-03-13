@@ -1970,4 +1970,188 @@ describe("raccoon.commit_ui teardown_viewer", function()
     assert.equals("before", call_order[1])
     assert.equals("after", call_order[2])
   end)
+
+  it("restores saved_laststatus", function()
+    local original = vim.o.laststatus
+    vim.o.laststatus = 3
+    local s = {
+      focus_augroup = nil,
+      maximize_win = nil,
+      maximize_buf = nil,
+      saved_buf = nil,
+      saved_laststatus = original,
+    }
+    commit_ui.teardown_viewer(s, {})
+    assert.equals(original, vim.o.laststatus)
+  end)
+
+  it("deletes augroup when present", function()
+    local augroup = vim.api.nvim_create_augroup("TestTeardownAugroup", { clear = true })
+    local s = {
+      focus_augroup = augroup,
+      maximize_win = nil,
+      maximize_buf = nil,
+      saved_buf = nil,
+      saved_laststatus = nil,
+    }
+    commit_ui.teardown_viewer(s, {})
+    -- Augroup should be deleted; re-creating with same name should not error
+    local new_id = vim.api.nvim_create_augroup("TestTeardownAugroup", { clear = true })
+    assert.is_number(new_id)
+    pcall(vim.api.nvim_del_augroup_by_id, new_id)
+  end)
+end)
+
+describe("raccoon.commit_ui apply_diff_result error path", function()
+  it("returns early on error without modifying state", function()
+    local rendered = false
+    local s = {
+      select_generation = 1,
+      commit_files = { existing = true },
+      file_stats = { existing = { additions = 1, deletions = 0 } },
+      all_hunks = { "old_hunk" },
+      cached_sha = "old_sha",
+      cached_stat_lines = { "old" },
+    }
+    commit_ui.apply_diff_result(s, {
+      files = { { filename = "new.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" } },
+      err = "some git error",
+      generation = 1,
+      get_generation = function() return s.select_generation end,
+      build_cache_fn = function() end,
+      get_commit_fn = function() return nil end,
+      total_pages_fn = function() return 1 end,
+      ns_id = 0,
+      render_grid_fn = function() rendered = true end,
+    })
+    -- State unchanged
+    assert.equals(true, s.commit_files.existing)
+    assert.equals(1, #s.all_hunks)
+    assert.equals("old_hunk", s.all_hunks[1])
+    assert.is_false(rendered)
+  end)
+end)
+
+describe("raccoon.commit_ui apply_diff_result empty diff", function()
+  it("writes 'No changes' to grid bufs when 0 hunks", function()
+    local grid_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[grid_buf].buftype = "nofile"
+    local rendered = false
+    local s = {
+      select_generation = 1,
+      commit_files = {},
+      file_stats = {},
+      all_hunks = {},
+      cached_sha = nil,
+      cached_stat_lines = nil,
+      grid_bufs = { grid_buf },
+      grid_wins = {},
+      grid_rows = 1,
+      grid_cols = 1,
+      current_page = 1,
+      header_win = nil,
+      header_buf = nil,
+      filetree_win = nil,
+      filetree_buf = nil,
+      cached_tree_lines = nil,
+      cached_line_paths = nil,
+    }
+    commit_ui.apply_diff_result(s, {
+      files = {},
+      err = nil,
+      generation = 1,
+      get_generation = function() return s.select_generation end,
+      build_cache_fn = function() end,
+      get_commit_fn = function() return { sha = "abc", message = "test" } end,
+      total_pages_fn = function() return 1 end,
+      ns_id = 0,
+      render_grid_fn = function() rendered = true end,
+    })
+    local lines = vim.api.nvim_buf_get_lines(grid_buf, 0, -1, false)
+    assert.equals("  No changes in this commit", lines[2])
+    assert.is_false(rendered)
+    vim.api.nvim_buf_delete(grid_buf, { force = true })
+  end)
+end)
+
+describe("raccoon.commit_ui safe_close_timer", function()
+  it("is a no-op for nil handle", function()
+    -- Should not error
+    commit_ui.safe_close_timer(nil)
+  end)
+
+  it("stops and closes a real timer", function()
+    local timer = vim.uv.new_timer()
+    assert.is_not_nil(timer)
+    timer:start(100000, 0, function() end)
+    commit_ui.safe_close_timer(timer)
+    -- Timer should be closed; calling again should be safe
+    commit_ui.safe_close_timer(timer)
+  end)
+end)
+
+describe("raccoon.commit_ui parse_viewer_config", function()
+  it("returns all expected fields with valid values", function()
+    local vcfg = commit_ui.parse_viewer_config()
+    assert.is_number(vcfg.rows)
+    assert.is_number(vcfg.cols)
+    assert.is_number(vcfg.base_count)
+    assert.is_number(vcfg.sidebar_width)
+    assert.is_number(vcfg.sync_interval)
+    -- Values should be within clamped ranges
+    assert.is_true(vcfg.rows >= 1 and vcfg.rows <= 10)
+    assert.is_true(vcfg.cols >= 1 and vcfg.cols <= 10)
+    assert.is_true(vcfg.base_count >= 1 and vcfg.base_count <= 200)
+    assert.is_true(vcfg.sidebar_width >= 20 and vcfg.sidebar_width <= 120)
+    assert.is_true(vcfg.sync_interval >= 10 and vcfg.sync_interval <= 3600)
+  end)
+end)
+
+describe("raccoon.commit_ui make_base_state", function()
+  it("returns table with shared UI fields", function()
+    local s = commit_ui.make_base_state()
+    assert.equals(false, s.active)
+    assert.equals(1, s.selected_index)
+    assert.equals(1, s.current_page)
+    assert.equals(2, s.grid_rows)
+    assert.equals(2, s.grid_cols)
+    assert.equals(0, s.select_generation)
+    assert.equals("sidebar", s.focus_target)
+    assert.is_table(s.grid_wins)
+    assert.is_table(s.grid_bufs)
+    assert.is_table(s.all_hunks)
+    assert.is_table(s.commit_files)
+    assert.is_table(s.file_stats)
+    assert.is_nil(s.sidebar_win)
+    assert.is_nil(s.maximize_win)
+    assert.is_nil(s.header_win)
+    assert.is_nil(s.filetree_win)
+    assert.is_nil(s.cached_sha)
+  end)
+
+  it("returns independent tables on each call", function()
+    local s1 = commit_ui.make_base_state()
+    local s2 = commit_ui.make_base_state()
+    assert.is_not_equal(s1, s2)
+    assert.is_not_equal(s1.grid_wins, s2.grid_wins)
+    s1.active = true
+    assert.is_false(s2.active)
+  end)
+end)
+
+describe("raccoon.commits session generation", function()
+  it("increments on reset_state", function()
+    local gen1 = commits._get_session_gen()
+    commits._reset_state()
+    local gen2 = commits._get_session_gen()
+    assert.equals(gen1 + 1, gen2)
+  end)
+
+  it("resets state to inactive on reset", function()
+    local cs = commits._get_state()
+    cs.active = true
+    commits._reset_state()
+    local new_cs = commits._get_state()
+    assert.is_false(new_cs.active)
+  end)
 end)

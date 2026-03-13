@@ -670,6 +670,7 @@ local function activate_mode(repo_root, rows, cols, notify_msg)
   vim.o.laststatus = 3
   local_state.active = true
   local_state.repo_path = repo_root
+  state.set_mode_exit(function() exit_local_mode() end)
   local_state.last_change_time = vim.uv.now()
   workdir_fail_count = 0
 
@@ -809,6 +810,7 @@ local function exit_local_mode()
   ui.teardown_viewer(local_state, {
     on_before_only = function()
       local_mode_keymaps = {}
+      state.set_mode_exit(nil)
     end,
     on_after = function()
       if was_pr_active then

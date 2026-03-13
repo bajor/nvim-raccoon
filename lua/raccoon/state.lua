@@ -264,6 +264,28 @@ end
 ---@type number|nil
 M.global_popup_win = nil
 
+--- Cleanup function for the active viewer mode (commit viewer or local commits).
+--- Registered by the mode when it becomes active; called before resetting state.
+---@type fun()|nil
+local mode_exit_fn = nil
+
+--- Register a cleanup function for the active viewer mode.
+--- Called when entering commit viewer or local commit mode.
+---@param fn fun()|nil
+function M.set_mode_exit(fn)
+  mode_exit_fn = fn
+end
+
+--- Exit the active viewer mode if one is registered.
+--- Called before closing a PR session or opening a new one.
+function M.exit_active_mode()
+  if mode_exit_fn then
+    local fn = mode_exit_fn
+    mode_exit_fn = nil
+    fn()
+  end
+end
+
 --- Check if commit viewer mode is active
 ---@return boolean
 function M.is_commit_mode()

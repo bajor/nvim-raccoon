@@ -543,9 +543,29 @@ local function prepare_repo(clone_path, repo_url, branch, callback)
   end
 end
 
+--- Close the current PR session without notifications.
+--- Shared by close_pr() and open_pr() to avoid duplication.
+local function close_session()
+  stop_sync_timer()
+  last_known_sha = nil
+  commits_behind = 0
+  has_conflicts = false
+  vim.wo.statusline = ""
+  keymaps.clear()
+  state.stop()
+end
+
 --- Open a PR for review
 ---@param url string GitHub PR URL
 function M.open_pr(url)
+  -- Exit any active viewer mode (commit viewer, local commits) before opening
+  state.exit_active_mode()
+
+  -- Close existing PR session if one is active
+  if state.is_active() then
+    close_session()
+  end
+
   -- Load config first (needed for github_host)
   local cfg, cfg_err = config.load()
   if cfg_err then
@@ -674,19 +694,10 @@ function M.close_pr()
     return
   end
 
-  -- Stop sync timer
-  stop_sync_timer()
-  last_known_sha = nil
-  commits_behind = 0
-  has_conflicts = false
+  -- Exit any active viewer mode first (commit viewer, local commits)
+  state.exit_active_mode()
 
-  -- Reset statusline to default
-  vim.wo.statusline = ""
-
-  -- Clear all PR review keymaps
-  keymaps.clear()
-
-  state.stop()
+  close_session()
   vim.notify("PR review session closed", vim.log.levels.INFO)
 end
 
