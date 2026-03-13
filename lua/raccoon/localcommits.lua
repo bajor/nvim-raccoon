@@ -4,7 +4,6 @@ local M = {}
 
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
-local diff = require("raccoon.diff")
 local git = require("raccoon.git")
 local keymaps = require("raccoon.keymaps")
 local open = require("raccoon.open")
@@ -192,59 +191,17 @@ local function select_commit(index)
   end
 
   fetch_diff(function(files, err)
-    if generation ~= local_state.select_generation then return end
-
-    if err then
-      vim.notify("Failed to get commit diff: " .. err, vim.log.levels.ERROR)
-      return
-    end
-
-    local_state.commit_files = {}
-    local_state.file_stats = {}
-    local_state.all_hunks = {}
-    local_state.cached_sha = nil
-    local_state.cached_stat_lines = nil
-    for _, file in ipairs(files or {}) do
-      local_state.commit_files[file.filename] = true
-      local additions = 0
-      local deletions = 0
-      local hunks = diff.parse_patch(file.patch)
-      for _, hunk in ipairs(hunks) do
-        table.insert(local_state.all_hunks, {
-          hunk = hunk, filename = file.filename,
-        })
-        for _, line_data in ipairs(hunk.lines) do
-          if line_data.type == "add" then
-            additions = additions + 1
-          elseif line_data.type == "del" then
-            deletions = deletions + 1
-          end
-        end
-      end
-      local_state.file_stats[file.filename] = {
-        additions = additions, deletions = deletions,
-      }
-    end
-    build_filetree_cache()
-
-    if #local_state.all_hunks == 0 then
-      for i, buf in ipairs(local_state.grid_bufs) do
-        if vim.api.nvim_buf_is_valid(buf) then
-          vim.bo[buf].modifiable = true
-          vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", "  No changes in this commit" })
-          vim.bo[buf].modifiable = false
-        end
-        local win = local_state.grid_wins[i]
-        if win and vim.api.nvim_win_is_valid(win) then
-          vim.wo[win].winbar = "%=#" .. i
-        end
-      end
-      ui.update_header(local_state, get_commit(local_state.selected_index), total_pages())
-      ui.render_filetree(local_state)
-      return
-    end
-
-    render_grid_page()
+    ui.apply_diff_result(local_state, {
+      files = files,
+      err = err,
+      generation = generation,
+      get_generation = function() return local_state.select_generation end,
+      build_cache_fn = build_filetree_cache,
+      get_commit_fn = function() return get_commit(local_state.selected_index) end,
+      total_pages_fn = total_pages,
+      ns_id = ns_id,
+      render_grid_fn = render_grid_page,
+    })
   end)
 end
 

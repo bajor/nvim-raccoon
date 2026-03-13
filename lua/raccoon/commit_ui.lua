@@ -1329,4 +1329,60 @@ function M.split_sidebar_cursor_to_index(cursor_line, section1_count)
   return line_0 - 2 -- subtract blank + header to get combined index
 end
 
+--- Process a diff result and populate state (shared by both commit viewer modules).
+--- Handles file tracking, stat computation, hunk list building, empty-diff fallback, and render.
+---@param s table State table
+---@param opts table {files, err, generation, get_generation, build_cache_fn, get_commit_fn, total_pages_fn, ns_id, render_grid_fn}
+function M.apply_diff_result(s, opts)
+  if opts.get_generation() ~= opts.generation then return end
+
+  if opts.err then
+    vim.notify("Failed to get commit diff: " .. opts.err, vim.log.levels.ERROR)
+    return
+  end
+
+  s.commit_files = {}
+  s.file_stats = {}
+  s.all_hunks = {}
+  s.cached_sha = nil
+  s.cached_stat_lines = nil
+  for _, file in ipairs(opts.files or {}) do
+    s.commit_files[file.filename] = true
+    local additions = 0
+    local deletions = 0
+    local hunks = diff.parse_patch(file.patch)
+    for _, hunk in ipairs(hunks) do
+      table.insert(s.all_hunks, { hunk = hunk, filename = file.filename })
+      for _, line_data in ipairs(hunk.lines) do
+        if line_data.type == "add" then
+          additions = additions + 1
+        elseif line_data.type == "del" then
+          deletions = deletions + 1
+        end
+      end
+    end
+    s.file_stats[file.filename] = { additions = additions, deletions = deletions }
+  end
+  opts.build_cache_fn()
+
+  if #s.all_hunks == 0 then
+    for i, buf in ipairs(s.grid_bufs) do
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.bo[buf].modifiable = true
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", "  No changes in this commit" })
+        vim.bo[buf].modifiable = false
+      end
+      local win = s.grid_wins[i]
+      if win and vim.api.nvim_win_is_valid(win) then
+        vim.wo[win].winbar = "%=#" .. i
+      end
+    end
+    M.update_header(s, opts.get_commit_fn(), opts.total_pages_fn())
+    M.render_filetree(s)
+    return
+  end
+
+  opts.render_grid_fn()
+end
+
 return M

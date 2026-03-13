@@ -4,7 +4,6 @@ local M = {}
 
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
-local diff = require("raccoon.diff")
 local git = require("raccoon.git")
 local keymaps = require("raccoon.keymaps")
 local open = require("raccoon.open")
@@ -202,56 +201,17 @@ local function select_commit(index)
   end
 
   fetch_diff(function(files, err)
-    if generation ~= commit_state.select_generation then return end
-
-    if err then
-      vim.notify("Failed to get commit diff: " .. err, vim.log.levels.ERROR)
-      return
-    end
-
-    -- Track files, compute stats, and build flat hunk list in a single pass
-    commit_state.commit_files = {}
-    commit_state.file_stats = {}
-    commit_state.all_hunks = {}
-    commit_state.cached_sha = nil
-    commit_state.cached_stat_lines = nil
-    for _, file in ipairs(files or {}) do
-      commit_state.commit_files[file.filename] = true
-      local additions = 0
-      local deletions = 0
-      local hunks = diff.parse_patch(file.patch)
-      for _, hunk in ipairs(hunks) do
-        table.insert(commit_state.all_hunks, { hunk = hunk, filename = file.filename })
-        for _, line_data in ipairs(hunk.lines) do
-          if line_data.type == "add" then
-            additions = additions + 1
-          elseif line_data.type == "del" then
-            deletions = deletions + 1
-          end
-        end
-      end
-      commit_state.file_stats[file.filename] = { additions = additions, deletions = deletions }
-    end
-    build_filetree_cache()
-
-    if #commit_state.all_hunks == 0 then
-      for i, buf in ipairs(commit_state.grid_bufs) do
-        if vim.api.nvim_buf_is_valid(buf) then
-          vim.bo[buf].modifiable = true
-          vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", "  No changes in this commit" })
-          vim.bo[buf].modifiable = false
-        end
-        local win = commit_state.grid_wins[i]
-        if win and vim.api.nvim_win_is_valid(win) then
-          vim.wo[win].winbar = "%=#" .. i
-        end
-      end
-      ui.update_header(commit_state, get_commit(commit_state.selected_index), total_pages())
-      ui.render_filetree(commit_state)
-      return
-    end
-
-    render_grid_page()
+    ui.apply_diff_result(commit_state, {
+      files = files,
+      err = err,
+      generation = generation,
+      get_generation = function() return commit_state.select_generation end,
+      build_cache_fn = build_filetree_cache,
+      get_commit_fn = function() return get_commit(commit_state.selected_index) end,
+      total_pages_fn = total_pages,
+      ns_id = ns_id,
+      render_grid_fn = render_grid_page,
+    })
   end)
 end
 
