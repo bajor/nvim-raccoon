@@ -43,10 +43,11 @@ end
 local local_state = make_initial_state()
 local local_mode_keymaps = {}
 
---- Compute the base ref for combined diff operations.
+--- Compute the local base ref for combined diff operations.
+--- Differs from commits.get_base_ref() which returns "origin/" + pr.base.ref.
 --- Prefers merge-base SHA (exact ancestor) when available; falls back to branch name.
 ---@return string|nil base_ref
-local function get_base_ref()
+local function get_local_base_ref()
   return local_state.merge_base_sha or local_state.base_branch
 end
 
@@ -128,7 +129,7 @@ local function maximize_cell(cell_num)
     state = local_state,
     is_working_dir = commit.sha == nil,
     is_combined_diff = git.is_combined_diff(commit),
-    base_ref = get_base_ref(),
+    base_ref = get_local_base_ref(),
   })
 end
 
@@ -148,7 +149,7 @@ local function select_commit(index)
 
   local fetch_diff
   if git.is_combined_diff(commit) then
-    local base_ref = get_base_ref()
+    local base_ref = get_local_base_ref()
     if not base_ref then
       vim.notify("Combined diff requires a base branch", vim.log.levels.WARN)
       return
@@ -455,7 +456,7 @@ local function setup_keymaps()
       local c = get_commit(local_state.selected_index)
       return c and c.message or ""
     end,
-    get_base_ref = get_base_ref,
+    get_base_ref = get_local_base_ref,
   })
 
   -- Focus lock autocmd
