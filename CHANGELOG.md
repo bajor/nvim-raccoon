@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - PR list popup now opens correctly from within commit viewer mode without being blocked by focus lock (`global_popup_win`)
 - PR list floating window title now shows a close-key hint derived from config
 - Tests for combined diff helpers, `status_porcelain`, and `apply_diff_result` stale-callback handling
+- Tests for `teardown_viewer` cleanup, `apply_diff_result` error/empty-diff paths, `safe_close_timer`, `parse_viewer_config`, `make_base_state`, and session generation guard
 
 ### Changed
 - Extracted `commit_ui.apply_diff_result()` shared helper — diff result processing (error handling, state updates, cache building, grid rendering) is now shared between PR and local commit viewers
@@ -24,6 +25,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - "Current changes" label in local mode normalized to `CURRENT_CHANGES_MSG` constant
 - Combined diff entry appears in both PR commit mode and local commit mode when there are multiple branch commits
 - Error messages in commit/diff operations now include the actual error string
+- Extracted `commit_ui.safe_close_timer()` — shared libuv timer cleanup with pcall and DEBUG-level failure logging, replacing 3 duplicated stop/close blocks
+- Extracted `commit_ui.parse_viewer_config()` — shared config parsing with default values and clamping, replacing duplicated config blocks in `commits.lua` and `localcommits.lua`
+- Extracted `commit_ui.make_base_state()` — shared base state table with ~25 UI fields, extended by each viewer module with mode-specific fields
+- Extracted `enter_flat_mode()` in `localcommits.lua` — replaces 3 copy-pasted fallback blocks in `enter_local_mode()`
+- Renamed `localcommits.get_base_ref()` to `get_local_base_ref()` to distinguish it from `commits.get_base_ref()` (different semantics: no "origin/" prefix, uses merge_base_sha)
+- Sync failure logging now escalates from DEBUG to WARN after 3 consecutive failures via `sync_fail_count` counter
+- Partial refresh failures in `commits.refresh_commits()` now log at WARN level identifying which section is stale
 
 ### Fixed
 - **Opening a new PR now properly exits any active viewer mode first** — selecting a PR from the picker while in commit viewer or local commit mode no longer opens the new PR inside the grid/filetree windows; the viewer is fully torn down before the new session starts
@@ -34,6 +42,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Poll timer seeded inside SHA callback to prevent race condition on first tick
 - `on_complete` threaded through `refresh_commits` to prevent `sync_in_flight` deadlock
 - Error handling added for silent failures across commit modules (diff, commit, and file operations)
+- **Commit count display** in local mode now correctly excludes synthetic entries (COMBINED DIFF, CURRENT CHANGES) when both are prepended
+- **Session generation guard** in PR commit viewer — monotonic counter prevents stale async callbacks from corrupting a new session's state on rapid exit/re-enter
+- **Workdir poll failure tracking** in local commit viewer — consecutive failures are counted and polling stops after 5 failures with a WARN notification, preventing infinite silent retries
+- Timer creation failures in `localcommits.lua` now notify at WARN level instead of silently continuing
+- Added nil guard for `base_ref` in `commits.select_commit()` combined diff path, matching the existing `localcommits.lua` pattern
 
 ## [0.10.3] - 2026-03-12
 
