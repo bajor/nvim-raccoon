@@ -609,7 +609,7 @@ function M.close_grid(s)
 end
 
 --- Open a maximize floating window for a full-file diff
----@param opts table {ns_id, repo_path, sha, filename, commit_message, generation, get_generation, state, is_working_dir?, is_combined_diff?, base_ref?}
+---@param opts table {ns_id, repo_path, sha, filename, commit_message, generation, get_generation, state, is_working_dir?, is_combined_diff?, base_ref (required if is_combined_diff)}
 function M.open_maximize(opts)
   local git = require("raccoon.git")
 
@@ -796,7 +796,7 @@ function M.start_maximize_watcher(s)
   s.maximize_fs_event = handle
   s.maximize_debounce_timer = nil
 
-  handle:start(filepath, {}, vim.schedule_wrap(function(err)
+  local start_ok, start_err = pcall(handle.start, handle, filepath, {}, vim.schedule_wrap(function(err)
     if err then
       vim.notify("File watcher error: " .. tostring(err), vim.log.levels.DEBUG)
       return
@@ -818,6 +818,12 @@ function M.start_maximize_watcher(s)
       M.refresh_maximize(s)
     end))
   end))
+  if not start_ok then
+    vim.notify("File watcher start failed: " .. tostring(start_err), vim.log.levels.DEBUG)
+    pcall(handle.close, handle)
+    s.maximize_fs_event = nil
+    return
+  end
 end
 
 --- Refresh the maximize window in-place for working directory changes
@@ -837,9 +843,15 @@ function M.refresh_maximize(s)
     if not s.maximize_workdir_opts then return end
     if not vim.api.nvim_buf_is_valid(buf) then return end
 
-    if err or not patch or patch == "" then
+    if err then
       vim.bo[buf].modifiable = true
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", "  Error refreshing diff: " .. tostring(err) })
+      vim.bo[buf].modifiable = false
+      return
+    end
+    if not patch or patch == "" then
+      vim.bo[buf].modifiable = true
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", "  No diff content (file may be unchanged)" })
       vim.bo[buf].modifiable = false
       return
     end
@@ -1523,8 +1535,8 @@ function M.apply_diff_result(s, opts)
 end
 
 --- Shared exit teardown for commit viewer modes.
---- Closes timers, deletes augroup, closes all viewer windows/buffers, runs :only, restores editor state.
---- Calls on_before_only before closing windows and on_after after restoring state.
+--- Closes timers, deletes augroup, closes maximize/grid/filetree windows, then runs :only to close remaining splits.
+--- Calls on_before_only after closing viewer panels but before :only, and on_after after restoring editor state.
 ---@param s table State table
 ---@param opts table {on_before_only: fun()|nil, on_after: fun()|nil}
 function M.teardown_viewer(s, opts)
@@ -1548,7 +1560,10 @@ function M.teardown_viewer(s, opts)
   if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
     vim.api.nvim_set_current_win(s.sidebar_win)
   end
-  vim.cmd("only")
+  local ok_only, only_err = pcall(vim.cmd, "only")
+  if not ok_only then
+    vim.notify("Warning: could not close viewer windows: " .. tostring(only_err), vim.log.levels.WARN)
+  end
 
   if s.saved_buf and vim.api.nvim_buf_is_valid(s.saved_buf) then
     vim.api.nvim_set_current_buf(s.saved_buf)

@@ -52,6 +52,16 @@ local function run_git(args, opts)
     end,
   })
 
+  -- jobstart returns 0 for invalid args, -1 when the command is not executable.
+  -- In both cases on_exit is never called, so invoke the callback with an error immediately.
+  if job_id <= 0 and opts.on_exit then
+    vim.schedule(function()
+      local msg = job_id == 0 and "Invalid git command arguments"
+        or "Failed to start git process (is git installed?)"
+      opts.on_exit(-1, {}, { msg })
+    end)
+  end
+
   return job_id
 end
 
@@ -797,8 +807,9 @@ end
 local function list_untracked_files(path, callback)
   run_git({ "ls-files", "--others", "--exclude-standard" }, {
     cwd = path,
-    on_exit = function(code, stdout, _)
+    on_exit = function(code, stdout, stderr)
       if code ~= 0 then
+        vim.notify("Failed to list untracked files: " .. table.concat(stderr, " "), vim.log.levels.DEBUG)
         callback({})
         return
       end
@@ -815,7 +826,11 @@ end
 local function build_new_file_patch(path, filename)
   local filepath = vim.fs.joinpath(path, filename)
   local ok, lines = pcall(vim.fn.readfile, filepath)
-  if not ok or not lines then
+  if not ok then
+    vim.notify("Cannot read file for diff: " .. filepath .. " (" .. tostring(lines) .. ")", vim.log.levels.DEBUG)
+    return nil
+  end
+  if not lines then
     return nil
   end
   if #lines == 0 then

@@ -52,6 +52,7 @@ local function get_local_base_ref()
 end
 
 --- Prepend synthetic entries (COMBINED DIFF + UNCOMMITTED CHANGES) to a branch commit list.
+--- Always inserts UNCOMMITTED CHANGES regardless of commit count.
 --- Inserts COMBINED DIFF only when there are multiple real commits.
 ---@param commits table[] Commit list to modify in place
 local function prepend_synthetic_entries(commits)
@@ -646,7 +647,7 @@ load_more_commits = function()
   else
     -- Flat mode: load more into branch_commits
     local_state.loading_more = true
-    local skip = #local_state.branch_commits - 1 -- -1 for synthetic UNCOMMITTED CHANGES entry
+    local skip = #local_state.branch_commits - 1 -- -1 for the single synthetic entry (UNCOMMITTED CHANGES); flat mode has no COMBINED DIFF
     git.log_all_commits(local_state.repo_path, BATCH_SIZE, skip, function(new_commits, err)
       local_state.loading_more = false
       if err then

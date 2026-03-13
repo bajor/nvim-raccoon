@@ -16,7 +16,7 @@ local ui = require("raccoon.commit_ui")
 ---@return string|nil base_ref
 local function get_base_ref()
   local pr = state.get_pr()
-  if not pr then return nil end
+  if not pr or not pr.base or not pr.base.ref then return nil end
   return "origin/" .. pr.base.ref
 end
 
@@ -384,14 +384,14 @@ local function sync_tick(clone_path, pr_branch, base_branch)
   end
 
   git.fetch_branch(clone_path, pr_branch, function(_, fetch_err)
-    if stale() then done_fail(); return end
+    if stale() then sync_in_flight = false; return end
     if fetch_err then
       sync_log("Sync: failed to fetch PR branch: " .. tostring(fetch_err))
       done_fail(); return
     end
 
     git.fetch_branch(clone_path, base_branch, function(_, base_fetch_err)
-      if stale() then done_fail(); return end
+      if stale() then sync_in_flight = false; return end
       -- Base fetch is non-fatal: we still check PR branch SHAs.
       -- Use stale base SHA to avoid false "changed" detection.
       local base_fetch_failed = false
@@ -406,7 +406,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
       local function check_both()
         pending = pending - 1
         if pending > 0 then return end
-        if stale() then done_fail(); return end
+        if stale() then sync_in_flight = false; return end
 
         -- Defensive fallback: seed SHAs if start_poll_timer's seeding was incomplete
         if not commit_state.last_head_sha then
@@ -435,7 +435,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         if pr_changed then
           -- PR branch advanced — reset local clone to match origin
           git.reset_hard(clone_path, "origin/" .. pr_branch, function(ok, reset_err)
-            if stale() then done_fail(); return end
+            if stale() then sync_in_flight = false; return end
             if not ok then
               sync_log("Sync: failed to reset to remote: " .. (reset_err or ""))
               done_fail(); return
@@ -449,11 +449,9 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         end
       end
 
-      local sha_failures = 0
       git.ref_sha(clone_path, "origin/" .. pr_branch, function(sha, ref_err)
         if ref_err then
           sync_log("Sync: could not resolve PR branch SHA: " .. tostring(ref_err))
-          sha_failures = sha_failures + 1
         end
         pr_sha = sha
         check_both()
@@ -467,7 +465,6 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         git.ref_sha(clone_path, "origin/" .. base_branch, function(sha, ref_err)
           if ref_err then
             sync_log("Sync: could not resolve base branch SHA: " .. tostring(ref_err))
-            sha_failures = sha_failures + 1
           end
           base_sha = sha
           check_both()

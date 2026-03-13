@@ -291,14 +291,7 @@ local function stop_sync_timer()
   if sync_timer then
     local handle = sync_timer
     sync_timer = nil
-    local ok1, err1 = pcall(handle.stop, handle)
-    if not ok1 then
-      vim.notify("Sync timer stop failed: " .. tostring(err1), vim.log.levels.DEBUG)
-    end
-    local ok2, err2 = pcall(handle.close, handle)
-    if not ok2 then
-      vim.notify("Sync timer close failed: " .. tostring(err2), vim.log.levels.DEBUG)
-    end
+    require("raccoon.commit_ui").safe_close_timer(handle)
   end
 end
 
@@ -328,6 +321,9 @@ local function sync_pr(silent, force)
   if not owner or not repo or not number or not clone_path or not pr then
     return
   end
+  if not pr.head or not pr.head.ref or not pr.base or not pr.base.ref then
+    return
+  end
 
   -- Initialize API URLs for this session's host
   api.init(github_host)
@@ -350,7 +346,7 @@ local function sync_pr(silent, force)
     end
 
     -- Check if SHA changed (skip check if force = true)
-    local new_sha = new_pr.head.sha
+    local new_sha = new_pr and new_pr.head and new_pr.head.sha
     if new_sha == last_known_sha and not force then
       -- No changes
       if not silent then
@@ -500,6 +496,10 @@ local function start_sync_timer()
   if not sync_interval_ms then return end
 
   sync_timer = vim.uv.new_timer()
+  if not sync_timer then
+    vim.notify("Failed to create PR sync timer", vim.log.levels.WARN)
+    return
+  end
   sync_timer:start(sync_interval_ms, sync_interval_ms, vim.schedule_wrap(function()
     sync_pr(true) -- silent sync
   end))

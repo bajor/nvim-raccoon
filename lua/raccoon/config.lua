@@ -141,7 +141,6 @@ function M.load()
   end
 
   -- Warn about deprecated config keys
-  -- Warn about deprecated config keys
   local deprecated = {
     { key = "github_token", replacement = "tokens", since = "v0.5" },
     { key = "pull_changes_interval", replacement = "poll_interval_seconds", since = "v0.7" },

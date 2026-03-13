@@ -265,7 +265,8 @@ end
 M.global_popup_win = nil
 
 --- Cleanup function for the active viewer mode (commit viewer or local commits).
---- Registered by the mode when it becomes active; called before resetting state.
+--- Registered by a viewer mode when it activates. exit_active_mode() invokes this
+--- to tear down the mode before the caller resets state.
 ---@type fun()|nil
 local mode_exit_fn = nil
 
