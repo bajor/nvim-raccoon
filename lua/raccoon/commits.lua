@@ -78,8 +78,7 @@ local function stop_poll_timer()
   if poll_timer_handle then
     local handle = poll_timer_handle
     poll_timer_handle = nil
-    pcall(handle.stop, handle)
-    pcall(handle.close, handle)
+    ui.safe_close_timer(handle)
   end
   sync_in_flight = false
 end

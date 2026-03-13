@@ -13,6 +13,21 @@ M.STAT_BAR_MAX_WIDTH = 20
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header window (1-line split)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 
+--- Safely stop and close a libuv timer handle (idempotent).
+--- Logs failures at DEBUG level to avoid silently swallowing errors.
+---@param handle userdata|nil Timer handle from vim.uv.new_timer()
+function M.safe_close_timer(handle)
+  if not handle then return end
+  local ok1, err1 = pcall(handle.stop, handle)
+  if not ok1 then
+    vim.notify("Timer stop failed: " .. tostring(err1), vim.log.levels.DEBUG)
+  end
+  local ok2, err2 = pcall(handle.close, handle)
+  if not ok2 then
+    vim.notify("Timer close failed: " .. tostring(err2), vim.log.levels.DEBUG)
+  end
+end
+
 --- Approximate usable editor height for grid layout.
 --- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
 --- header content height and inter-row separators since this feeds a heuristic, not exact layout.

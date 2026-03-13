@@ -489,23 +489,19 @@ local function setup_keymaps()
   local_state.focus_augroup = ui.setup_focus_lock(local_state, "RaccoonLocalCommitFocus")
 end
 
---- Stop the poll timer
 local function stop_poll_timer()
   if local_state.poll_timer then
     local handle = local_state.poll_timer
     local_state.poll_timer = nil
-    pcall(handle.stop, handle)
-    pcall(handle.close, handle)
+    ui.safe_close_timer(handle)
   end
 end
 
---- Stop the working directory poll timer
 local function stop_workdir_poll_timer()
   if local_state.workdir_poll_timer then
     local handle = local_state.workdir_poll_timer
     local_state.workdir_poll_timer = nil
-    pcall(handle.stop, handle)
-    pcall(handle.close, handle)
+    ui.safe_close_timer(handle)
   end
 end
 
