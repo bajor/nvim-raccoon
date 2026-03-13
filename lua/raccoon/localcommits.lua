@@ -663,6 +663,8 @@ load_more_commits = function()
   end
 end
 
+local exit_local_mode -- forward declaration (defined below activate_mode)
+
 --- Activate local mode with the given state
 local function activate_mode(repo_root, rows, cols, notify_msg)
   local_state.saved_buf = vim.api.nvim_get_current_buf()
@@ -807,7 +809,7 @@ local function enter_local_mode()
 end
 
 --- Exit local commit viewer mode
-local function exit_local_mode()
+exit_local_mode = function()
   stop_poll_timer()
   stop_workdir_poll_timer()
 
