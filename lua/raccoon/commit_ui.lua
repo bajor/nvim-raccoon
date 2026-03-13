@@ -49,7 +49,9 @@ function M.make_base_state()
     grid_cols = 2,
     maximize_win = nil,
     maximize_buf = nil,
+    maximize_debounce_timer = nil,
     focus_augroup = nil,
+    focus_redirect_timer = nil,
     header_win = nil,
     header_buf = nil,
     filetree_win = nil,
@@ -745,9 +747,11 @@ function M.open_maximize(opts)
   end)
 end
 
---- Stop the file watcher for the maximize window
+--- Stop the file watcher (and its debounce timer) for the maximize window
 ---@param s table State table
 function M.stop_maximize_watcher(s)
+  M.safe_close_timer(s.maximize_debounce_timer)
+  s.maximize_debounce_timer = nil
   if s.maximize_fs_event then
     local handle = s.maximize_fs_event
     s.maximize_fs_event = nil
@@ -760,7 +764,11 @@ function M.stop_maximize_watcher(s)
   end
 end
 
---- Start a file watcher that refreshes the maximize window on file changes
+local FS_EVENT_DEBOUNCE_MS = 150
+
+--- Start a file watcher that refreshes the maximize window on file changes.
+--- Debounced: rapid fs_event fires (common on macOS FSEvents) collapse into
+--- a single refresh after FS_EVENT_DEBOUNCE_MS of quiet.
 ---@param s table State table (must have maximize_workdir_opts set)
 function M.start_maximize_watcher(s)
   local mopts = s.maximize_workdir_opts
@@ -771,13 +779,29 @@ function M.start_maximize_watcher(s)
   if not handle then return end
 
   s.maximize_fs_event = handle
+  s.maximize_debounce_timer = nil
+
   handle:start(filepath, {}, vim.schedule_wrap(function(err)
     if err then
       vim.notify("File watcher error: " .. tostring(err), vim.log.levels.DEBUG)
       return
     end
     if not s.maximize_workdir_opts then return end
-    M.refresh_maximize(s)
+
+    -- Cancel any pending debounce and restart the delay
+    if s.maximize_debounce_timer then
+      s.maximize_debounce_timer:stop()
+    else
+      s.maximize_debounce_timer = vim.uv.new_timer()
+      if not s.maximize_debounce_timer then
+        M.refresh_maximize(s) -- fallback: refresh immediately
+        return
+      end
+    end
+    s.maximize_debounce_timer:start(FS_EVENT_DEBOUNCE_MS, 0, vim.schedule_wrap(function()
+      if not s.maximize_workdir_opts then return end
+      M.refresh_maximize(s)
+    end))
   end))
 end
 
@@ -1132,13 +1156,18 @@ function M.setup_sidebar_nav(buf, callbacks)
   M.lock_buf(buf)
 end
 
+local FOCUS_LOCK_DEBOUNCE_MS = 50
+
 --- Setup the focus-lock autocmd that keeps cursor in the active panel (or maximize window).
+--- Debounced to prevent rapid focus-fight with external plugins.
 --- Respects s.focus_target: "sidebar" (default) or "filetree".
 ---@param s table State table (needs active, maximize_win, sidebar_win, filetree_win, focus_target)
 ---@param augroup_name string Name for the augroup
 ---@return number augroup_id
 function M.setup_focus_lock(s, augroup_name)
   local augroup = vim.api.nvim_create_augroup(augroup_name, { clear = true })
+  s.focus_redirect_timer = nil
+
   vim.api.nvim_create_autocmd("WinEnter", {
     group = augroup,
     callback = function()
@@ -1154,28 +1183,44 @@ function M.setup_focus_lock(s, augroup_name)
           return
         end
       end
+
+      -- Determine where focus should go
+      local target
       if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
-        vim.schedule(function()
-          local has_popup = s.popup_win
-            or (state.global_popup_win and vim.api.nvim_win_is_valid(state.global_popup_win))
-          if has_popup then return end
-          if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
-            vim.api.nvim_set_current_win(s.maximize_win)
-          end
-        end)
-        return
+        target = s.maximize_win
+      else
+        target = (s.focus_target == "filetree" and s.filetree_win) or s.sidebar_win
       end
-      local target = (s.focus_target == "filetree" and s.filetree_win) or s.sidebar_win
-      if cur_win ~= target then
-        vim.schedule(function()
-          local has_popup = s.popup_win
-            or (state.global_popup_win and vim.api.nvim_win_is_valid(state.global_popup_win))
-          if has_popup then return end
-          if target and vim.api.nvim_win_is_valid(target) then
-            vim.api.nvim_set_current_win(target)
-          end
-        end)
+
+      if not target or cur_win == target then return end
+
+      -- Debounce: cancel any pending redirect, wait FOCUS_LOCK_DEBOUNCE_MS before acting.
+      -- This prevents a rapid focus-fight with external plugins that also redirect on WinEnter.
+      if s.focus_redirect_timer then
+        s.focus_redirect_timer:stop()
+      else
+        s.focus_redirect_timer = vim.uv.new_timer()
+        if not s.focus_redirect_timer then
+          -- Fallback: redirect immediately (old behaviour)
+          vim.schedule(function()
+            if target and vim.api.nvim_win_is_valid(target) then
+              vim.api.nvim_set_current_win(target)
+            end
+          end)
+          return
+        end
       end
+      s.focus_redirect_timer:start(FOCUS_LOCK_DEBOUNCE_MS, 0, vim.schedule_wrap(function()
+        if not s.active then return end
+        local has_popup = s.popup_win
+          or (state.global_popup_win and vim.api.nvim_win_is_valid(state.global_popup_win))
+        if has_popup then return end
+        -- Re-check: focus may already be correct by the time the debounce fires
+        if vim.api.nvim_get_current_win() == target then return end
+        if target and vim.api.nvim_win_is_valid(target) then
+          vim.api.nvim_set_current_win(target)
+        end
+      end))
     end,
   })
   return augroup
@@ -1467,6 +1512,8 @@ end
 ---@param s table State table
 ---@param opts table {on_before_only: fun()|nil, on_after: fun()|nil}
 function M.teardown_viewer(s, opts)
+  M.safe_close_timer(s.focus_redirect_timer)
+  s.focus_redirect_timer = nil
   if s.focus_augroup then
     pcall(vim.api.nvim_del_augroup_by_id, s.focus_augroup)
   end
