@@ -1001,6 +1001,22 @@ function M.make_combined_diff_entry()
   return { sha = M.COMBINED_DIFF_SHA, message = "COMBINED DIFF" }
 end
 
+--- Check whether a commit entry is the synthetic combined-diff entry.
+---@param entry table Commit entry with .sha field
+---@return boolean
+function M.is_combined_diff(entry)
+  return entry and entry.sha == M.COMBINED_DIFF_SHA
+end
+
+--- Prepend a synthetic COMBINED DIFF entry to a commit list if there are
+--- multiple real commits and one isn't already present.
+---@param commits table[] Commit list to modify in place
+function M.maybe_prepend_combined_diff(commits)
+  if #commits > 1 and not M.is_combined_diff(commits[1]) then
+    table.insert(commits, 1, M.make_combined_diff_entry())
+  end
+end
+
 --- Get the combined diff of all branch changes vs a base ref.
 --- Uses three-dot diff (merge-base of base_ref and HEAD to HEAD), which approximates
 --- GitHub's "Files changed" view. Results may diverge if the base branch has advanced

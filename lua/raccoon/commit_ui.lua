@@ -1385,4 +1385,30 @@ function M.apply_diff_result(s, opts)
   opts.render_grid_fn()
 end
 
+--- Shared exit teardown for commit viewer modes.
+--- Deletes augroup, closes maximize window, runs :only, restores saved buf/laststatus.
+---@param s table State table
+---@param opts table {on_before_only: fun()|nil, on_after: fun()|nil}
+function M.teardown_viewer(s, opts)
+  if s.focus_augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, s.focus_augroup)
+  end
+
+  M.close_win_pair(s, "maximize_win", "maximize_buf")
+
+  if opts.on_before_only then opts.on_before_only() end
+
+  vim.cmd("only")
+
+  if s.saved_buf and vim.api.nvim_buf_is_valid(s.saved_buf) then
+    vim.api.nvim_set_current_buf(s.saved_buf)
+  end
+
+  if s.saved_laststatus then
+    vim.o.laststatus = s.saved_laststatus
+  end
+
+  if opts.on_after then opts.on_after() end
+end
+
 return M

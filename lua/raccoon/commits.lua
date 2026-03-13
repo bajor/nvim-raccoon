@@ -10,7 +10,6 @@ local open = require("raccoon.open")
 local state = require("raccoon.state")
 local ui = require("raccoon.commit_ui")
 
-local COMBINED_DIFF_SHA = git.COMBINED_DIFF_SHA
 
 --- Compute the base ref for combined diff operations.
 --- Returns nil when no PR is active; callers should handle nil (diff_combined already guards it).
@@ -167,7 +166,7 @@ local function maximize_cell(cell_num)
     generation = commit_state.select_generation,
     get_generation = function() return commit_state.select_generation end,
     state = commit_state,
-    is_combined_diff = commit.sha == COMBINED_DIFF_SHA,
+    is_combined_diff = git.is_combined_diff(commit),
     base_ref = get_base_ref(),
   })
 end
@@ -193,7 +192,7 @@ local function select_commit(index)
   local context = ui.compute_grid_context(commit_state.grid_rows)
 
   local fetch_diff
-  if commit.sha == COMBINED_DIFF_SHA then
+  if git.is_combined_diff(commit) then
     local base_ref = get_base_ref()
     fetch_diff = function(cb) git.diff_combined(clone_path, base_ref, context, cb) end
   else
@@ -233,7 +232,7 @@ local function render_sidebar()
     section2_header = "── Base Branch ──",
     section2_commits = commit_state.base_commits,
     commit_hl_fn = function(commit)
-      if commit.sha == COMBINED_DIFF_SHA then return "DiagnosticInfo" end
+      if git.is_combined_diff(commit) then return "DiagnosticInfo" end
     end,
   })
   ui.update_sidebar_winbar(commit_state, total_commits())
@@ -327,10 +326,7 @@ local function refresh_commits(on_complete)
     commit_state.pr_commits = new_pr or commit_state.pr_commits
     commit_state.base_commits = new_base or commit_state.base_commits
 
-    if #commit_state.pr_commits > 1
-      and commit_state.pr_commits[1].sha ~= COMBINED_DIFF_SHA then
-      table.insert(commit_state.pr_commits, 1, git.make_combined_diff_entry())
-    end
+    git.maybe_prepend_combined_diff(commit_state.pr_commits)
 
     restore_selection_by_sha(selected_sha)
     render_sidebar()
@@ -658,9 +654,7 @@ local function enter_commit_mode()
         end
 
         local real_pr_count = #commit_state.pr_commits
-        if real_pr_count > 1 then
-          table.insert(commit_state.pr_commits, 1, git.make_combined_diff_entry())
-        end
+        git.maybe_prepend_combined_diff(commit_state.pr_commits)
 
         ui.create_grid_layout(commit_state, rows, cols)
         render_sidebar()
@@ -705,32 +699,18 @@ end
 local function exit_commit_mode()
   stop_poll_timer()
 
-  if commit_state.focus_augroup then
-    pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
-  end
-
-  -- Close floating maximize window (not affected by :only)
-  ui.close_win_pair(commit_state, "maximize_win", "maximize_buf")
-  commit_mode_keymaps = {}
-
-  state.set_commit_mode(false)
-
-  -- Close all splits in one shot; scratch buffers auto-wipe (bufhidden=wipe)
-  vim.cmd("only")
-
-  if commit_state.saved_buf and vim.api.nvim_buf_is_valid(commit_state.saved_buf) then
-    vim.api.nvim_set_current_buf(commit_state.saved_buf)
-  end
-
-  if commit_state.saved_laststatus then
-    vim.o.laststatus = commit_state.saved_laststatus
-  end
-
-  keymaps.setup()
-  open.resume_sync()
-
-  reset_state()
-  vim.notify("Exited commit viewer mode", vim.log.levels.INFO)
+  ui.teardown_viewer(commit_state, {
+    on_before_only = function()
+      commit_mode_keymaps = {}
+      state.set_commit_mode(false)
+    end,
+    on_after = function()
+      keymaps.setup()
+      open.resume_sync()
+      reset_state()
+      vim.notify("Exited commit viewer mode", vim.log.levels.INFO)
+    end,
+  })
 end
 
 --- Toggle commit viewer mode

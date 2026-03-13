@@ -10,7 +10,6 @@ local open = require("raccoon.open")
 local state = require("raccoon.state")
 local ui = require("raccoon.commit_ui")
 
-local COMBINED_DIFF_SHA = git.COMBINED_DIFF_SHA
 local CURRENT_CHANGES_MSG = "UNCOMMITTED CHANGES"
 
 local ns_id = vim.api.nvim_create_namespace("raccoon_local_commits")
@@ -82,12 +81,10 @@ end
 --- Inserts COMBINED DIFF only when there are multiple real commits.
 ---@param commits table[] Commit list to modify in place
 local function prepend_synthetic_entries(commits)
-  if #commits > 1 then
-    table.insert(commits, 1, git.make_combined_diff_entry())
-    table.insert(commits, 2, { sha = nil, message = CURRENT_CHANGES_MSG })
-  else
-    table.insert(commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
-  end
+  git.maybe_prepend_combined_diff(commits)
+  -- Insert UNCOMMITTED CHANGES after COMBINED DIFF (or at position 1 if no combined diff)
+  local insert_pos = git.is_combined_diff(commits[1]) and 2 or 1
+  table.insert(commits, insert_pos, { sha = nil, message = CURRENT_CHANGES_MSG })
 end
 
 local load_more_commits
@@ -157,7 +154,7 @@ local function maximize_cell(cell_num)
     get_generation = function() return local_state.select_generation end,
     state = local_state,
     is_working_dir = commit.sha == nil,
-    is_combined_diff = commit.sha == COMBINED_DIFF_SHA,
+    is_combined_diff = git.is_combined_diff(commit),
     base_ref = get_base_ref(),
   })
 end
@@ -177,7 +174,7 @@ local function select_commit(index)
   local context = ui.compute_grid_context(local_state.grid_rows)
 
   local fetch_diff
-  if commit.sha == COMBINED_DIFF_SHA then
+  if git.is_combined_diff(commit) then
     local base_ref = get_base_ref()
     if not base_ref then
       vim.notify("Combined diff requires a base branch", vim.log.levels.WARN)
@@ -243,7 +240,7 @@ local function render_sidebar()
       section2_header = "── " .. local_state.base_branch .. " ──",
       section2_commits = local_state.base_commits,
       commit_hl_fn = function(commit)
-        if commit.sha == nil or commit.sha == COMBINED_DIFF_SHA then return "DiagnosticInfo" end
+        if commit.sha == nil or git.is_combined_diff(commit) then return "DiagnosticInfo" end
       end,
       loading = local_state.loading_more,
     })
@@ -829,33 +826,20 @@ local function exit_local_mode()
   stop_poll_timer()
   stop_workdir_poll_timer()
 
-  if local_state.focus_augroup then
-    pcall(vim.api.nvim_del_augroup_by_id, local_state.focus_augroup)
-  end
-
-  -- Close floating maximize window (not affected by :only)
-  ui.close_win_pair(local_state, "maximize_win", "maximize_buf")
-  local_mode_keymaps = {}
-
-  -- Close all splits in one shot; scratch buffers auto-wipe (bufhidden=wipe)
-  vim.cmd("only")
-
-  if local_state.saved_buf and vim.api.nvim_buf_is_valid(local_state.saved_buf) then
-    vim.api.nvim_set_current_buf(local_state.saved_buf)
-  end
-
-  if local_state.saved_laststatus then
-    vim.o.laststatus = local_state.saved_laststatus
-  end
-
-  -- Restore PR session if it was active
-  if local_state.pr_was_active then
-    keymaps.setup()
-    open.resume_sync()
-  end
-
-  local_state = make_initial_state()
-  vim.notify("Exited local commit viewer", vim.log.levels.INFO)
+  local was_pr_active = local_state.pr_was_active
+  ui.teardown_viewer(local_state, {
+    on_before_only = function()
+      local_mode_keymaps = {}
+    end,
+    on_after = function()
+      if was_pr_active then
+        keymaps.setup()
+        open.resume_sync()
+      end
+      local_state = make_initial_state()
+      vim.notify("Exited local commit viewer", vim.log.levels.INFO)
+    end,
+  })
 end
 
 --- Toggle local commit viewer mode
