@@ -63,14 +63,11 @@ local function make_initial_state()
   }
 end
 
---- Module-local state
 local commit_state = make_initial_state()
-
---- Commit mode keymaps (global)
 local commit_mode_keymaps = {}
 
---- Module-level timer handle. Stored outside commit_state so it survives
---- state table reassignment in reset_state() and can always be stopped.
+--- Module-level timer handle. Stored outside commit_state so stop_poll_timer()
+--- can always reach it, even when reset_state() replaces the state table.
 local poll_timer_handle = nil
 
 --- In-flight guard: prevents overlapping sync ticks from running concurrent git operations.
@@ -87,13 +84,11 @@ local function stop_poll_timer()
   sync_in_flight = false
 end
 
---- Reset module state
 local function reset_state()
   stop_poll_timer()
   commit_state = make_initial_state()
 end
 
---- Calculate total pages
 ---@return number
 local function total_pages()
   local cells = commit_state.grid_rows * commit_state.grid_cols
@@ -119,7 +114,6 @@ local function get_commit(index)
   end
 end
 
---- Render the current page of hunks into the grid
 local function render_grid_page()
   ui.render_grid_page(commit_state, ns_id, function()
     return get_commit(commit_state.selected_index)
@@ -359,7 +353,8 @@ local function refresh_commits(on_complete)
   end)
 end
 
---- Single sync tick: fetch branches, check for new commits, reset and refresh if needed.
+--- Single sync tick: fetch branches, compare SHAs, and refresh commit lists.
+--- Hard-resets the local clone only when the PR branch has advanced.
 --- Guarded by sync_in_flight to prevent overlapping git operations.
 ---@param clone_path string
 ---@param pr_branch string
@@ -394,7 +389,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         if pending > 0 then return end
         if not commit_state.active then done(); return end
 
-        -- Seed SHAs on first tick
+        -- Defensive fallback: seed SHAs if start_poll_timer's seeding was incomplete
         if not commit_state.last_head_sha then
           commit_state.last_head_sha = pr_sha
         end

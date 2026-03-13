@@ -1385,7 +1385,7 @@ function M.apply_diff_result(s, opts)
 end
 
 --- Shared exit teardown for commit viewer modes.
---- Deletes augroup, closes maximize window, runs :only, restores saved buf/laststatus.
+--- Deletes augroup, closes maximize window, switches to sidebar, runs :only, restores saved buf/laststatus.
 ---@param s table State table
 ---@param opts table {on_before_only: fun()|nil, on_after: fun()|nil}
 function M.teardown_viewer(s, opts)

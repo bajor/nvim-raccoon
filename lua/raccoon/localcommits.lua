@@ -598,7 +598,7 @@ local function refresh_commits()
   end
 end
 
---- Start the 10-second HEAD polling timer.
+--- Start the HEAD polling timer (interval: POLL_INTERVAL_MS).
 --- Seeds last_head_sha before starting the timer to avoid spurious refresh on first tick.
 local function start_poll_timer()
   stop_poll_timer()
