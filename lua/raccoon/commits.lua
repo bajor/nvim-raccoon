@@ -67,6 +67,7 @@ end
 local function reset_state()
   stop_poll_timer()
   session_gen = session_gen + 1
+  sync_fail_count = 0
   commit_state = make_initial_state()
 end
 
@@ -77,7 +78,7 @@ local function total_pages()
   return math.max(1, math.ceil(#commit_state.all_hunks / cells))
 end
 
---- Total navigable commits (PR + base)
+--- Total navigable sidebar entries (PR section + base section, including synthetic entries)
 ---@return number
 local function total_commits()
   return #commit_state.pr_commits + #commit_state.base_commits
@@ -334,7 +335,7 @@ local function refresh_commits(on_complete)
 
   git.log_commits(clone_path, base_branch, function(commits, err)
     if err then
-      vim.notify("Sync: failed to refresh PR commits", vim.log.levels.DEBUG)
+      vim.notify("Sync: failed to refresh PR commits: " .. tostring(err), vim.log.levels.DEBUG)
     end
     new_pr = (not err) and commits or nil
     check_done()
@@ -342,7 +343,7 @@ local function refresh_commits(on_complete)
 
   git.log_base_commits(clone_path, base_branch, commit_state.base_count, function(commits, err)
     if err then
-      vim.notify("Sync: failed to refresh base commits", vim.log.levels.DEBUG)
+      vim.notify("Sync: failed to refresh base commits: " .. tostring(err), vim.log.levels.DEBUG)
     end
     new_base = (not err) and commits or nil
     check_done()
@@ -385,14 +386,18 @@ local function sync_tick(clone_path, pr_branch, base_branch)
   git.fetch_branch(clone_path, pr_branch, function(_, fetch_err)
     if stale() then done_fail(); return end
     if fetch_err then
-      sync_log("Sync: failed to fetch PR branch")
+      sync_log("Sync: failed to fetch PR branch: " .. tostring(fetch_err))
       done_fail(); return
     end
 
     git.fetch_branch(clone_path, base_branch, function(_, base_fetch_err)
       if stale() then done_fail(); return end
+      -- Base fetch is non-fatal: we still check PR branch SHAs.
+      -- Use stale base SHA to avoid false "changed" detection.
+      local base_fetch_failed = false
       if base_fetch_err then
-        sync_log("Sync: failed to fetch base branch")
+        sync_log("Sync: failed to fetch base branch: " .. tostring(base_fetch_err))
+        base_fetch_failed = true
       end
 
       -- Check both PR and base branch SHAs in parallel
@@ -409,6 +414,12 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         end
         if not commit_state.last_base_sha then
           commit_state.last_base_sha = base_sha
+        end
+
+        -- If both SHA resolutions failed, treat as sync failure
+        if not pr_sha and not base_sha then
+          sync_log("Sync: could not resolve any branch SHAs")
+          done_fail(); return
         end
 
         local pr_changed = pr_sha and pr_sha ~= commit_state.last_head_sha
@@ -438,21 +449,30 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         end
       end
 
+      local sha_failures = 0
       git.ref_sha(clone_path, "origin/" .. pr_branch, function(sha, ref_err)
         if ref_err then
-          sync_log("Sync: could not resolve PR branch SHA")
+          sync_log("Sync: could not resolve PR branch SHA: " .. tostring(ref_err))
+          sha_failures = sha_failures + 1
         end
         pr_sha = sha
         check_both()
       end)
 
-      git.ref_sha(clone_path, "origin/" .. base_branch, function(sha, ref_err)
-        if ref_err then
-          sync_log("Sync: could not resolve base branch SHA")
-        end
-        base_sha = sha
+      if base_fetch_failed then
+        -- Skip base SHA check since fetch failed; use stale value to prevent false "changed"
+        base_sha = commit_state.last_base_sha
         check_both()
-      end)
+      else
+        git.ref_sha(clone_path, "origin/" .. base_branch, function(sha, ref_err)
+          if ref_err then
+            sync_log("Sync: could not resolve base branch SHA: " .. tostring(ref_err))
+            sha_failures = sha_failures + 1
+          end
+          base_sha = sha
+          check_both()
+        end)
+      end
     end)
   end)
 end
@@ -684,7 +704,7 @@ local function enter_commit_mode()
         check_done()
       end)
 
-      git.log_base_commits(clone_path, base_branch, base_count, function(commits, err)
+      git.log_base_commits(clone_path, base_branch, commit_state.base_count, function(commits, err)
         if err then
           vim.notify("Failed to get base commits", vim.log.levels.WARN)
           commit_state.base_commits = {}
@@ -725,7 +745,6 @@ function M.toggle()
   end
 end
 
--- Exposed for testing
 M._lock_buf = ui.lock_buf
 M._lock_maximize_buf = function(buf) ui.lock_maximize_buf(buf, commit_state.grid_rows, commit_state.grid_cols) end
 M._clamp_int = ui.clamp_int

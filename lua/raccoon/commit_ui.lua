@@ -69,7 +69,10 @@ end
 --- Parse and clamp commit viewer config values from user config.
 ---@return table {rows: number, cols: number, base_count: number, sidebar_width: number, sync_interval: number}
 function M.parse_viewer_config()
-  local cfg = config.load()
+  local cfg, cfg_err = config.load()
+  if cfg_err then
+    vim.notify("Commit viewer: using defaults (config error: " .. cfg_err .. ")", vim.log.levels.DEBUG)
+  end
   local rows = 2
   local cols = 2
   local base_count = 20
@@ -94,7 +97,7 @@ function M.parse_viewer_config()
 end
 
 --- Approximate usable editor height for grid layout.
---- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
+--- Subtracts cmdheight and global chrome (statusline + header window); intentionally omits
 --- header content height and inter-row separators since this feeds a heuristic, not exact layout.
 ---@return number
 function M.grid_total_height()
@@ -632,7 +635,10 @@ function M.open_maximize(opts)
     end
 
     local hunks = diff.parse_patch(patch)
-    if #hunks == 0 then return end
+    if #hunks == 0 then
+      vim.notify("No diff hunks to display for " .. opts.filename, vim.log.levels.INFO)
+      return
+    end
 
     local lines = {}
     local hl_lines = {}
@@ -755,12 +761,18 @@ function M.stop_maximize_watcher(s)
   if s.maximize_fs_event then
     local handle = s.maximize_fs_event
     s.maximize_fs_event = nil
-    pcall(handle.stop, handle)
-    pcall(function()
+    local ok1, err1 = pcall(handle.stop, handle)
+    if not ok1 then
+      vim.notify("fs_event stop failed: " .. tostring(err1), vim.log.levels.DEBUG)
+    end
+    local ok2, err2 = pcall(function()
       if not handle:is_closing() then
         handle:close()
       end
     end)
+    if not ok2 then
+      vim.notify("fs_event close failed: " .. tostring(err2), vim.log.levels.DEBUG)
+    end
   end
 end
 
@@ -776,7 +788,10 @@ function M.start_maximize_watcher(s)
 
   local filepath = vim.fs.joinpath(mopts.repo_path, mopts.filename)
   local handle = vim.uv.new_fs_event()
-  if not handle then return end
+  if not handle then
+    vim.notify("Failed to create file watcher for " .. mopts.filename, vim.log.levels.DEBUG)
+    return
+  end
 
   s.maximize_fs_event = handle
   s.maximize_debounce_timer = nil
@@ -865,7 +880,7 @@ function M.open_file_content(opts)
   git.show_file_content(opts.repo_path, opts.sha, opts.filename, function(lines, err)
     if opts.get_generation() ~= opts.generation then return end
     if err or not lines then
-      vim.notify("Failed to get file content", vim.log.levels.ERROR)
+      vim.notify("Failed to get file content: " .. (err or opts.filename), vim.log.levels.ERROR)
       return
     end
 
@@ -1508,17 +1523,23 @@ function M.apply_diff_result(s, opts)
 end
 
 --- Shared exit teardown for commit viewer modes.
---- Deletes augroup, closes maximize window, switches to sidebar, runs :only, restores saved buf/laststatus.
+--- Closes timers, deletes augroup, closes all viewer windows/buffers, runs :only, restores editor state.
+--- Calls on_before_only before closing windows and on_after after restoring state.
 ---@param s table State table
 ---@param opts table {on_before_only: fun()|nil, on_after: fun()|nil}
 function M.teardown_viewer(s, opts)
   M.safe_close_timer(s.focus_redirect_timer)
   s.focus_redirect_timer = nil
   if s.focus_augroup then
-    pcall(vim.api.nvim_del_augroup_by_id, s.focus_augroup)
+    local ok, del_err = pcall(vim.api.nvim_del_augroup_by_id, s.focus_augroup)
+    if not ok then
+      vim.notify("Failed to delete focus augroup: " .. tostring(del_err), vim.log.levels.DEBUG)
+    end
   end
 
   M.close_win_pair(s, "maximize_win", "maximize_buf")
+  if s.grid_wins then M.close_grid(s) end
+  M.close_win_pair(s, "filetree_win", "filetree_buf")
 
   if opts.on_before_only then opts.on_before_only() end
 

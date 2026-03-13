@@ -289,9 +289,16 @@ end
 --- Stop the sync timer
 local function stop_sync_timer()
   if sync_timer then
-    sync_timer:stop()
-    sync_timer:close()
+    local handle = sync_timer
     sync_timer = nil
+    local ok1, err1 = pcall(handle.stop, handle)
+    if not ok1 then
+      vim.notify("Sync timer stop failed: " .. tostring(err1), vim.log.levels.DEBUG)
+    end
+    local ok2, err2 = pcall(handle.close, handle)
+    if not ok2 then
+      vim.notify("Sync timer close failed: " .. tostring(err2), vim.log.levels.DEBUG)
+    end
   end
 end
 

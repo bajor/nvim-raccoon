@@ -64,7 +64,7 @@ end
 local load_more_commits
 local build_filetree_cache
 
---- Total navigable commits (branch + base)
+--- Total navigable sidebar entries (branch section + base section, including synthetic entries)
 local function total_commits()
   return #local_state.branch_commits + #local_state.base_commits
 end
@@ -607,7 +607,11 @@ local function start_poll_timer()
       if not local_state.active then return end
 
       git.get_current_sha(local_state.repo_path, function(new_sha, err)
-        if err or not new_sha then return end
+        if err then
+          vim.notify("Local sync: HEAD SHA check failed: " .. tostring(err), vim.log.levels.DEBUG)
+          return
+        end
+        if not new_sha then return end
         if new_sha == local_state.last_head_sha then return end
 
         local_state.last_head_sha = new_sha
@@ -642,7 +646,7 @@ load_more_commits = function()
   else
     -- Flat mode: load more into branch_commits
     local_state.loading_more = true
-    local skip = #local_state.branch_commits - 1 -- -1 for "Current changes"
+    local skip = #local_state.branch_commits - 1 -- -1 for synthetic UNCOMMITTED CHANGES entry
     git.log_all_commits(local_state.repo_path, BATCH_SIZE, skip, function(new_commits, err)
       local_state.loading_more = false
       if err then
