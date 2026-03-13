@@ -2,7 +2,7 @@ local pa = require("raccoon.parallel_agents")
 local config = require("raccoon.config")
 local mocks = require("tests.helpers.mocks")
 
-local test_tmp_dir = "/tmp/claude/raccoon-tests"
+local test_tmp_dir = vim.fn.tempname() .. "-raccoon-tests"
 
 describe("raccoon.parallel_agents", function()
   local original_config_path
