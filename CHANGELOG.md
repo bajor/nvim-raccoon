@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - PR picker stays focusable in commit mode (including file tree and maximized views)
 - PR picker works in local commit viewer and cleanly resets commit/local sessions before opening a new PR
+- Focus-lock now ignores stale popup window handles to avoid losing maximize focus
 
 ## [0.10.3] - 2026-03-12
 

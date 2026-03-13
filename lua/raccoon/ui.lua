@@ -319,12 +319,27 @@ function M.show_pr_list()
   M.state.prs = {}
   M.state.selected = 1
   if in_commit_mode then
+    local clear_popup
     if state.is_commit_mode() then
-      require("raccoon.commits").set_popup_win(win)
+      local commits = require("raccoon.commits")
+      commits.set_popup_win(win)
+      clear_popup = commits.clear_popup_win
     else
       localcommits.set_popup_win(win)
+      clear_popup = localcommits.clear_popup_win
     end
     vim.api.nvim_set_current_win(win)
+    if clear_popup then
+      local group = vim.api.nvim_create_augroup("RaccoonPrPickerPopup", { clear = false })
+      vim.api.nvim_create_autocmd("WinClosed", {
+        group = group,
+        pattern = tostring(win),
+        once = true,
+        callback = function()
+          clear_popup()
+        end,
+      })
+    end
   end
 
   -- Show loading state
