@@ -1005,7 +1005,7 @@ end
 ---@param entry table Commit entry with .sha field
 ---@return boolean
 function M.is_combined_diff(entry)
-  return entry and entry.sha == M.COMBINED_DIFF_SHA
+  return entry ~= nil and entry.sha == M.COMBINED_DIFF_SHA
 end
 
 --- Prepend a synthetic COMBINED DIFF entry to a commit list if there are

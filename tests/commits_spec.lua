@@ -1747,3 +1747,227 @@ describe("raccoon.commit_ui restore_selection_by_sha", function()
     assert.equals(2, s.selected_index)
   end)
 end)
+
+describe("raccoon.git is_combined_diff", function()
+  it("returns true for combined diff entry", function()
+    local entry = git.make_combined_diff_entry()
+    assert.is_true(git.is_combined_diff(entry))
+  end)
+
+  it("returns false for regular commit", function()
+    assert.is_false(git.is_combined_diff({ sha = "abc123", message = "test" }))
+  end)
+
+  it("returns false for nil sha (working dir)", function()
+    assert.is_false(git.is_combined_diff({ sha = nil, message = "test" }))
+  end)
+
+  it("returns false for nil entry", function()
+    assert.is_false(git.is_combined_diff(nil))
+  end)
+end)
+
+describe("raccoon.git maybe_prepend_combined_diff", function()
+  it("inserts combined diff when >1 commits", function()
+    local commits_list = {
+      { sha = "aaa", message = "first" },
+      { sha = "bbb", message = "second" },
+    }
+    git.maybe_prepend_combined_diff(commits_list)
+    assert.equals(3, #commits_list)
+    assert.is_true(git.is_combined_diff(commits_list[1]))
+  end)
+
+  it("does not insert when only 1 commit", function()
+    local commits_list = {
+      { sha = "aaa", message = "only" },
+    }
+    git.maybe_prepend_combined_diff(commits_list)
+    assert.equals(1, #commits_list)
+    assert.is_false(git.is_combined_diff(commits_list[1]))
+  end)
+
+  it("does not insert when 0 commits", function()
+    local commits_list = {}
+    git.maybe_prepend_combined_diff(commits_list)
+    assert.equals(0, #commits_list)
+  end)
+
+  it("is idempotent — does not double-insert", function()
+    local commits_list = {
+      { sha = "aaa", message = "first" },
+      { sha = "bbb", message = "second" },
+    }
+    git.maybe_prepend_combined_diff(commits_list)
+    assert.equals(3, #commits_list)
+    git.maybe_prepend_combined_diff(commits_list)
+    assert.equals(3, #commits_list)
+    assert.is_true(git.is_combined_diff(commits_list[1]))
+  end)
+end)
+
+describe("raccoon.git status_porcelain error convention", function()
+  it("returns nil output on error", function()
+    -- Use an existing directory that is not a git repo to trigger a git error
+    local tmpdir = vim.fn.tempname()
+    vim.fn.mkdir(tmpdir, "p")
+    local done = false
+    local result_output, result_err
+
+    git.status_porcelain(tmpdir, function(output, err)
+      result_output = output
+      result_err = err
+      done = true
+    end)
+
+    vim.wait(5000, function() return done end)
+    vim.fn.delete(tmpdir, "rf")
+    assert.is_true(done)
+    assert.is_nil(result_output)
+    assert.is_string(result_err)
+  end)
+
+  it("returns string output on success", function()
+    local done = false
+    local result_output, result_err
+
+    git.status_porcelain(vim.fn.getcwd(), function(output, err)
+      result_output = output
+      result_err = err
+      done = true
+    end)
+
+    vim.wait(5000, function() return done end)
+    assert.is_true(done)
+    assert.is_string(result_output)
+    assert.is_nil(result_err)
+  end)
+end)
+
+describe("raccoon.git new command functions", function()
+  it("ref_sha resolves HEAD", function()
+    local done = false
+    local result_sha
+
+    git.ref_sha(vim.fn.getcwd(), "HEAD", function(sha, err)
+      result_sha = sha
+      done = true
+    end)
+
+    vim.wait(5000, function() return done end)
+    assert.is_true(done)
+    assert.is_string(result_sha)
+    assert.equals(40, #result_sha)
+  end)
+
+  it("ref_sha returns nil for invalid ref", function()
+    local done = false
+    local result_sha, result_err
+
+    git.ref_sha(vim.fn.getcwd(), "nonexistent-ref-" .. os.time(), function(sha, err)
+      result_sha = sha
+      result_err = err
+      done = true
+    end)
+
+    vim.wait(5000, function() return done end)
+    assert.is_true(done)
+    assert.is_nil(result_sha)
+    assert.is_string(result_err)
+  end)
+
+  it("diff_combined returns files for valid base ref", function()
+    local has_origin_main = vim.fn.system("git rev-parse --verify origin/main 2>/dev/null"):match("^%x+") ~= nil
+    if not has_origin_main then return end
+
+    local done = false
+    local result_files
+
+    git.diff_combined(vim.fn.getcwd(), "origin/main", nil, function(files, err)
+      result_files = files
+      done = true
+    end)
+
+    vim.wait(5000, function() return done end)
+    assert.is_true(done)
+    assert.is_table(result_files)
+  end)
+end)
+
+describe("raccoon.commit_ui apply_diff_result", function()
+  it("discards stale callback via generation check", function()
+    local s = {
+      select_generation = 2,
+      commit_files = { old = true },
+      all_hunks = { "old" },
+    }
+    commit_ui.apply_diff_result(s, {
+      files = { { filename = "new.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" } },
+      err = nil,
+      generation = 1,
+      get_generation = function() return s.select_generation end,
+      build_cache_fn = function() end,
+      get_commit_fn = function() return nil end,
+      total_pages_fn = function() return 1 end,
+      ns_id = 0,
+      render_grid_fn = function() end,
+    })
+    -- State unchanged because generation was stale
+    assert.equals(true, s.commit_files.old)
+    assert.equals(1, #s.all_hunks)
+  end)
+
+  it("processes diff result when generation matches", function()
+    local grid_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[grid_buf].buftype = "nofile"
+    local rendered = false
+    local s = {
+      select_generation = 1,
+      commit_files = {},
+      file_stats = {},
+      all_hunks = {},
+      cached_sha = "old",
+      cached_stat_lines = {},
+      grid_bufs = { grid_buf },
+      grid_wins = {},
+      grid_rows = 1,
+      grid_cols = 1,
+      current_page = 1,
+    }
+    commit_ui.apply_diff_result(s, {
+      files = { { filename = "test.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" } },
+      err = nil,
+      generation = 1,
+      get_generation = function() return s.select_generation end,
+      build_cache_fn = function() end,
+      get_commit_fn = function() return nil end,
+      total_pages_fn = function() return 1 end,
+      ns_id = 0,
+      render_grid_fn = function() rendered = true end,
+    })
+    assert.is_true(s.commit_files["test.lua"])
+    assert.is_true(#s.all_hunks > 0)
+    assert.is_true(rendered)
+    vim.api.nvim_buf_delete(grid_buf, { force = true })
+  end)
+end)
+
+describe("raccoon.commit_ui teardown_viewer", function()
+  it("calls on_before_only and on_after in order", function()
+    local call_order = {}
+    local s = {
+      focus_augroup = nil,
+      maximize_win = nil,
+      maximize_buf = nil,
+      saved_buf = nil,
+      saved_laststatus = nil,
+    }
+    commit_ui.teardown_viewer(s, {
+      on_before_only = function() table.insert(call_order, "before") end,
+      on_after = function() table.insert(call_order, "after") end,
+    })
+    assert.equals(2, #call_order)
+    assert.equals("before", call_order[1])
+    assert.equals("after", call_order[2])
+  end)
+end)
