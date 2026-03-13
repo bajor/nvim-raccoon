@@ -283,6 +283,9 @@ function M.show_pr_list()
     return
   end
 
+  local open = require("raccoon.open")
+  open.close_all_sessions({ silent = true })
+
   -- Create floating window
   local win, buf = M.create_floating_window({
     width_pct = 0.7,

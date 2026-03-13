@@ -240,6 +240,77 @@ describe("raccoon.open", function()
     end)
   end)
 
+  describe("close_all_sessions", function()
+    it("exits active viewer mode when no PR session", function()
+      local exited = false
+      state.set_mode_exit(function() exited = true end)
+
+      open.close_all_sessions({ silent = true })
+
+      assert.is_true(exited)
+    end)
+
+    it("closes active PR session", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      open.close_all_sessions({ silent = true })
+
+      assert.is_false(state.is_active())
+    end)
+  end)
+
+  describe("close_all_sessions", function()
+    it("closes local commit viewer when no PR session", function()
+      local closed = false
+      local original_local = package.loaded["raccoon.localcommits"]
+      package.loaded["raccoon.localcommits"] = {
+        is_active = function() return true end,
+        close = function() closed = true end,
+      }
+
+      open.close_all_sessions({ silent = true })
+
+      package.loaded["raccoon.localcommits"] = original_local
+
+      assert.is_true(closed)
+    end)
+
+    it("closes commit viewer when no PR session", function()
+      local closed = false
+      local original_commits = package.loaded["raccoon.commits"]
+      package.loaded["raccoon.commits"] = {
+        is_active = function() return true end,
+        close = function() closed = true end,
+      }
+
+      open.close_all_sessions({ silent = true })
+
+      package.loaded["raccoon.commits"] = original_commits
+
+      assert.is_true(closed)
+    end)
+
+    it("closes active PR session", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      open.close_all_sessions({ silent = true })
+
+      assert.is_false(state.is_active())
+    end)
+  end)
+
   describe("sync", function()
     it("does nothing when no active session", function()
       -- Should not error

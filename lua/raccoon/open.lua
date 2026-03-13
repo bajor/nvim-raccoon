@@ -562,16 +562,24 @@ local function close_session()
   state.stop()
 end
 
+--- Close any active viewer mode and PR session before starting a new flow.
+---@param opts table|nil {silent: boolean}
+function M.close_all_sessions(opts)
+  opts = opts or {}
+  state.exit_active_mode()
+  if state.is_active() then
+    if opts.silent then
+      close_session()
+    else
+      M.close_pr()
+    end
+  end
+end
+
 --- Open a PR for review
 ---@param url string GitHub PR URL
 function M.open_pr(url)
-  -- Exit any active viewer mode (commit viewer, local commits) before opening
-  state.exit_active_mode()
-
-  -- Close existing PR session if one is active
-  if state.is_active() then
-    close_session()
-  end
+  M.close_all_sessions({ silent = true })
 
   -- Load config first (needed for github_host)
   local cfg, cfg_err = config.load()
