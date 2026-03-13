@@ -38,6 +38,9 @@ end
 local commit_state = make_initial_state()
 local commit_mode_keymaps = {}
 
+-- Forward declaration to allow enter_commit_mode to register the exit hook.
+local exit_commit_mode
+
 --- Module-level timer handle. Stored outside commit_state so stop_poll_timer()
 --- can always reach it, even when reset_state() replaces the state table.
 local poll_timer_handle = nil
@@ -637,7 +640,7 @@ local function enter_commit_mode()
   open.pause_sync()
   state.set_commit_mode(true)
   commit_state.active = true
-  state.set_mode_exit(function() exit_commit_mode() end)
+  state.set_mode_exit(exit_commit_mode)
 
   local vcfg = ui.parse_viewer_config()
   ui.SIDEBAR_WIDTH = vcfg.sidebar_width
