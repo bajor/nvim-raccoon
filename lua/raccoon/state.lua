@@ -61,6 +61,7 @@ function M.reset()
     },
     commit_mode = false,
   }
+  M.global_popup_win = nil
 end
 
 --- Start a new review session

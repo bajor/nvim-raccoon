@@ -14,10 +14,12 @@ local ui = require("raccoon.commit_ui")
 local COMBINED_DIFF_SHA = git.COMBINED_DIFF_SHA
 
 --- Compute the base ref for combined diff operations.
----@return string base_ref
+--- Returns nil when no PR is active; callers should handle nil (diff_combined already guards it).
+---@return string|nil base_ref
 local function get_base_ref()
   local pr = state.get_pr()
-  return pr and ("origin/" .. pr.base.ref) or "origin/main"
+  if not pr then return nil end
+  return "origin/" .. pr.base.ref
 end
 
 --- Namespace for commit viewer highlights
@@ -79,11 +81,10 @@ local sync_in_flight = false
 --- Stop the background sync timer
 local function stop_poll_timer()
   if poll_timer_handle then
-    pcall(function()
-      poll_timer_handle:stop()
-      poll_timer_handle:close()
-    end)
+    local handle = poll_timer_handle
     poll_timer_handle = nil
+    pcall(handle.stop, handle)
+    pcall(handle.close, handle)
   end
   sync_in_flight = false
 end
@@ -172,7 +173,6 @@ local function maximize_cell(cell_num)
   })
 end
 
--- Forward declaration
 local build_filetree_cache
 
 --- Select a commit and load its hunks into the grid
@@ -336,18 +336,7 @@ end
 
 --- Preserve selected commit across a refresh
 local function restore_selection_by_sha(selected_sha)
-  if selected_sha then
-    for i = 1, total_commits() do
-      local c = get_commit(i)
-      if c and c.sha == selected_sha then
-        commit_state.selected_index = i
-        return
-      end
-    end
-  end
-  if commit_state.selected_index > total_commits() then
-    commit_state.selected_index = math.max(1, total_commits())
-  end
+  ui.restore_selection_by_sha(commit_state, selected_sha, total_commits, get_commit)
 end
 
 --- Refresh commits after detecting remote changes.
@@ -367,14 +356,14 @@ local function refresh_commits()
     commit_state.pr_commits = new_pr or commit_state.pr_commits
     commit_state.base_commits = new_base or commit_state.base_commits
 
-    if #commit_state.pr_commits > 1 then
+    if #commit_state.pr_commits > 1
+      and commit_state.pr_commits[1].sha ~= COMBINED_DIFF_SHA then
       table.insert(commit_state.pr_commits, 1, git.make_combined_diff_entry())
     end
 
     restore_selection_by_sha(selected_sha)
     render_sidebar()
 
-    -- Re-select current commit to refresh the grid diff
     if total_commits() > 0 then
       select_commit(commit_state.selected_index)
     end
@@ -386,12 +375,18 @@ local function refresh_commits()
   end
 
   git.log_commits(clone_path, base_branch, function(commits, err)
-    new_pr = (not err) and commits or {}
+    if err then
+      vim.notify("Sync: failed to refresh PR commits", vim.log.levels.DEBUG)
+    end
+    new_pr = (not err) and commits or nil
     check_done()
   end)
 
   git.log_base_commits(clone_path, base_branch, commit_state.base_count, function(commits, err)
-    new_base = (not err) and commits or {}
+    if err then
+      vim.notify("Sync: failed to refresh base commits", vim.log.levels.DEBUG)
+    end
+    new_base = (not err) and commits or nil
     check_done()
   end)
 end
@@ -417,8 +412,11 @@ local function sync_tick(clone_path, pr_branch, base_branch)
       done(); return
     end
 
-    git.fetch_branch(clone_path, base_branch, function(_, _)
+    git.fetch_branch(clone_path, base_branch, function(_, base_fetch_err)
       if not commit_state.active then done(); return end
+      if base_fetch_err then
+        vim.notify("Sync: failed to fetch base branch", vim.log.levels.DEBUG)
+      end
 
       -- Check both PR and base branch SHAs in parallel
       local pending = 2
@@ -465,12 +463,18 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         end
       end
 
-      git.ref_sha(clone_path, "origin/" .. pr_branch, function(sha, _)
+      git.ref_sha(clone_path, "origin/" .. pr_branch, function(sha, ref_err)
+        if ref_err then
+          vim.notify("Sync: could not resolve PR branch SHA", vim.log.levels.DEBUG)
+        end
         pr_sha = sha
         check_both()
       end)
 
-      git.ref_sha(clone_path, "origin/" .. base_branch, function(sha, _)
+      git.ref_sha(clone_path, "origin/" .. base_branch, function(sha, ref_err)
+        if ref_err then
+          vim.notify("Sync: could not resolve base branch SHA", vim.log.levels.DEBUG)
+        end
         base_sha = sha
         check_both()
       end)
@@ -494,12 +498,18 @@ local function start_poll_timer()
 
   -- Seed last_head_sha and last_base_sha before starting the timer to avoid spurious refresh on first tick
   sync_in_flight = false
-  git.get_current_sha(clone_path, function(sha, _)
+  git.get_current_sha(clone_path, function(sha, seed_err)
     if not commit_state.active then return end
+    if seed_err then
+      vim.notify("Sync: failed to seed HEAD SHA", vim.log.levels.DEBUG)
+    end
     if sha then commit_state.last_head_sha = sha end
 
-    git.ref_sha(clone_path, "origin/" .. base_branch, function(base_sha, _)
+    git.ref_sha(clone_path, "origin/" .. base_branch, function(base_sha, base_seed_err)
       if not commit_state.active then return end
+      if base_seed_err then
+        vim.notify("Sync: failed to seed base SHA", vim.log.levels.DEBUG)
+      end
       if base_sha then commit_state.last_base_sha = base_sha end
 
       -- Guard against concurrent timer creation from rapid toggle
@@ -507,6 +517,10 @@ local function start_poll_timer()
       if not commit_state.active then return end
 
       local timer = vim.uv.new_timer()
+      if not timer then
+        vim.notify("Failed to create sync timer", vim.log.levels.WARN)
+        return
+      end
       poll_timer_handle = timer
       timer:start(commit_state.sync_interval_ms, commit_state.sync_interval_ms,
         vim.schedule_wrap(function()

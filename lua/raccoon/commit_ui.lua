@@ -32,6 +32,27 @@ function M.compute_grid_context(rows)
   return math.max(MIN_DIFF_CONTEXT, math.floor(row_height / 2))
 end
 
+--- Preserve selected commit across a refresh by searching for a matching SHA.
+--- Falls back to clamping the index when the SHA is not found (e.g., after force-push).
+---@param s table State table (must have selected_index field)
+---@param selected_sha string|nil SHA to search for
+---@param total_fn fun(): number Returns total navigable commits
+---@param get_fn fun(i: number): table|nil Returns commit at index i
+function M.restore_selection_by_sha(s, selected_sha, total_fn, get_fn)
+  if selected_sha then
+    for i = 1, total_fn() do
+      local c = get_fn(i)
+      if c and c.sha == selected_sha then
+        s.selected_index = i
+        return
+      end
+    end
+  end
+  if s.selected_index > total_fn() then
+    s.selected_index = math.max(1, total_fn())
+  end
+end
+
 --- Compute per-file addition/deletion counts from diff patches
 ---@param files table[] Array of {filename, patch}
 ---@return table<string, {additions: number, deletions: number}>
@@ -505,7 +526,7 @@ function M.close_grid(s)
 end
 
 --- Open a maximize floating window for a full-file diff
----@param opts table {ns_id, repo_path, sha, filename, commit_message, generation, ...}
+---@param opts table {ns_id, repo_path, sha, filename, commit_message, generation, get_generation, state, is_working_dir?, is_combined_diff?, base_ref?}
 function M.open_maximize(opts)
   local git = require("raccoon.git")
 
@@ -1078,7 +1099,7 @@ end
 --- Setup filetree browsing keymaps. j/k navigate all files, Enter shows file diff.
 --- The diff grid stays intact while browsing.
 ---@param s table State table
----@param opts table {get_repo_path, get_sha, ns_id}
+---@param opts table {ns_id, get_repo_path, get_sha, get_commit_message, get_base_ref}
 function M.setup_filetree_nav(s, opts)
   if not s.filetree_buf or not vim.api.nvim_buf_is_valid(s.filetree_buf) then return end
 

@@ -210,24 +210,11 @@ function M.get_current_branch(path, callback)
   })
 end
 
---- Get the current commit SHA
+--- Get the current commit SHA (convenience wrapper around ref_sha for HEAD)
 ---@param path string Repository path
 ---@param callback fun(sha: string|nil, err: string|nil)
 function M.get_current_sha(path, callback)
-  run_git({ "rev-parse", "HEAD" }, {
-    cwd = path,
-    on_exit = function(code, stdout, stderr)
-      if code == 0 and #stdout > 0 then
-        callback(stdout[1], nil)
-      else
-        local err_msg = table.concat(stderr, "\n")
-        if err_msg == "" then
-          err_msg = "Failed to get current SHA"
-        end
-        callback(nil, err_msg)
-      end
-    end,
-  })
+  M.ref_sha(path, "HEAD", callback)
 end
 
 --- Get the SHA for an arbitrary git ref (branch, tag, remote tracking ref, etc.)
@@ -1015,7 +1002,9 @@ function M.make_combined_diff_entry()
 end
 
 --- Get the combined diff of all branch changes vs a base ref.
---- Uses three-dot diff (merge-base to HEAD), matching what GitHub shows in "Files changed".
+--- Uses three-dot diff (merge-base of base_ref and HEAD to HEAD), which approximates
+--- GitHub's "Files changed" view. Results may diverge if the base branch has advanced
+--- since GitHub computed its merge-base.
 ---@param path string Repository path
 ---@param base_ref string Base ref (e.g. "origin/main" or a SHA)
 ---@param context number|nil Lines of surrounding context

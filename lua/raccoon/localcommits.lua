@@ -79,7 +79,18 @@ local function get_base_ref()
   return local_state.merge_base_sha or local_state.base_branch
 end
 
--- Forward declarations
+--- Prepend synthetic entries (COMBINED DIFF + UNCOMMITTED CHANGES) to a branch commit list.
+--- Inserts COMBINED DIFF only when there are multiple real commits.
+---@param commits table[] Commit list to modify in place
+local function prepend_synthetic_entries(commits)
+  if #commits > 1 then
+    table.insert(commits, 1, git.make_combined_diff_entry())
+    table.insert(commits, 2, { sha = nil, message = CURRENT_CHANGES_MSG })
+  else
+    table.insert(commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
+  end
+end
+
 local load_more_commits
 local build_filetree_cache
 
@@ -527,26 +538,28 @@ end
 --- Stop the poll timer
 local function stop_poll_timer()
   if local_state.poll_timer then
-    local_state.poll_timer:stop()
-    local_state.poll_timer:close()
+    local handle = local_state.poll_timer
     local_state.poll_timer = nil
+    pcall(handle.stop, handle)
+    pcall(handle.close, handle)
   end
 end
 
 --- Stop the working directory poll timer
 local function stop_workdir_poll_timer()
   if local_state.workdir_poll_timer then
-    local_state.workdir_poll_timer:stop()
-    local_state.workdir_poll_timer:close()
+    local handle = local_state.workdir_poll_timer
     local_state.workdir_poll_timer = nil
+    pcall(handle.stop, handle)
+    pcall(handle.close, handle)
   end
 end
 
--- Forward declaration
 local start_workdir_poll_timer
 
---- Start the adaptive working directory poll timer
---- Fast (3s) when changes are recent, slow (30s) after 3 minutes idle
+--- Start the adaptive working directory poll timer.
+--- Fast (WORKDIR_POLL_FAST_MS) when changes are recent,
+--- slow (WORKDIR_POLL_SLOW_MS) after WORKDIR_IDLE_THRESHOLD_MS idle.
 start_workdir_poll_timer = function()
   stop_workdir_poll_timer()
   if not local_state.active then return end
@@ -556,8 +569,10 @@ start_workdir_poll_timer = function()
     or (now - local_state.last_change_time) >= WORKDIR_IDLE_THRESHOLD_MS
   local interval = idle and WORKDIR_POLL_SLOW_MS or WORKDIR_POLL_FAST_MS
 
-  local_state.workdir_poll_timer = vim.uv.new_timer()
-  local_state.workdir_poll_timer:start(interval, 0, vim.schedule_wrap(function()
+  local timer = vim.uv.new_timer()
+  if not timer then return end
+  local_state.workdir_poll_timer = timer
+  timer:start(interval, 0, vim.schedule_wrap(function()
     if not local_state.active then return end
 
     git.status_porcelain(local_state.repo_path, function(output, err)
@@ -586,18 +601,7 @@ end
 
 --- Preserve selected commit across a refresh
 local function restore_selection_by_sha(selected_sha)
-  if selected_sha then
-    for i = 1, total_commits() do
-      local c = get_commit(i)
-      if c and c.sha == selected_sha then
-        local_state.selected_index = i
-        return
-      end
-    end
-  end
-  if local_state.selected_index > total_commits() then
-    local_state.selected_index = math.max(1, total_commits())
-  end
+  ui.restore_selection_by_sha(local_state, selected_sha, total_commits, get_commit)
 end
 
 --- Refresh commits from git (called when HEAD changes)
@@ -609,12 +613,7 @@ local function refresh_commits()
     -- Branch mode: refresh branch commits only (base stays static)
     git.log_branch_commits(local_state.repo_path, local_state.merge_base_sha, function(new_branch, err)
       if err or not new_branch then return end
-      if #new_branch > 1 then
-        table.insert(new_branch, 1, git.make_combined_diff_entry())
-        table.insert(new_branch, 2, { sha = nil, message = CURRENT_CHANGES_MSG })
-      else
-        table.insert(new_branch, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
-      end
+      prepend_synthetic_entries(new_branch)
       local_state.branch_commits = new_branch
       local_state.last_status_output = ""
       restore_selection_by_sha(selected_sha)
@@ -644,8 +643,10 @@ local function start_poll_timer()
     end
   end)
 
-  local_state.poll_timer = vim.uv.new_timer()
-  local_state.poll_timer:start(POLL_INTERVAL_MS, POLL_INTERVAL_MS, vim.schedule_wrap(function()
+  local timer = vim.uv.new_timer()
+  if not timer then return end
+  local_state.poll_timer = timer
+  timer:start(POLL_INTERVAL_MS, POLL_INTERVAL_MS, vim.schedule_wrap(function()
     if not local_state.active then return end
 
     git.get_current_sha(local_state.repo_path, function(sha, err)
@@ -799,13 +800,7 @@ local function enter_local_mode()
           local function on_both_ready()
             local branch_commits = branch_result or {}
             local base_commits = base_result or {}
-            -- Combined diff on top when there are multiple branch commits
-            if #branch_commits > 1 then
-              table.insert(branch_commits, 1, git.make_combined_diff_entry())
-              table.insert(branch_commits, 2, { sha = nil, message = CURRENT_CHANGES_MSG })
-            else
-              table.insert(branch_commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
-            end
+            prepend_synthetic_entries(branch_commits)
             local_state.current_branch = current_branch
             local_state.base_branch = default_branch
             local_state.merge_base_sha = merge_sha

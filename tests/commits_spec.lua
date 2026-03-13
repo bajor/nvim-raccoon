@@ -60,6 +60,26 @@ describe("raccoon.git commit operations", function()
     it("has show_commit_file function", function()
       assert.is_function(git.show_commit_file)
     end)
+
+    it("has ref_sha function", function()
+      assert.is_function(git.ref_sha)
+    end)
+
+    it("has reset_hard function", function()
+      assert.is_function(git.reset_hard)
+    end)
+
+    it("has diff_combined function", function()
+      assert.is_function(git.diff_combined)
+    end)
+
+    it("has diff_combined_file function", function()
+      assert.is_function(git.diff_combined_file)
+    end)
+
+    it("has make_combined_diff_entry function", function()
+      assert.is_function(git.make_combined_diff_entry)
+    end)
   end)
 
   describe("log_commits on current repo", function()
@@ -1545,5 +1565,185 @@ describe("raccoon.commits render_tree_node with file_stats", function()
     assert.is_not_nil(few_stat)
     assert.is_not_nil(many_stat)
     assert.is_true(few_stat.add_chars < many_stat.add_chars + many_stat.del_chars)
+  end)
+end)
+
+describe("raccoon.git combined diff sentinel", function()
+  it("COMBINED_DIFF_SHA is a non-empty string", function()
+    assert.is_string(git.COMBINED_DIFF_SHA)
+    assert.is_true(#git.COMBINED_DIFF_SHA > 0)
+  end)
+
+  it("make_combined_diff_entry returns correct shape", function()
+    local entry = git.make_combined_diff_entry()
+    assert.is_table(entry)
+    assert.equals(git.COMBINED_DIFF_SHA, entry.sha)
+    assert.equals("COMBINED DIFF", entry.message)
+  end)
+
+  it("sentinel does not look like a real 40-char hex SHA", function()
+    assert.is_not_equal(40, #git.COMBINED_DIFF_SHA)
+  end)
+
+  it("diff_combined returns error when base_ref is nil", function()
+    local done = false
+    local result_err = nil
+    git.diff_combined(vim.fn.getcwd(), nil, nil, function(_, err)
+      result_err = err
+      done = true
+    end)
+    -- Synchronous early return, no need for vim.wait
+    assert.is_true(done)
+    assert.is_string(result_err)
+    assert.is_truthy(result_err:match("No base ref"))
+  end)
+
+  it("diff_combined_file returns error when base_ref is nil", function()
+    local done = false
+    local result_err = nil
+    git.diff_combined_file(vim.fn.getcwd(), nil, "test.lua", function(_, err)
+      result_err = err
+      done = true
+    end)
+    assert.is_true(done)
+    assert.is_string(result_err)
+    assert.is_truthy(result_err:match("No base ref"))
+  end)
+end)
+
+describe("raccoon.commits combined diff insertion", function()
+  local original_show_commit
+  local original_diff_combined
+  local original_list_files
+  local captured_diff_combined
+  local captured_show_commit
+
+  before_each(function()
+    state.reset()
+    original_show_commit = git.show_commit
+    original_diff_combined = git.diff_combined
+    original_list_files = git.list_files
+    captured_diff_combined = false
+    captured_show_commit = false
+    git.diff_combined = function(_, _, _, cb)
+      captured_diff_combined = true
+      cb({}, nil)
+    end
+    git.show_commit = function(_, _, _, cb)
+      captured_show_commit = true
+      cb({}, nil)
+    end
+    git.list_files = function(_, _, cb) cb({}, nil) end
+    local cs = commits._get_state()
+    cs.active = true
+    cs.grid_bufs = {}
+    cs.grid_wins = {}
+    cs.all_hunks = {}
+    cs.select_generation = 0
+    state.session = state.session or {}
+    state.session.clone_path = "/tmp/fake"
+    state.session.pr = { base = { ref = "main" } }
+  end)
+
+  after_each(function()
+    git.show_commit = original_show_commit
+    git.diff_combined = original_diff_combined
+    git.list_files = original_list_files
+    state.reset()
+  end)
+
+  it("inserts COMBINED DIFF at index 1 when PR has >1 commits", function()
+    local cs = commits._get_state()
+    cs.pr_commits = {
+      { sha = "aaaa", message = "commit 1" },
+      { sha = "bbbb", message = "commit 2" },
+    }
+    -- Simulate what enter_commit_mode does:
+    -- real_pr_count > 1 => insert combined diff
+    assert.is_true(#cs.pr_commits > 1)
+    table.insert(cs.pr_commits, 1, git.make_combined_diff_entry())
+    assert.equals(git.COMBINED_DIFF_SHA, cs.pr_commits[1].sha)
+    assert.equals(3, #cs.pr_commits)
+  end)
+
+  it("does NOT insert COMBINED DIFF when PR has exactly 1 commit", function()
+    local cs = commits._get_state()
+    cs.pr_commits = {
+      { sha = "aaaa", message = "only commit" },
+    }
+    -- real_pr_count == 1 => no combined diff
+    assert.is_false(#cs.pr_commits > 1)
+    assert.equals(1, #cs.pr_commits)
+    assert.is_not_equal(git.COMBINED_DIFF_SHA, cs.pr_commits[1].sha)
+  end)
+
+  it("dispatches to diff_combined when selecting COMBINED DIFF entry", function()
+    local cs = commits._get_state()
+    cs.pr_commits = {
+      git.make_combined_diff_entry(),
+      { sha = "aaaa", message = "commit 1" },
+    }
+    commits._select_commit(1)
+    assert.is_true(captured_diff_combined)
+    assert.is_false(captured_show_commit)
+  end)
+
+  it("dispatches to show_commit when selecting a regular commit", function()
+    local cs = commits._get_state()
+    cs.pr_commits = {
+      git.make_combined_diff_entry(),
+      { sha = "aaaa", message = "commit 1" },
+    }
+    commits._select_commit(2)
+    assert.is_false(captured_diff_combined)
+    assert.is_true(captured_show_commit)
+  end)
+end)
+
+describe("raccoon.commit_ui restore_selection_by_sha", function()
+  it("finds and selects matching SHA", function()
+    local s = { selected_index = 1 }
+    local items = {
+      { sha = "aaa", message = "first" },
+      { sha = "bbb", message = "second" },
+      { sha = "ccc", message = "third" },
+    }
+    commit_ui.restore_selection_by_sha(s, "bbb",
+      function() return #items end,
+      function(i) return items[i] end)
+    assert.equals(2, s.selected_index)
+  end)
+
+  it("clamps index when SHA is not found", function()
+    local s = { selected_index = 5 }
+    local items = {
+      { sha = "aaa", message = "first" },
+      { sha = "bbb", message = "second" },
+    }
+    commit_ui.restore_selection_by_sha(s, "zzz",
+      function() return #items end,
+      function(i) return items[i] end)
+    assert.equals(2, s.selected_index)
+  end)
+
+  it("clamps to 1 when list is empty", function()
+    local s = { selected_index = 3 }
+    commit_ui.restore_selection_by_sha(s, "zzz",
+      function() return 0 end,
+      function() return nil end)
+    -- math.max(1, 0) = 1 when total is 0 but index exceeds it
+    assert.equals(1, s.selected_index)
+  end)
+
+  it("preserves index when SHA is nil and index is valid", function()
+    local s = { selected_index = 2 }
+    local items = {
+      { sha = "aaa", message = "first" },
+      { sha = "bbb", message = "second" },
+    }
+    commit_ui.restore_selection_by_sha(s, nil,
+      function() return #items end,
+      function(i) return items[i] end)
+    assert.equals(2, s.selected_index)
   end)
 end)
