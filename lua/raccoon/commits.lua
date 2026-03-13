@@ -341,10 +341,14 @@ end
 
 --- Refresh commits after detecting remote changes.
 --- Fetches updated commit lists and rebuilds the sidebar, preserving selection.
-local function refresh_commits()
+---@param on_complete fun()|nil Called after both git log calls finish and the UI is updated
+local function refresh_commits(on_complete)
   local clone_path = state.get_clone_path()
   local base_branch = commit_state.base_branch
-  if not clone_path or not base_branch then return end
+  if not clone_path or not base_branch then
+    if on_complete then on_complete() end
+    return
+  end
 
   local sel = get_commit(commit_state.selected_index)
   local selected_sha = sel and sel.sha
@@ -367,6 +371,7 @@ local function refresh_commits()
     if total_commits() > 0 then
       select_commit(commit_state.selected_index)
     end
+    if on_complete then on_complete() end
   end
 
   local function check_done()
@@ -453,13 +458,11 @@ local function sync_tick(clone_path, pr_branch, base_branch)
               done(); return
             end
             commit_state.last_head_sha = pr_sha
-            refresh_commits()
-            done()
+            refresh_commits(done)
           end)
         else
           -- Only base branch changed — refresh commit lists without reset
-          refresh_commits()
-          done()
+          refresh_commits(done)
         end
       end
 
