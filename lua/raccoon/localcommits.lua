@@ -55,6 +55,7 @@ local function make_initial_state()
     header_buf = nil,
     filetree_win = nil,
     filetree_buf = nil,
+    popup_win = nil,
     select_generation = 0,
     cached_sha = nil,
     cached_tree_lines = nil,
@@ -803,7 +804,8 @@ local function enter_local_mode()
 end
 
 --- Exit local commit viewer mode
-local function exit_local_mode()
+local function exit_local_mode(opts)
+  opts = opts or {}
   stop_poll_timer()
   stop_workdir_poll_timer()
 
@@ -827,7 +829,7 @@ local function exit_local_mode()
   end
 
   -- Restore PR session if it was active
-  if local_state.pr_was_active then
+  if local_state.pr_was_active and opts.resume_pr ~= false then
     keymaps.setup()
     open.resume_sync()
   end
@@ -843,6 +845,33 @@ function M.toggle()
   else
     enter_local_mode()
   end
+end
+
+--- Exit local commit viewer mode (safe to call when not active)
+---@param opts table|nil { resume_pr?: boolean }
+function M.exit_local_mode(opts)
+  if not local_state.active then
+    local_state = make_initial_state()
+    return
+  end
+  exit_local_mode(opts)
+end
+
+--- Check if local commit viewer is active
+---@return boolean
+function M.is_active()
+  return local_state.active
+end
+
+--- Allow a popup window while local commit focus lock is active
+---@param win number|nil
+function M.set_popup_win(win)
+  local_state.popup_win = win
+end
+
+--- Clear the local commit popup window exception
+function M.clear_popup_win()
+  local_state.popup_win = nil
 end
 
 -- Exposed for testing
