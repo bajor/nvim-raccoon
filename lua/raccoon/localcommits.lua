@@ -19,6 +19,7 @@ local POLL_INTERVAL_MS = 10000
 local WORKDIR_POLL_FAST_MS = 3000
 local WORKDIR_POLL_SLOW_MS = 30000
 local WORKDIR_IDLE_THRESHOLD_MS = 180000
+local MAX_WORKDIR_FAILURES = 5
 
 local function make_initial_state()
   local s = ui.make_base_state()
@@ -478,6 +479,7 @@ local function stop_workdir_poll_timer()
 end
 
 local start_workdir_poll_timer
+local workdir_fail_count = 0
 
 --- Start the adaptive working directory poll timer.
 --- Fast (WORKDIR_POLL_FAST_MS) when changes are recent,
@@ -503,10 +505,16 @@ start_workdir_poll_timer = function()
         return
       end
       if err then
+        workdir_fail_count = workdir_fail_count + 1
+        if workdir_fail_count >= MAX_WORKDIR_FAILURES then
+          vim.notify("Workdir poll: stopped after " .. workdir_fail_count .. " consecutive failures", vim.log.levels.WARN)
+          return
+        end
         vim.notify("Workdir poll: status_porcelain failed", vim.log.levels.DEBUG)
         start_workdir_poll_timer()
         return
       end
+      workdir_fail_count = 0
 
       if (output or "") == local_state.last_status_output then
         start_workdir_poll_timer()
@@ -656,6 +664,7 @@ local function activate_mode(repo_root, rows, cols, notify_msg)
   local_state.active = true
   local_state.repo_path = repo_root
   local_state.last_change_time = vim.uv.now()
+  workdir_fail_count = 0
 
   vim.schedule(function()
     ui.create_grid_layout(local_state, rows, cols)
