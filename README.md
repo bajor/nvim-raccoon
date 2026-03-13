@@ -309,6 +309,29 @@ When a new commit is made (e.g. by an AI agent in another terminal), it appears 
 
 Local mode works alongside an active PR review — entering `:Raccoon local` pauses the PR session, and exiting resumes it.
 
+### Tip: detailed commit messages for better review
+
+The commit viewer header displays the **full multiline commit message** — subject line prominently at top, body text below in a dimmer style. This makes reviewing AI-generated commits much more useful when the agent writes descriptive messages explaining *what* was done and *why*.
+
+To get the most out of this, add instructions to your agent's configuration file (e.g. `CLAUDE.md` for Claude Code, `.amp/amp.md` for Amp, or `.aider.conf.yml` for Aider) telling it to write detailed, explanatory commit messages:
+
+```markdown
+## Commit style
+
+Write detailed, multiline commit messages. The first line is a short summary.
+The body explains what was changed and why, so a reviewer reading the commit
+in a diff viewer understands the full context without looking at the code.
+
+Example:
+  Fix null pointer in login validation
+
+  The email field was not checked before calling normalize(),
+  which threw when the user submitted an empty form.
+  Added an early return with a user-facing error message.
+```
+
+When you step through commits in `:Raccoon local` or the PR commit viewer, each commit's full message appears in the header bar — turning the commit history into a narrated walkthrough of the changes.
+
 ## Parallel Agents
 
 Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. Review a commit, optionally select code lines, and press `<leader>aa` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.

@@ -11,6 +11,7 @@ M.STAT_BAR_MAX_WIDTH = 20
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
+local MAX_HEADER_LINES = 15 -- cap header height to avoid overwhelming the grid
 
 --- Approximate usable editor height for grid layout.
 --- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
@@ -918,9 +919,15 @@ function M.update_header(s, commit, pages)
   if #msg_lines == 0 then msg_lines = { "" } end
 
   local lines = {}
+  local body_line_indices = {} -- 0-indexed buffer lines that belong to the body
   table.insert(lines, page_str .. " " .. msg_lines[1])
   for i = 2, #msg_lines do
-    table.insert(lines, " " .. msg_lines[i])
+    if msg_lines[i] == "" then
+      table.insert(lines, "")
+    else
+      table.insert(lines, "    " .. msg_lines[i])
+      table.insert(body_line_indices, #lines - 1) -- 0-indexed
+    end
   end
 
   vim.bo[buf].modifiable = true
@@ -932,8 +939,11 @@ function M.update_header(s, commit, pages)
   if show_pages then
     pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #page_str)
   end
+  for _, line_idx in ipairs(body_line_indices) do
+    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", line_idx, 0, -1)
+  end
 
-  vim.api.nvim_win_set_height(win, math.max(1, #lines))
+  vim.api.nvim_win_set_height(win, math.min(math.max(1, #lines), MAX_HEADER_LINES))
 end
 
 --- Render the current page of hunks into the grid
@@ -1187,9 +1197,11 @@ function M.render_split_sidebar(buf, opts)
   table.insert(lines, opts.section1_header)
   table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
-  -- Section 1 commits
+  -- Section 1 commits (show first line only in sidebar)
   for _, commit in ipairs(opts.section1_commits) do
     local msg = commit.message
+    local nl = msg:find("\n")
+    if nl then msg = msg:sub(1, nl - 1) end
     if #msg > M.SIDEBAR_WIDTH - 2 then
       msg = msg:sub(1, M.SIDEBAR_WIDTH - 5) .. "..."
     end
@@ -1207,9 +1219,11 @@ function M.render_split_sidebar(buf, opts)
   table.insert(lines, opts.section2_header)
   table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
-  -- Section 2 commits (dimmed)
+  -- Section 2 commits (dimmed, first line only)
   for _, commit in ipairs(opts.section2_commits) do
     local msg = commit.message
+    local nl = msg:find("\n")
+    if nl then msg = msg:sub(1, nl - 1) end
     if #msg > M.SIDEBAR_WIDTH - 2 then
       msg = msg:sub(1, M.SIDEBAR_WIDTH - 5) .. "..."
     end

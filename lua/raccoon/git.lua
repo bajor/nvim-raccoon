@@ -261,17 +261,37 @@ function M.get_remote_url(path, callback)
   })
 end
 
---- Parse git log output lines into commit tables
----@param stdout string[] Lines of format "%H %s"
+local FIELD_SEP = "\0"
+local RECORD_SEP = "\1"
+local LOG_FORMAT = "--format=%H%x00%B%x01"
+
+--- Parse git log output into commit tables.
+--- Expects output from --format=%H%x00%B%x01 (SHA, null byte, full message, record separator).
+--- The job buffering in run_git drops empty lines, so the blank line between subject and body
+--- is lost; we reconstruct it by inserting a blank line after the first line when a body exists.
+---@param stdout string[] Lines from run_git (empty lines dropped by job buffering)
 ---@return table[] commits Array of {sha, message}
 local function parse_commit_log(stdout)
   local commits = {}
-  for _, line in ipairs(stdout) do
-    local sha = line:sub(1, 40)
-    local message = line:sub(42)
-    if #sha == 40 then
-      table.insert(commits, { sha = sha, message = message })
+  local raw = table.concat(stdout, "\n")
+  local records = vim.split(raw, RECORD_SEP, { trimempty = true })
+  for _, record in ipairs(records) do
+    record = vim.trim(record)
+    if #record < 41 then goto continue end
+    local sha = record:sub(1, 40)
+    if record:byte(41) ~= FIELD_SEP:byte() then goto continue end
+    if not sha:match("^%x+$") then goto continue end
+    local body = vim.trim(record:sub(42))
+    if #body == 0 then goto continue end
+    local msg_lines = vim.split(body, "\n", { trimempty = true })
+    local message
+    if #msg_lines > 1 then
+      message = msg_lines[1] .. "\n\n" .. table.concat(msg_lines, "\n", 2)
+    else
+      message = msg_lines[1] or ""
     end
+    table.insert(commits, { sha = sha, message = message })
+    ::continue::
   end
   return commits
 end
@@ -521,7 +541,7 @@ end
 ---@param base_branch string Base branch (e.g., "main")
 ---@param callback fun(commits: table[]|nil, err: string|nil)
 function M.log_commits(path, base_branch, callback)
-  run_git({ "log", "--format=%H %s", "origin/" .. base_branch .. "..HEAD" }, {
+  run_git({ "log", LOG_FORMAT, "origin/" .. base_branch .. "..HEAD" }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
@@ -539,7 +559,7 @@ end
 ---@param count number Number of commits to fetch
 ---@param callback fun(commits: table[]|nil, err: string|nil)
 function M.log_base_commits(path, base_branch, count, callback)
-  run_git({ "log", "--format=%H %s", "-n", tostring(count), "origin/" .. base_branch }, {
+  run_git({ "log", LOG_FORMAT, "-n", tostring(count), "origin/" .. base_branch }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
@@ -638,7 +658,7 @@ end
 ---@param skip number Number of commits to skip
 ---@param callback fun(commits: table[]|nil, err: string|nil)
 function M.log_all_commits(path, count, skip, callback)
-  run_git({ "log", "--format=%H %s", "-n", tostring(count), "--skip=" .. tostring(skip) }, {
+  run_git({ "log", LOG_FORMAT, "-n", tostring(count), "--skip=" .. tostring(skip) }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
@@ -657,7 +677,7 @@ end
 ---@param skip number Number of commits to skip
 ---@param callback fun(commits: table[]|nil, err: string|nil)
 function M.log_from_ref(path, ref, count, skip, callback)
-  run_git({ "log", "--format=%H %s", "-n", tostring(count), "--skip=" .. tostring(skip), ref }, {
+  run_git({ "log", LOG_FORMAT, "-n", tostring(count), "--skip=" .. tostring(skip), ref }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
@@ -674,7 +694,7 @@ end
 ---@param base_ref string Base ref (SHA or branch name)
 ---@param callback fun(commits: table[]|nil, err: string|nil)
 function M.log_branch_commits(path, base_ref, callback)
-  run_git({ "log", "--format=%H %s", base_ref .. "..HEAD" }, {
+  run_git({ "log", LOG_FORMAT, base_ref .. "..HEAD" }, {
     cwd = path,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
