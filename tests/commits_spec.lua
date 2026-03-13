@@ -21,6 +21,11 @@ describe("raccoon.commits", function()
     it("has exit_commit_mode function", function()
       assert.is_function(commits.exit_commit_mode)
     end)
+
+    it("has popup window helpers", function()
+      assert.is_function(commits.set_popup_win)
+      assert.is_function(commits.clear_popup_win)
+    end)
   end)
 
   describe("toggle without active session", function()
@@ -44,6 +49,16 @@ describe("raccoon.commits", function()
       vim.notify = original_notify
 
       assert.is_false(state.is_commit_mode())
+    end)
+  end)
+
+  describe("popup window helpers", function()
+    it("sets and clears popup_win on commit state", function()
+      commits.set_popup_win(123)
+      assert.equals(123, commits._get_state().popup_win)
+
+      commits.clear_popup_win()
+      assert.is_nil(commits._get_state().popup_win)
     end)
   end)
 end)

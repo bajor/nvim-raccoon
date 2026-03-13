@@ -104,6 +104,15 @@ describe("raccoon.ui", function()
       -- Should not error
       ui.close_pr_list()
     end)
+
+    it("clears commit-mode popup window", function()
+      state.set_commit_mode(true)
+      commits.set_popup_win(42)
+
+      ui.close_pr_list()
+
+      assert.is_nil(commits._get_state().popup_win)
+    end)
   end)
 
   describe("state", function()

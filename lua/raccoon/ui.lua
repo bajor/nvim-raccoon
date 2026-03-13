@@ -75,6 +75,9 @@ function M.close_pr_list()
   end
   M.state.win = nil
   M.state.buf = nil
+  if state.is_commit_mode() then
+    require("raccoon.commits").clear_popup_win()
+  end
 end
 
 --- Convert UTC date components to Unix epoch via pure arithmetic.
@@ -305,6 +308,9 @@ function M.show_pr_list()
   M.state.buf = buf
   M.state.prs = {}
   M.state.selected = 1
+  if state.is_commit_mode() then
+    require("raccoon.commits").set_popup_win(win)
+  end
 
   -- Show loading state
   vim.bo[buf].modifiable = true

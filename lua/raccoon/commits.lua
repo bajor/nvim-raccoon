@@ -39,6 +39,7 @@ local commit_state = {
   header_buf = nil,
   filetree_win = nil,
   filetree_buf = nil,
+  popup_win = nil,
   select_generation = 0,
   cached_sha = nil,
   cached_tree_lines = nil,
@@ -77,6 +78,7 @@ local function reset_state()
     header_buf = nil,
     filetree_win = nil,
     filetree_buf = nil,
+    popup_win = nil,
     select_generation = 0,
     cached_sha = nil,
     cached_tree_lines = nil,
@@ -558,6 +560,17 @@ end
 ---@param opts table|nil { resume_sync?: boolean }
 function M.exit_commit_mode(opts)
   exit_commit_mode(opts)
+end
+
+--- Allow a popup window while commit mode focus lock is active
+---@param win number|nil
+function M.set_popup_win(win)
+  commit_state.popup_win = win
+end
+
+--- Clear the commit mode popup window exception
+function M.clear_popup_win()
+  commit_state.popup_win = nil
 end
 
 -- Exposed for testing
