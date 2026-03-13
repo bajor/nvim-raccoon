@@ -604,25 +604,15 @@ local function enter_commit_mode()
   state.set_commit_mode(true)
   commit_state.active = true
 
-  local cfg = config.load()
-  local rows = 2
-  local cols = 2
-  local base_count = 20
-  local sync_interval = 60
-  if cfg and cfg.commit_viewer then
-    if cfg.commit_viewer.grid then
-      rows = ui.clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
-      cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
-    end
-    base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
-    ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
-    sync_interval = ui.clamp_int(cfg.commit_viewer.sync_interval, 60, 10, 3600)
-  end
+  local vcfg = ui.parse_viewer_config()
+  ui.SIDEBAR_WIDTH = vcfg.sidebar_width
 
+  local rows = vcfg.rows
+  local cols = vcfg.cols
   local base_branch = pr.base.ref
   commit_state.base_branch = base_branch
-  commit_state.base_count = base_count
-  commit_state.sync_interval_ms = sync_interval * 1000
+  commit_state.base_count = vcfg.base_count
+  commit_state.sync_interval_ms = vcfg.sync_interval * 1000
 
   vim.notify("Entering commit viewer mode...", vim.log.levels.INFO)
 

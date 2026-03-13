@@ -28,6 +28,33 @@ function M.safe_close_timer(handle)
   end
 end
 
+--- Parse and clamp commit viewer config values from user config.
+---@return table {rows: number, cols: number, base_count: number, sidebar_width: number, sync_interval: number}
+function M.parse_viewer_config()
+  local cfg = config.load()
+  local rows = 2
+  local cols = 2
+  local base_count = 20
+  local sidebar_width = 50
+  local sync_interval = 60
+  if cfg and cfg.commit_viewer then
+    if cfg.commit_viewer.grid then
+      rows = M.clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
+      cols = M.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
+    end
+    base_count = M.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
+    sidebar_width = M.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
+    sync_interval = M.clamp_int(cfg.commit_viewer.sync_interval, 60, 10, 3600)
+  end
+  return {
+    rows = rows,
+    cols = cols,
+    base_count = base_count,
+    sidebar_width = sidebar_width,
+    sync_interval = sync_interval,
+  }
+end
+
 --- Approximate usable editor height for grid layout.
 --- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
 --- header content height and inter-row separators since this feeds a heuristic, not exact layout.
