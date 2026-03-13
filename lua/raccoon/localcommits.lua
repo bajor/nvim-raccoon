@@ -486,7 +486,10 @@ local function fetch_and_render_fifo_cell(cell_idx, generation)
   fetch_diff(function(files, err)
     if generation ~= local_state.fifo_generation then return end
     if not local_state.fifo_mode then return end
-    if err then return end
+    if err then
+      render_fifo_empty_cell(cell_idx)
+      return
+    end
 
     local cell_hunks = {}
     local first_filename = nil
@@ -567,6 +570,12 @@ local function toggle_fifo_mode()
     vim.notify("FIFO auto-focus enabled", vim.log.levels.INFO)
   else
     local_state.fifo_cell_data = {}
+    -- Clear FIFO highlights (branch mode uses a different namespace in update_sidebar_selection)
+    if local_state.sidebar_buf and vim.api.nvim_buf_is_valid(local_state.sidebar_buf) then
+      local sel_ns = vim.api.nvim_create_namespace("raccoon_local_commit_sel")
+      vim.api.nvim_buf_clear_namespace(local_state.sidebar_buf, sel_ns, 0, -1)
+    end
+    local_state.selected_index = math.max(1, math.min(local_state.selected_index, total_commits()))
     select_commit(local_state.selected_index)
     update_sidebar_selection()
     vim.notify("FIFO auto-focus disabled", vim.log.levels.INFO)
@@ -673,7 +682,10 @@ local function setup_keymaps()
     table.insert(local_mode_keymaps, {
       mode = NORMAL_MODE,
       lhs = shortcuts.commit_mode.browse_files,
-      rhs = function() ui.toggle_filetree_focus(local_state) end,
+      rhs = function()
+        if local_state.fifo_mode then return end
+        ui.toggle_filetree_focus(local_state)
+      end,
       desc = "Toggle file tree browsing",
     })
   end
