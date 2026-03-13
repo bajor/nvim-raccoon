@@ -494,7 +494,10 @@ start_workdir_poll_timer = function()
   local interval = idle and WORKDIR_POLL_SLOW_MS or WORKDIR_POLL_FAST_MS
 
   local timer = vim.uv.new_timer()
-  if not timer then return end
+  if not timer then
+    vim.notify("Failed to create workdir poll timer", vim.log.levels.WARN)
+    return
+  end
   local_state.workdir_poll_timer = timer
   timer:start(interval, 0, vim.schedule_wrap(function()
     if not local_state.active then return end
@@ -594,7 +597,10 @@ local function start_poll_timer()
     if not local_state.active then return end
 
     local timer = vim.uv.new_timer()
-    if not timer then return end
+    if not timer then
+      vim.notify("Failed to create HEAD poll timer", vim.log.levels.WARN)
+      return
+    end
     local_state.poll_timer = timer
     timer:start(POLL_INTERVAL_MS, POLL_INTERVAL_MS, vim.schedule_wrap(function()
       if not local_state.active then return end

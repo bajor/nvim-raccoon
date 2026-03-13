@@ -49,6 +49,11 @@ local sync_in_flight = false
 --- from a previous viewer session can detect they are stale and bail out.
 local session_gen = 0
 
+--- Consecutive sync failure counter. After SYNC_FAIL_ESCALATION_THRESHOLD,
+--- notifications escalate from DEBUG to WARN so the user knows sync is broken.
+local sync_fail_count = 0
+local SYNC_FAIL_ESCALATION_THRESHOLD = 3
+
 --- Stop the background sync timer
 local function stop_poll_timer()
   if poll_timer_handle then
@@ -298,6 +303,12 @@ local function refresh_commits(on_complete)
       return
     end
 
+    if not new_pr then
+      vim.notify("Sync: PR commits are stale (refresh failed)", vim.log.levels.WARN)
+    end
+    if not new_base then
+      vim.notify("Sync: base commits are stale (refresh failed)", vim.log.levels.WARN)
+    end
     commit_state.pr_commits = new_pr or commit_state.pr_commits
     commit_state.base_commits = new_base or commit_state.base_commits
 
@@ -346,8 +357,21 @@ local function sync_tick(clone_path, pr_branch, base_branch)
   sync_in_flight = true
   local my_gen = session_gen
 
-  local function done()
+  --- Escalate from DEBUG to WARN after repeated failures so the user is informed.
+  local function sync_log(msg)
+    local level = sync_fail_count >= SYNC_FAIL_ESCALATION_THRESHOLD
+      and vim.log.levels.WARN or vim.log.levels.DEBUG
+    vim.notify(msg, level)
+  end
+
+  local function done_fail()
     sync_in_flight = false
+    sync_fail_count = sync_fail_count + 1
+  end
+
+  local function done_ok()
+    sync_in_flight = false
+    sync_fail_count = 0
   end
 
   local function stale()
@@ -355,16 +379,16 @@ local function sync_tick(clone_path, pr_branch, base_branch)
   end
 
   git.fetch_branch(clone_path, pr_branch, function(_, fetch_err)
-    if stale() then done(); return end
+    if stale() then done_fail(); return end
     if fetch_err then
-      vim.notify("Sync: failed to fetch PR branch", vim.log.levels.DEBUG)
-      done(); return
+      sync_log("Sync: failed to fetch PR branch")
+      done_fail(); return
     end
 
     git.fetch_branch(clone_path, base_branch, function(_, base_fetch_err)
-      if stale() then done(); return end
+      if stale() then done_fail(); return end
       if base_fetch_err then
-        vim.notify("Sync: failed to fetch base branch", vim.log.levels.DEBUG)
+        sync_log("Sync: failed to fetch base branch")
       end
 
       -- Check both PR and base branch SHAs in parallel
@@ -373,7 +397,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
       local function check_both()
         pending = pending - 1
         if pending > 0 then return end
-        if stale() then done(); return end
+        if stale() then done_fail(); return end
 
         -- Defensive fallback: seed SHAs if start_poll_timer's seeding was incomplete
         if not commit_state.last_head_sha then
@@ -387,7 +411,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         local base_changed = base_sha and base_sha ~= commit_state.last_base_sha
 
         if not pr_changed and not base_changed then
-          done(); return
+          done_ok(); return
         end
 
         -- Update tracked base SHA
@@ -396,23 +420,23 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         if pr_changed then
           -- PR branch advanced — reset local clone to match origin
           git.reset_hard(clone_path, "origin/" .. pr_branch, function(ok, reset_err)
-            if stale() then done(); return end
+            if stale() then done_fail(); return end
             if not ok then
-              vim.notify("Sync: failed to reset to remote: " .. (reset_err or ""), vim.log.levels.DEBUG)
-              done(); return
+              sync_log("Sync: failed to reset to remote: " .. (reset_err or ""))
+              done_fail(); return
             end
             commit_state.last_head_sha = pr_sha
-            refresh_commits(done)
+            refresh_commits(done_ok)
           end)
         else
           -- Only base branch changed — refresh commit lists without reset
-          refresh_commits(done)
+          refresh_commits(done_ok)
         end
       end
 
       git.ref_sha(clone_path, "origin/" .. pr_branch, function(sha, ref_err)
         if ref_err then
-          vim.notify("Sync: could not resolve PR branch SHA", vim.log.levels.DEBUG)
+          sync_log("Sync: could not resolve PR branch SHA")
         end
         pr_sha = sha
         check_both()
@@ -420,7 +444,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
 
       git.ref_sha(clone_path, "origin/" .. base_branch, function(sha, ref_err)
         if ref_err then
-          vim.notify("Sync: could not resolve base branch SHA", vim.log.levels.DEBUG)
+          sync_log("Sync: could not resolve base branch SHA")
         end
         base_sha = sha
         check_both()
