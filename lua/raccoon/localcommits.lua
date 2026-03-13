@@ -64,6 +64,9 @@ local function make_initial_state()
     cached_file_count = nil,
     focus_target = "sidebar",
     pr_was_active = false,
+    fifo_mode = false,
+    fifo_cell_data = {},
+    fifo_generation = 0,
   }
 end
 
@@ -73,6 +76,8 @@ local local_mode_keymaps = {}
 -- Forward declarations
 local load_more_commits
 local build_filetree_cache
+local render_fifo_grid
+local maximize_fifo_cell
 
 --- Total navigable commits (branch + base)
 local function total_commits()
@@ -102,6 +107,7 @@ local function render_grid_page()
 end
 
 local function next_page()
+  if local_state.fifo_mode then return end
   if local_state.current_page < total_pages() then
     local_state.current_page = local_state.current_page + 1
     render_grid_page()
@@ -109,6 +115,7 @@ local function next_page()
 end
 
 local function prev_page()
+  if local_state.fifo_mode then return end
   if local_state.current_page > 1 then
     local_state.current_page = local_state.current_page - 1
     render_grid_page()
@@ -117,6 +124,10 @@ end
 
 --- Maximize a grid cell
 local function maximize_cell(cell_num)
+  if local_state.fifo_mode then
+    maximize_fifo_cell(cell_num)
+    return
+  end
   local cells = local_state.grid_rows * local_state.grid_cols
   local start_idx = (local_state.current_page - 1) * cells + 1
   local hunk_idx = start_idx + cell_num - 1
@@ -299,6 +310,7 @@ local function render_sidebar()
 end
 
 local function move_up()
+  if local_state.fifo_mode then return end
   if local_state.selected_index > 1 then
     local_state.selected_index = local_state.selected_index - 1
     update_sidebar_selection()
@@ -307,6 +319,7 @@ local function move_up()
 end
 
 local function move_to_top()
+  if local_state.fifo_mode then return end
   if total_commits() > 0 then
     local_state.selected_index = 1
     update_sidebar_selection()
@@ -315,6 +328,7 @@ local function move_to_top()
 end
 
 local function move_to_bottom()
+  if local_state.fifo_mode then return end
   if total_commits() > 0 then
     local_state.selected_index = total_commits()
     update_sidebar_selection()
@@ -324,6 +338,7 @@ local function move_to_bottom()
 end
 
 local function select_at_cursor()
+  if local_state.fifo_mode then return end
   if not local_state.sidebar_win or not vim.api.nvim_win_is_valid(local_state.sidebar_win) then return end
   local cursor_line = vim.api.nvim_win_get_cursor(local_state.sidebar_win)[1]
 
@@ -342,6 +357,7 @@ local function select_at_cursor()
 end
 
 local function move_down()
+  if local_state.fifo_mode then return end
   if local_state.selected_index < total_commits() then
     local_state.selected_index = local_state.selected_index + 1
     update_sidebar_selection()
@@ -360,6 +376,201 @@ build_filetree_cache = function()
   local commit = get_commit(local_state.selected_index)
   local sha = (commit and commit.sha) or nil
   ui.build_filetree_cache(local_state, local_state.repo_path, sha)
+end
+
+-- ---------------------------------------------------------------------------
+-- FIFO auto-focus mode
+-- ---------------------------------------------------------------------------
+
+--- Clear a FIFO grid cell (no commit available)
+---@param cell_idx number 1-based cell index
+local function render_fifo_empty_cell(cell_idx)
+  local buf = local_state.grid_bufs[cell_idx]
+  local win = local_state.grid_wins[cell_idx]
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", "  No commit" })
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].winbar = "%=#" .. cell_idx
+  end
+end
+
+--- Render a single FIFO grid cell with the first hunk of its commit
+---@param cell_idx number 1-based cell index
+---@param cell_hunks table[] All hunks for this commit
+---@param commit table Commit data {sha, message}
+local function render_fifo_cell(cell_idx, cell_hunks, commit)
+  local buf = local_state.grid_bufs[cell_idx]
+  local win = local_state.grid_wins[cell_idx]
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  if #cell_hunks == 0 then
+    render_fifo_empty_cell(cell_idx)
+    return
+  end
+
+  local hunk_data = cell_hunks[1]
+  ui.render_hunk_to_buffer(ns_id, buf, hunk_data.hunk, hunk_data.filename)
+
+  if win and vim.api.nvim_win_is_valid(win) then
+    local label = commit.sha and (commit.message or ""):sub(1, 30) or "Working dir"
+    vim.wo[win].winbar = " " .. (hunk_data.filename or "") .. " [" .. label .. "]%=#" .. cell_idx
+  end
+end
+
+--- Update header for FIFO mode
+local function update_fifo_header()
+  local buf = local_state.header_buf
+  local win = local_state.header_win
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  if not win or not vim.api.nvim_win_is_valid(win) then return end
+
+  local cells = local_state.grid_rows * local_state.grid_cols
+  local shown = math.min(cells, total_commits())
+  local line = " FIFO Auto-Focus (" .. shown .. " recent changes)"
+
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { line })
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_win_set_height(win, 1)
+end
+
+--- Highlight commits visible in FIFO grid on the sidebar
+local function update_fifo_sidebar_highlights()
+  local buf = local_state.sidebar_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  local sel_ns = vim.api.nvim_create_namespace("raccoon_local_commit_sel")
+  vim.api.nvim_buf_clear_namespace(buf, sel_ns, 0, -1)
+
+  local cells = local_state.grid_rows * local_state.grid_cols
+  local shown = math.min(cells, total_commits())
+
+  for idx = 1, shown do
+    local line_idx
+    if local_state.base_branch then
+      -- Branch mode: account for section headers and separator
+      local branch_count = #local_state.branch_commits
+      if idx <= branch_count then
+        line_idx = idx -- header at line 0, first commit at line 1
+      else
+        line_idx = idx + 2 -- skip separator + section2 header
+      end
+    else
+      -- Flat mode: line 0 = header, commits start at line 1
+      line_idx = idx
+    end
+    pcall(vim.api.nvim_buf_add_highlight, buf, sel_ns, "Visual", line_idx, 0, -1)
+  end
+end
+
+--- Fetch diff and render a single FIFO cell
+---@param cell_idx number 1-based cell index
+---@param generation number Generation counter to check for staleness
+local function fetch_and_render_fifo_cell(cell_idx, generation)
+  local commit = get_commit(cell_idx)
+  if not commit or not local_state.repo_path then
+    render_fifo_empty_cell(cell_idx)
+    return
+  end
+
+  local context = ui.compute_grid_context(local_state.grid_rows)
+  local fetch_diff = commit.sha
+    and function(cb) git.show_commit(local_state.repo_path, commit.sha, context, cb) end
+    or function(cb) git.diff_working_dir(local_state.repo_path, context, cb) end
+
+  fetch_diff(function(files, err)
+    if generation ~= local_state.fifo_generation then return end
+    if not local_state.fifo_mode then return end
+    if err then return end
+
+    local cell_hunks = {}
+    local first_filename = nil
+    for _, file in ipairs(files or {}) do
+      local hunks = diff.parse_patch(file.patch)
+      for _, hunk in ipairs(hunks) do
+        table.insert(cell_hunks, { hunk = hunk, filename = file.filename })
+        if not first_filename then first_filename = file.filename end
+      end
+    end
+
+    local_state.fifo_cell_data[cell_idx] = {
+      commit = commit,
+      all_hunks = cell_hunks,
+      filename = first_filename,
+    }
+
+    render_fifo_cell(cell_idx, cell_hunks, commit)
+  end)
+end
+
+--- Render the FIFO grid: each cell shows the first hunk of a different recent commit
+render_fifo_grid = function()
+  if not local_state.fifo_mode then return end
+
+  local cells = local_state.grid_rows * local_state.grid_cols
+  local_state.fifo_generation = local_state.fifo_generation + 1
+  local generation = local_state.fifo_generation
+  local_state.fifo_cell_data = {}
+
+  for cell_idx = 1, cells do
+    if cell_idx > total_commits() then
+      render_fifo_empty_cell(cell_idx)
+    else
+      fetch_and_render_fifo_cell(cell_idx, generation)
+    end
+  end
+
+  update_fifo_header()
+  update_fifo_sidebar_highlights()
+end
+
+--- Re-fetch and re-render a single FIFO cell (used by workdir poll for cell 1)
+---@param cell_idx number 1-based cell index
+local function refresh_fifo_cell(cell_idx)
+  if not local_state.fifo_mode then return end
+  fetch_and_render_fifo_cell(cell_idx, local_state.fifo_generation)
+end
+
+--- Maximize a grid cell in FIFO mode
+---@param cell_num number 1-based cell index
+maximize_fifo_cell = function(cell_num)
+  local cell_data = local_state.fifo_cell_data[cell_num]
+  if not cell_data or not cell_data.filename then return end
+  if cell_data.filename == "dev/null" then return end
+  if not local_state.repo_path then return end
+
+  ui.open_maximize({
+    ns_id = ns_id,
+    repo_path = local_state.repo_path,
+    sha = cell_data.commit.sha,
+    filename = cell_data.filename,
+    commit_message = cell_data.commit.message or "",
+    generation = local_state.fifo_generation,
+    get_generation = function() return local_state.fifo_generation end,
+    state = local_state,
+    is_working_dir = cell_data.commit.sha == nil,
+  })
+end
+
+--- Toggle FIFO auto-focus mode
+local function toggle_fifo_mode()
+  local_state.fifo_mode = not local_state.fifo_mode
+
+  if local_state.fifo_mode then
+    local_state.current_page = 1
+    render_fifo_grid()
+    vim.notify("FIFO auto-focus enabled", vim.log.levels.INFO)
+  else
+    local_state.fifo_cell_data = {}
+    select_commit(local_state.selected_index)
+    update_sidebar_selection()
+    vim.notify("FIFO auto-focus disabled", vim.log.levels.INFO)
+  end
 end
 
 --- Setup keymaps for local commit mode
@@ -405,6 +616,7 @@ local function setup_keymaps()
       mode = NORMAL_MODE,
       lhs = shortcuts.commit_mode.maximize_prefix .. "f",
       rhs = function()
+        if local_state.fifo_mode then return end
         local items = {}
         for path, _ in pairs(local_state.commit_files) do
           table.insert(items, { display = "  " .. path, value = path })
@@ -435,6 +647,7 @@ local function setup_keymaps()
       mode = NORMAL_MODE,
       lhs = shortcuts.commit_mode.maximize_prefix .. "c",
       rhs = function()
+        if local_state.fifo_mode then return end
         local items = {}
         for i = 1, total_commits() do
           local c = get_commit(i)
@@ -462,6 +675,16 @@ local function setup_keymaps()
       lhs = shortcuts.commit_mode.browse_files,
       rhs = function() ui.toggle_filetree_focus(local_state) end,
       desc = "Toggle file tree browsing",
+    })
+  end
+
+  -- FIFO auto-focus toggle
+  if config.is_enabled(shortcuts.commit_mode.fifo_toggle) then
+    table.insert(local_mode_keymaps, {
+      mode = NORMAL_MODE,
+      lhs = shortcuts.commit_mode.fifo_toggle,
+      rhs = toggle_fifo_mode,
+      desc = "Toggle FIFO auto-focus mode",
     })
   end
 
@@ -552,7 +775,9 @@ start_workdir_poll_timer = function()
       local_state.last_change_time = vim.uv.now()
       render_sidebar()
 
-      if local_state.selected_index == 1 then
+      if local_state.fifo_mode then
+        refresh_fifo_cell(1)
+      elseif local_state.selected_index == 1 then
         select_commit(1)
       end
 
@@ -591,6 +816,7 @@ local function refresh_commits()
       local_state.last_status_output = ""
       restore_selection_by_sha(selected_sha)
       render_sidebar()
+      if local_state.fifo_mode then render_fifo_grid() end
     end)
   else
     -- Flat mode: refresh all commits
@@ -602,6 +828,7 @@ local function refresh_commits()
       local_state.last_status_output = ""
       restore_selection_by_sha(selected_sha)
       render_sidebar()
+      if local_state.fifo_mode then render_fifo_grid() end
     end)
   end
 end
@@ -877,5 +1104,6 @@ end
 -- Exposed for testing
 M._get_state = function() return local_state end
 M._select_commit = select_commit
+M._toggle_fifo = toggle_fifo_mode
 
 return M

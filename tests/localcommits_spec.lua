@@ -83,6 +83,27 @@ describe("raccoon.localcommits", function()
     end)
   end)
 
+  describe("FIFO mode state", function()
+    it("starts with fifo_mode false", function()
+      local ls = localcommits._get_state()
+      assert.is_false(ls.fifo_mode)
+    end)
+
+    it("starts with empty fifo_cell_data", function()
+      local ls = localcommits._get_state()
+      assert.same({}, ls.fifo_cell_data)
+    end)
+
+    it("starts with fifo_generation at 0", function()
+      local ls = localcommits._get_state()
+      assert.equals(0, ls.fifo_generation)
+    end)
+
+    it("has _toggle_fifo for testing", function()
+      assert.is_function(localcommits._toggle_fifo)
+    end)
+  end)
+
   describe("popup window helpers", function()
     it("sets and clears popup_win on local state", function()
       localcommits.set_popup_win(42)

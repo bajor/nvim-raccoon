@@ -69,6 +69,7 @@ M.defaults = {
       exit = "<leader>cm",
       maximize_prefix = "<leader>m",
       browse_files = "<leader>f",
+      fifo_toggle = "<leader>a",
     },
   },
 }
