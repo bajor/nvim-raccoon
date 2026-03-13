@@ -79,6 +79,16 @@ describe("raccoon.ui", function()
 
       vim.api.nvim_win_close(win, true)
     end)
+
+    it("respects enter = false", function()
+      local original_win = vim.api.nvim_get_current_win()
+      local win, _ = ui.create_floating_window({ enter = false })
+
+      assert.equals(original_win, vim.api.nvim_get_current_win())
+      assert.is_true(vim.api.nvim_win_is_valid(win))
+
+      vim.api.nvim_win_close(win, true)
+    end)
   end)
 
   describe("close_pr_list", function()

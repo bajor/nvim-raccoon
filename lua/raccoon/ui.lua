@@ -18,7 +18,7 @@ M.state = {
 }
 
 --- Create a centered floating window
----@param opts table Options: width, height, title, border, width_pct, height_pct
+---@param opts table Options: width, height, title, border, width_pct, height_pct, enter
 ---@return number win_id, number buf_id
 function M.create_floating_window(opts)
   opts = opts or {}
@@ -58,7 +58,8 @@ function M.create_floating_window(opts)
   end
 
   -- Create window
-  local win = vim.api.nvim_open_win(buf, true, win_opts)
+  local enter = opts.enter ~= false
+  local win = vim.api.nvim_open_win(buf, enter, win_opts)
 
   -- Set window options
   vim.wo[win].cursorline = true
@@ -296,11 +297,13 @@ function M.show_pr_list()
   end
 
   -- Create floating window
+  local in_commit_mode = state.is_commit_mode()
   local win, buf = M.create_floating_window({
     width_pct = 0.7,
     height_pct = 0.8,
     title = "Pull Requests",
     border = "rounded",
+    enter = not in_commit_mode,
   })
 
   -- Store state
@@ -308,8 +311,10 @@ function M.show_pr_list()
   M.state.buf = buf
   M.state.prs = {}
   M.state.selected = 1
-  if state.is_commit_mode() then
+
+  if in_commit_mode then
     require("raccoon.commits").set_popup_win(win)
+    vim.api.nvim_set_current_win(win)
   end
 
   -- Show loading state
