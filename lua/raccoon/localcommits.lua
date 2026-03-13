@@ -745,6 +745,7 @@ local function enter_local_mode()
           local function on_both_ready()
             local branch_commits = branch_result or {}
             local base_commits = base_result or {}
+            local real_branch_count = #branch_commits
             prepend_synthetic_entries(branch_commits)
             local_state.current_branch = current_branch
             local_state.base_branch = default_branch
@@ -754,7 +755,7 @@ local function enter_local_mode()
             local_state.total_base_loaded = #base_commits
             activate_mode(repo_root, rows, cols,
               string.format("Local commit viewer: %d branch + %d base commits",
-                #branch_commits - 1, #base_commits))
+                real_branch_count, #base_commits))
           end
 
           local function check_done()
