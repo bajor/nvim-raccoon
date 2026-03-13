@@ -1025,11 +1025,17 @@ function M.setup_focus_lock(s, augroup_name)
     group = augroup,
     callback = function()
       if not s.active then return end
+      if s.popup_win and not vim.api.nvim_win_is_valid(s.popup_win) then
+        s.popup_win = nil
+      end
       local cur_win = vim.api.nvim_get_current_win()
       if cur_win == s.maximize_win then return end
       if s.popup_win and cur_win == s.popup_win then return end
       if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
         vim.schedule(function()
+          if s.popup_win and not vim.api.nvim_win_is_valid(s.popup_win) then
+            s.popup_win = nil
+          end
           if s.popup_win then return end
           if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then
             vim.api.nvim_set_current_win(s.maximize_win)

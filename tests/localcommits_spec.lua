@@ -17,6 +17,19 @@ describe("raccoon.localcommits", function()
       assert.is_function(localcommits.toggle)
     end)
 
+    it("has exit_local_mode function", function()
+      assert.is_function(localcommits.exit_local_mode)
+    end)
+
+    it("has is_active function", function()
+      assert.is_function(localcommits.is_active)
+    end)
+
+    it("has popup window helpers", function()
+      assert.is_function(localcommits.set_popup_win)
+      assert.is_function(localcommits.clear_popup_win)
+    end)
+
     it("has _get_state for testing", function()
       assert.is_function(localcommits._get_state)
     end)
@@ -62,6 +75,21 @@ describe("raccoon.localcommits", function()
     it("has nil workdir_poll_timer", function()
       local ls = localcommits._get_state()
       assert.is_nil(ls.workdir_poll_timer)
+    end)
+
+    it("starts with nil popup_win", function()
+      local ls = localcommits._get_state()
+      assert.is_nil(ls.popup_win)
+    end)
+  end)
+
+  describe("popup window helpers", function()
+    it("sets and clears popup_win on local state", function()
+      localcommits.set_popup_win(42)
+      assert.equals(42, localcommits._get_state().popup_win)
+
+      localcommits.clear_popup_win()
+      assert.is_nil(localcommits._get_state().popup_win)
     end)
   end)
 

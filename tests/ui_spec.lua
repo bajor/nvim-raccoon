@@ -1,5 +1,7 @@
 local ui = require("raccoon.ui")
 local commit_ui = require("raccoon.commit_ui")
+local localcommits = require("raccoon.localcommits")
+local state = require("raccoon.state")
 
 describe("raccoon.ui", function()
   describe("module", function()
@@ -76,6 +78,16 @@ describe("raccoon.ui", function()
 
       vim.api.nvim_win_close(win, true)
     end)
+
+    it("respects enter = false", function()
+      local original_win = vim.api.nvim_get_current_win()
+      local win, _ = ui.create_floating_window({ enter = false })
+
+      assert.equals(original_win, vim.api.nvim_get_current_win())
+      assert.is_true(vim.api.nvim_win_is_valid(win))
+
+      vim.api.nvim_win_close(win, true)
+    end)
   end)
 
   describe("close_pr_list", function()
@@ -100,6 +112,17 @@ describe("raccoon.ui", function()
 
       -- Should not error
       ui.close_pr_list()
+    end)
+
+    it("clears local commit popup window", function()
+      local ls = localcommits._get_state()
+      ls.active = true
+      ls.popup_win = 99
+
+      ui.close_pr_list()
+
+      assert.is_nil(localcommits._get_state().popup_win)
+      ls.active = false
     end)
   end)
 
@@ -184,8 +207,6 @@ describe("raccoon.ui", function()
   end)
 
   describe("show_description", function()
-    local state = require("raccoon.state")
-
     before_each(function()
       state.reset()
     end)

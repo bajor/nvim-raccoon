@@ -5,6 +5,8 @@ local M = {}
 local api = require("raccoon.api")
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
+local state = require("raccoon.state")
+local localcommits = require("raccoon.localcommits")
 
 --- Current floating window state
 M.state = {
@@ -17,7 +19,7 @@ M.state = {
 }
 
 --- Create a centered floating window
----@param opts table Options: width, height, title, border, width_pct, height_pct
+---@param opts table Options: width, height, title, border, width_pct, height_pct, enter
 ---@return number win_id, number buf_id
 function M.create_floating_window(opts)
   opts = opts or {}
@@ -57,7 +59,8 @@ function M.create_floating_window(opts)
   end
 
   -- Create window
-  local win = vim.api.nvim_open_win(buf, true, win_opts)
+  local enter = opts.enter ~= false
+  local win = vim.api.nvim_open_win(buf, enter, win_opts)
 
   -- Set window options
   vim.wo[win].cursorline = true
@@ -74,6 +77,12 @@ function M.close_pr_list()
   end
   M.state.win = nil
   M.state.buf = nil
+  if state.is_commit_mode() then
+    require("raccoon.commits").clear_popup_win()
+  end
+  if localcommits.is_active() then
+    localcommits.clear_popup_win()
+  end
 end
 
 --- Convert UTC date components to Unix epoch via pure arithmetic.
@@ -272,6 +281,19 @@ local function apply_highlights(buf, highlights)
   end
 end
 
+--- Close any active commit/local mode and PR session before opening another PR
+local function close_active_session_for_pr_switch()
+  if localcommits.is_active() then
+    localcommits.exit_local_mode({ resume_pr = false })
+  end
+  if state.is_commit_mode() then
+    require("raccoon.commits").exit_commit_mode({ resume_sync = false })
+  end
+  if state.is_active() then
+    require("raccoon.open").close_pr()
+  end
+end
+
 --- Show the PR list picker
 --- Opens a floating window with all open PRs from configured repos
 function M.show_pr_list()
@@ -282,11 +304,13 @@ function M.show_pr_list()
   end
 
   -- Create floating window
+  local in_commit_mode = state.is_commit_mode() or localcommits.is_active()
   local win, buf = M.create_floating_window({
     width_pct = 0.7,
     height_pct = 0.8,
     title = "Pull Requests",
     border = "rounded",
+    enter = not in_commit_mode,
   })
 
   -- Store state
@@ -294,6 +318,29 @@ function M.show_pr_list()
   M.state.buf = buf
   M.state.prs = {}
   M.state.selected = 1
+  if in_commit_mode then
+    local clear_popup
+    if state.is_commit_mode() then
+      local commits = require("raccoon.commits")
+      commits.set_popup_win(win)
+      clear_popup = commits.clear_popup_win
+    else
+      localcommits.set_popup_win(win)
+      clear_popup = localcommits.clear_popup_win
+    end
+    vim.api.nvim_set_current_win(win)
+    if clear_popup then
+      local group = vim.api.nvim_create_augroup("RaccoonPrPickerPopup", { clear = false })
+      vim.api.nvim_create_autocmd("WinClosed", {
+        group = group,
+        pattern = tostring(win),
+        once = true,
+        callback = function()
+          clear_popup()
+        end,
+      })
+    end
+  end
 
   -- Show loading state
   vim.bo[buf].modifiable = true
@@ -334,6 +381,7 @@ function M.show_pr_list()
     if not url then return end
 
     M.close_pr_list()
+    close_active_session_for_pr_switch()
 
     local open = require("raccoon.open")
     open.open_pr(url)
@@ -351,6 +399,9 @@ function M.show_pr_list()
   -- Fetch and display PRs
   M.refresh_pr_list()
 end
+
+-- Exposed for testing
+M._close_active_session_for_pr_switch = close_active_session_for_pr_switch
 
 --- Reorder PRs to match the grouped-by-repo display order
 ---@param prs table[]
@@ -593,8 +644,6 @@ function M.show_description()
     M.state.description_win = nil
     return
   end
-
-  local state = require("raccoon.state")
 
   if not state.is_active() then
     vim.notify("No active PR review session", vim.log.levels.WARN)
