@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.4] - 2026-03-13
+
+### Fixed
+- PR picker is now focusable in commit mode, and switching PRs exits commit mode and resets the session cleanly
+
 ## [0.10.3] - 2026-03-12
 
 ### Fixed
