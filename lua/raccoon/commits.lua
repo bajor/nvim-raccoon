@@ -742,6 +742,17 @@ function M.toggle()
   end
 end
 
+function M.is_active()
+  return commit_state.active
+end
+
+function M.close()
+  if commit_state.active then
+    exit_commit_mode()
+  end
+end
+
+-- Exposed for testing
 M._lock_buf = ui.lock_buf
 M._lock_maximize_buf = function(buf) ui.lock_maximize_buf(buf, commit_state.grid_rows, commit_state.grid_cols) end
 M._clamp_int = ui.clamp_int

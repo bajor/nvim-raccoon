@@ -194,6 +194,28 @@ describe("raccoon.open", function()
       assert.is_false(state.is_active())
     end)
 
+    it("exits active viewer mode before closing", function()
+      local exited = false
+      state.set_mode_exit(function() exited = true end)
+
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      local original_notify = vim.notify
+      vim.notify = function() end
+
+      open.close_pr({ silent = true })
+
+      vim.notify = original_notify
+
+      assert.is_true(exited)
+    end)
+
     it("notifies user on close", function()
       state.start({
         owner = "test",
@@ -247,6 +269,29 @@ describe("raccoon.open edge cases", function()
   end)
 
   describe("open_pr", function()
+    it("exits active viewer mode before opening", function()
+      local exited = false
+      state.set_mode_exit(function() exited = true end)
+
+      open.open_pr("not-a-valid-url")
+
+      assert.is_true(exited)
+    end)
+
+    it("closes active session before opening", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      open.open_pr("not-a-valid-url")
+
+      assert.is_false(state.is_active())
+    end)
+
     it("handles invalid URL", function()
       -- Capture vim.notify error
       local error_msg = nil

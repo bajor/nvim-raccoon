@@ -695,13 +695,16 @@ function M.open_pr(url)
 end
 
 --- Close the current PR review session
-function M.close_pr()
+---@param opts table|nil {silent: boolean}
+function M.close_pr(opts)
+  opts = opts or {}
   if not state.is_active() then
-    vim.notify("No active PR review session", vim.log.levels.WARN)
+    if not opts.silent then
+      vim.notify("No active PR review session", vim.log.levels.WARN)
+    end
     return
   end
 
-  -- Exit any active viewer mode first (commit viewer, local commits)
   state.exit_active_mode()
 
   close_session()

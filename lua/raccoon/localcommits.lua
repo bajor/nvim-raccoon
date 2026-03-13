@@ -839,6 +839,16 @@ function M.toggle()
   end
 end
 
+function M.is_active()
+  return local_state.active
+end
+
+function M.close()
+  if local_state.active then
+    exit_local_mode()
+  end
+end
+
 -- Exposed for testing
 M._get_state = function() return local_state end
 M._select_commit = select_commit
