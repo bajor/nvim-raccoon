@@ -668,6 +668,21 @@ local function activate_mode(repo_root, rows, cols, notify_msg)
   end)
 end
 
+--- Flat-mode entry: prepend UNCOMMITTED CHANGES and activate.
+--- Shared by all code paths that skip branch-mode (detached HEAD, default branch, merge-base failure).
+---@param repo_root string
+---@param rows number
+---@param cols number
+---@param commits table[] Commit list from git log
+---@param current_branch string|nil
+local function enter_flat_mode(repo_root, rows, cols, commits, current_branch)
+  table.insert(commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
+  if current_branch then local_state.current_branch = current_branch end
+  local_state.branch_commits = commits
+  activate_mode(repo_root, rows, cols,
+    string.format("Local commit viewer: %d commits loaded", #commits - 1))
+end
+
 --- Enter local commit viewer mode
 local function enter_local_mode()
   local vcfg = ui.parse_viewer_config()
@@ -687,16 +702,12 @@ local function enter_local_mode()
     -- Detect current branch
     git.get_current_branch(repo_root, function(current_branch, _)
       if not current_branch or current_branch == "HEAD" then
-        -- Detached HEAD or error: flat mode
         git.log_all_commits(repo_root, BATCH_SIZE, 0, function(commits, err)
           if err or not commits or #commits == 0 then
             vim.notify("No commits found", vim.log.levels.WARN)
             return
           end
-          table.insert(commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
-          local_state.branch_commits = commits
-          activate_mode(repo_root, rows, cols,
-            string.format("Local commit viewer: %d commits loaded", #commits - 1))
+          enter_flat_mode(repo_root, rows, cols, commits, nil)
         end)
         return
       end
@@ -704,17 +715,12 @@ local function enter_local_mode()
       -- Detect default branch
       git.find_default_branch(repo_root, function(default_branch, _)
         if not default_branch or current_branch == default_branch then
-          -- On default branch or detection failed: flat mode
           git.log_all_commits(repo_root, BATCH_SIZE, 0, function(commits, err)
             if err or not commits or #commits == 0 then
               vim.notify("No commits found", vim.log.levels.WARN)
               return
             end
-            local_state.current_branch = current_branch
-            table.insert(commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
-            local_state.branch_commits = commits
-            activate_mode(repo_root, rows, cols,
-              string.format("Local commit viewer: %d commits loaded", #commits - 1))
+            enter_flat_mode(repo_root, rows, cols, commits, current_branch)
           end)
           return
         end
@@ -722,17 +728,12 @@ local function enter_local_mode()
         -- Feature branch: find merge-base and split
         git.merge_base(repo_root, "HEAD", default_branch, function(merge_sha, merge_err)
           if merge_err or not merge_sha then
-            -- Merge-base failed: flat mode fallback
             git.log_all_commits(repo_root, BATCH_SIZE, 0, function(commits, err)
               if err or not commits or #commits == 0 then
                 vim.notify("No commits found", vim.log.levels.WARN)
                 return
               end
-              local_state.current_branch = current_branch
-              table.insert(commits, 1, { sha = nil, message = CURRENT_CHANGES_MSG })
-              local_state.branch_commits = commits
-              activate_mode(repo_root, rows, cols,
-                string.format("Local commit viewer: %d commits loaded", #commits - 1))
+              enter_flat_mode(repo_root, rows, cols, commits, current_branch)
             end)
             return
           end
