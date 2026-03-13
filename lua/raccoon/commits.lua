@@ -169,6 +169,10 @@ local function select_commit(index)
   local fetch_diff
   if git.is_combined_diff(commit) then
     local base_ref = get_base_ref()
+    if not base_ref then
+      vim.notify("Combined diff requires a base branch", vim.log.levels.WARN)
+      return
+    end
     fetch_diff = function(cb) git.diff_combined(clone_path, base_ref, context, cb) end
   else
     fetch_diff = function(cb) git.show_commit(clone_path, commit.sha, context, cb) end
