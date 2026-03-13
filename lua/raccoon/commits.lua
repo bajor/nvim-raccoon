@@ -45,6 +45,10 @@ local poll_timer_handle = nil
 --- In-flight guard: prevents overlapping sync ticks from running concurrent git operations.
 local sync_in_flight = false
 
+--- Session generation counter. Incremented in reset_state() so that async callbacks
+--- from a previous viewer session can detect they are stale and bail out.
+local session_gen = 0
+
 --- Stop the background sync timer
 local function stop_poll_timer()
   if poll_timer_handle then
@@ -57,6 +61,7 @@ end
 
 local function reset_state()
   stop_poll_timer()
+  session_gen = session_gen + 1
   commit_state = make_initial_state()
 end
 
@@ -274,6 +279,7 @@ local function refresh_commits(on_complete)
     return
   end
 
+  local my_gen = session_gen
   local sel = get_commit(commit_state.selected_index)
   local selected_sha = sel and sel.sha
 
@@ -281,6 +287,10 @@ local function refresh_commits(on_complete)
   local new_pr, new_base
 
   local function on_both_ready()
+    if my_gen ~= session_gen then
+      if on_complete then on_complete() end
+      return
+    end
     -- When both calls failed, skip re-render to avoid clobbering valid state
     if not new_pr and not new_base then
       vim.notify("Sync: failed to refresh commits", vim.log.levels.WARN)
@@ -334,20 +344,25 @@ local function sync_tick(clone_path, pr_branch, base_branch)
   if sync_in_flight then return end
   if not commit_state.active then return end
   sync_in_flight = true
+  local my_gen = session_gen
 
   local function done()
     sync_in_flight = false
   end
 
+  local function stale()
+    return my_gen ~= session_gen
+  end
+
   git.fetch_branch(clone_path, pr_branch, function(_, fetch_err)
-    if not commit_state.active then done(); return end
+    if stale() then done(); return end
     if fetch_err then
       vim.notify("Sync: failed to fetch PR branch", vim.log.levels.DEBUG)
       done(); return
     end
 
     git.fetch_branch(clone_path, base_branch, function(_, base_fetch_err)
-      if not commit_state.active then done(); return end
+      if stale() then done(); return end
       if base_fetch_err then
         vim.notify("Sync: failed to fetch base branch", vim.log.levels.DEBUG)
       end
@@ -358,7 +373,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
       local function check_both()
         pending = pending - 1
         if pending > 0 then return end
-        if not commit_state.active then done(); return end
+        if stale() then done(); return end
 
         -- Defensive fallback: seed SHAs if start_poll_timer's seeding was incomplete
         if not commit_state.last_head_sha then
@@ -381,7 +396,7 @@ local function sync_tick(clone_path, pr_branch, base_branch)
         if pr_changed then
           -- PR branch advanced — reset local clone to match origin
           git.reset_hard(clone_path, "origin/" .. pr_branch, function(ok, reset_err)
-            if not commit_state.active then done(); return end
+            if stale() then done(); return end
             if not ok then
               vim.notify("Sync: failed to reset to remote: " .. (reset_err or ""), vim.log.levels.DEBUG)
               done(); return
@@ -427,18 +442,19 @@ local function start_poll_timer()
 
   local pr_branch = pr.head.ref
   local base_branch = commit_state.base_branch
+  local my_gen = session_gen
 
   -- Seed last_head_sha and last_base_sha before starting the timer to avoid spurious refresh on first tick
   sync_in_flight = false
   git.get_current_sha(clone_path, function(sha, seed_err)
-    if not commit_state.active then return end
+    if my_gen ~= session_gen then return end
     if seed_err then
       vim.notify("Sync: failed to seed HEAD SHA", vim.log.levels.DEBUG)
     end
     if sha then commit_state.last_head_sha = sha end
 
     git.ref_sha(clone_path, "origin/" .. base_branch, function(base_sha, base_seed_err)
-      if not commit_state.active then return end
+      if my_gen ~= session_gen then return end
       if base_seed_err then
         vim.notify("Sync: failed to seed base SHA", vim.log.levels.DEBUG)
       end
@@ -446,7 +462,7 @@ local function start_poll_timer()
 
       -- Guard against concurrent timer creation from rapid toggle
       stop_poll_timer()
-      if not commit_state.active then return end
+      if my_gen ~= session_gen then return end
 
       local timer = vim.uv.new_timer()
       if not timer then
@@ -456,6 +472,7 @@ local function start_poll_timer()
       poll_timer_handle = timer
       timer:start(commit_state.sync_interval_ms, commit_state.sync_interval_ms,
         vim.schedule_wrap(function()
+          if my_gen ~= session_gen then return end
           sync_tick(clone_path, pr_branch, base_branch)
         end))
     end)
@@ -691,5 +708,7 @@ M._render_tree_node = ui.render_tree_node
 M._compute_file_stats = ui.compute_file_stats
 M._format_stat_bar = ui.format_stat_bar
 M._close_filetree = function() ui.close_win_pair(commit_state, "filetree_win", "filetree_buf") end
+M._get_session_gen = function() return session_gen end
+M._reset_state = reset_state
 
 return M
