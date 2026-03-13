@@ -28,6 +28,42 @@ function M.safe_close_timer(handle)
   end
 end
 
+--- Create the base state table shared by both commit viewer modules.
+--- Callers extend the returned table with module-specific fields.
+---@return table Base state with shared UI fields
+function M.make_base_state()
+  return {
+    active = false,
+    sidebar_win = nil,
+    sidebar_buf = nil,
+    selected_index = 1,
+    grid_wins = {},
+    grid_bufs = {},
+    all_hunks = {},
+    commit_files = {},
+    file_stats = {},
+    current_page = 1,
+    saved_buf = nil,
+    saved_laststatus = nil,
+    grid_rows = 2,
+    grid_cols = 2,
+    maximize_win = nil,
+    maximize_buf = nil,
+    focus_augroup = nil,
+    header_win = nil,
+    header_buf = nil,
+    filetree_win = nil,
+    filetree_buf = nil,
+    select_generation = 0,
+    cached_sha = nil,
+    cached_tree_lines = nil,
+    cached_line_paths = nil,
+    cached_stat_lines = nil,
+    cached_file_count = nil,
+    focus_target = "sidebar",
+  }
+end
+
 --- Parse and clamp commit viewer config values from user config.
 ---@return table {rows: number, cols: number, base_count: number, sidebar_width: number, sync_interval: number}
 function M.parse_viewer_config()

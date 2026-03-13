@@ -21,50 +21,22 @@ local WORKDIR_POLL_SLOW_MS = 30000
 local WORKDIR_IDLE_THRESHOLD_MS = 180000
 
 local function make_initial_state()
-  return {
-    active = false,
-    repo_path = nil,
-    branch_commits = {},
-    base_commits = {},
-    current_branch = nil,
-    base_branch = nil,
-    merge_base_sha = nil,
-    total_base_loaded = 0,
-    loading_more = false,
-    poll_timer = nil,
-    last_head_sha = nil,
-    workdir_poll_timer = nil,
-    last_status_output = "",
-    last_change_time = 0,
-    sidebar_win = nil,
-    sidebar_buf = nil,
-    selected_index = 1,
-    grid_wins = {},
-    grid_bufs = {},
-    all_hunks = {},
-    commit_files = {},
-    file_stats = {},
-    current_page = 1,
-    saved_buf = nil,
-    saved_laststatus = nil,
-    grid_rows = 2,
-    grid_cols = 2,
-    maximize_win = nil,
-    maximize_buf = nil,
-    focus_augroup = nil,
-    header_win = nil,
-    header_buf = nil,
-    filetree_win = nil,
-    filetree_buf = nil,
-    select_generation = 0,
-    cached_sha = nil,
-    cached_tree_lines = nil,
-    cached_line_paths = nil,
-    cached_stat_lines = nil,
-    cached_file_count = nil,
-    focus_target = "sidebar",
-    pr_was_active = false,
-  }
+  local s = ui.make_base_state()
+  s.repo_path = nil
+  s.branch_commits = {}
+  s.base_commits = {}
+  s.current_branch = nil
+  s.base_branch = nil
+  s.merge_base_sha = nil
+  s.total_base_loaded = 0
+  s.loading_more = false
+  s.poll_timer = nil
+  s.last_head_sha = nil
+  s.workdir_poll_timer = nil
+  s.last_status_output = ""
+  s.last_change_time = 0
+  s.pr_was_active = false
+  return s
 end
 
 local local_state = make_initial_state()

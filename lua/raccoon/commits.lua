@@ -24,43 +24,15 @@ end
 local ns_id = vim.api.nvim_create_namespace("raccoon_commits")
 
 local function make_initial_state()
-  return {
-    active = false,
-    sidebar_win = nil,
-    sidebar_buf = nil,
-    pr_commits = {},
-    base_commits = {},
-    selected_index = 1,
-    grid_wins = {},
-    grid_bufs = {},
-    all_hunks = {},
-    commit_files = {},
-    file_stats = {},
-    current_page = 1,
-    saved_buf = nil,
-    saved_laststatus = nil,
-    grid_rows = 2,
-    grid_cols = 2,
-    maximize_win = nil,
-    maximize_buf = nil,
-    focus_augroup = nil,
-    header_win = nil,
-    header_buf = nil,
-    filetree_win = nil,
-    filetree_buf = nil,
-    select_generation = 0,
-    cached_sha = nil,
-    cached_tree_lines = nil,
-    cached_line_paths = nil,
-    cached_stat_lines = nil,
-    cached_file_count = nil,
-    focus_target = "sidebar",
-    last_head_sha = nil,
-    last_base_sha = nil,
-    base_branch = nil,
-    base_count = nil,
-    sync_interval_ms = nil,
-  }
+  local s = ui.make_base_state()
+  s.pr_commits = {}
+  s.base_commits = {}
+  s.last_head_sha = nil
+  s.last_base_sha = nil
+  s.base_branch = nil
+  s.base_count = nil
+  s.sync_interval_ms = nil
+  return s
 end
 
 local commit_state = make_initial_state()
