@@ -1,5 +1,8 @@
 local ui = require("raccoon.ui")
 local commit_ui = require("raccoon.commit_ui")
+local state = require("raccoon.state")
+local open = require("raccoon.open")
+local commits = require("raccoon.commits")
 
 describe("raccoon.ui", function()
   describe("module", function()
@@ -184,8 +187,6 @@ describe("raccoon.ui", function()
   end)
 
   describe("show_description", function()
-    local state = require("raccoon.state")
-
     before_each(function()
       state.reset()
     end)
@@ -551,6 +552,65 @@ describe("raccoon.ui", function()
       -- 2026-01-01T00:00:00Z = epoch 1767225600
       -- now_utc = 1767225600 + 7200 = 1767232800 (exactly 2 hours later)
       assert.equals("2 hours ago", ui.relative_time("2026-01-01T00:00:00Z", 1767232800))
+    end)
+  end)
+
+  describe("close_active_session_for_pr_switch", function()
+    before_each(function()
+      state.reset()
+    end)
+
+    it("closes commit mode and active session when both are set", function()
+      state.start({
+        owner = "test",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/test/repo/pull/1",
+        clone_path = "/tmp/test/repo/pr-1",
+      })
+      state.set_commit_mode(true)
+
+      local exit_called = false
+      local close_called = false
+      local original_exit = commits.exit_commit_mode
+      local original_close = open.close_pr
+
+      commits.exit_commit_mode = function()
+        exit_called = true
+      end
+      open.close_pr = function()
+        close_called = true
+      end
+
+      ui._close_active_session_for_pr_switch()
+
+      commits.exit_commit_mode = original_exit
+      open.close_pr = original_close
+
+      assert.is_true(exit_called)
+      assert.is_true(close_called)
+    end)
+
+    it("does nothing when no commit mode or session active", function()
+      local exit_called = false
+      local close_called = false
+      local original_exit = commits.exit_commit_mode
+      local original_close = open.close_pr
+
+      commits.exit_commit_mode = function()
+        exit_called = true
+      end
+      open.close_pr = function()
+        close_called = true
+      end
+
+      ui._close_active_session_for_pr_switch()
+
+      commits.exit_commit_mode = original_exit
+      open.close_pr = original_close
+
+      assert.is_false(exit_called)
+      assert.is_false(close_called)
     end)
   end)
 end)

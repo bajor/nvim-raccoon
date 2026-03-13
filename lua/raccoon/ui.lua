@@ -5,6 +5,7 @@ local M = {}
 local api = require("raccoon.api")
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
+local state = require("raccoon.state")
 
 --- Current floating window state
 M.state = {
@@ -272,6 +273,16 @@ local function apply_highlights(buf, highlights)
   end
 end
 
+--- Close any active commit mode and PR session before opening another PR
+local function close_active_session_for_pr_switch()
+  if state.is_commit_mode() then
+    require("raccoon.commits").exit_commit_mode({ resume_sync = false })
+  end
+  if state.is_active() then
+    require("raccoon.open").close_pr()
+  end
+end
+
 --- Show the PR list picker
 --- Opens a floating window with all open PRs from configured repos
 function M.show_pr_list()
@@ -334,6 +345,7 @@ function M.show_pr_list()
     if not url then return end
 
     M.close_pr_list()
+    close_active_session_for_pr_switch()
 
     local open = require("raccoon.open")
     open.open_pr(url)
@@ -794,5 +806,8 @@ function M.show_shortcuts()
     pcall(vim.keymap.set, NORMAL_MODE, key, close_win, key_opts)
   end
 end
+
+-- Exposed for testing
+M._close_active_session_for_pr_switch = close_active_session_for_pr_switch
 
 return M

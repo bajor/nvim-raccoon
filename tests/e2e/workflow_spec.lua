@@ -4,6 +4,7 @@
 local state = require("raccoon.state")
 local diff = require("raccoon.diff")
 local comments = require("raccoon.comments")
+local ui = require("raccoon.ui")
 
 -- Mock PR data
 local mock_pr = {
@@ -144,6 +145,27 @@ describe("E2E: PR review workflow", function()
 
       local readme_comments = state.get_comments("README.md")
       assert.equals(0, #readme_comments)
+    end)
+
+    it("cleans up commit mode and session before opening another PR", function()
+      state.start({
+        owner = "test",
+        repo = "repo",
+        number = 42,
+        url = "https://github.com/test/repo/pull/42",
+        clone_path = "/tmp/test/repo/pr-42",
+      })
+      state.set_commit_mode(true)
+
+      local original_notify = vim.notify
+      vim.notify = function() end
+
+      ui._close_active_session_for_pr_switch()
+
+      vim.notify = original_notify
+
+      assert.is_false(state.is_active())
+      assert.is_false(state.is_commit_mode())
     end)
   end)
 

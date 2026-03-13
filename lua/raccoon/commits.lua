@@ -502,7 +502,19 @@ local function enter_commit_mode()
 end
 
 --- Exit commit viewer mode
-local function exit_commit_mode()
+---@param opts table|nil { resume_sync?: boolean }
+local function exit_commit_mode(opts)
+  opts = opts or {}
+  if not commit_state.active then
+    commit_mode_keymaps = {}
+    state.set_commit_mode(false)
+    if opts.resume_sync ~= false then
+      open.resume_sync()
+    end
+    reset_state()
+    return
+  end
+
   if commit_state.focus_augroup then
     pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
   end
@@ -525,7 +537,9 @@ local function exit_commit_mode()
   end
 
   keymaps.setup()
-  open.resume_sync()
+  if opts.resume_sync ~= false then
+    open.resume_sync()
+  end
 
   reset_state()
   vim.notify("Exited commit viewer mode", vim.log.levels.INFO)
@@ -538,6 +552,12 @@ function M.toggle()
   else
     enter_commit_mode()
   end
+end
+
+--- Exit commit viewer mode (safe to call when not active)
+---@param opts table|nil { resume_sync?: boolean }
+function M.exit_commit_mode(opts)
+  exit_commit_mode(opts)
 end
 
 -- Exposed for testing

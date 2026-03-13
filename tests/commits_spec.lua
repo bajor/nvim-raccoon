@@ -17,6 +17,10 @@ describe("raccoon.commits", function()
     it("has toggle function", function()
       assert.is_function(commits.toggle)
     end)
+
+    it("has exit_commit_mode function", function()
+      assert.is_function(commits.exit_commit_mode)
+    end)
   end)
 
   describe("toggle without active session", function()
@@ -25,6 +29,21 @@ describe("raccoon.commits", function()
       vim.notify = function() end
       commits.toggle()
       vim.notify = original_notify
+    end)
+  end)
+
+  describe("exit_commit_mode", function()
+    it("clears commit_mode flag even when not active", function()
+      state.set_commit_mode(true)
+
+      local original_notify = vim.notify
+      vim.notify = function() end
+
+      commits.exit_commit_mode({ resume_sync = false })
+
+      vim.notify = original_notify
+
+      assert.is_false(state.is_commit_mode())
     end)
   end)
 end)
