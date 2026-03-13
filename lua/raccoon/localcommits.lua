@@ -633,30 +633,40 @@ local function refresh_commits()
   end
 end
 
---- Start the 10-second HEAD polling timer
+--- Start the 10-second HEAD polling timer.
+--- Seeds last_head_sha before starting the timer to avoid spurious refresh on first tick.
 local function start_poll_timer()
   stop_poll_timer()
+  if not local_state.active then return end
 
-  git.get_current_sha(local_state.repo_path, function(sha, _)
+  git.get_current_sha(local_state.repo_path, function(sha, seed_err)
+    if not local_state.active then return end
+    if seed_err then
+      vim.notify("Local sync: failed to seed HEAD SHA", vim.log.levels.DEBUG)
+    end
     if sha then
       local_state.last_head_sha = sha
     end
-  end)
 
-  local timer = vim.uv.new_timer()
-  if not timer then return end
-  local_state.poll_timer = timer
-  timer:start(POLL_INTERVAL_MS, POLL_INTERVAL_MS, vim.schedule_wrap(function()
+    -- Guard against concurrent timer creation from rapid toggle
+    stop_poll_timer()
     if not local_state.active then return end
 
-    git.get_current_sha(local_state.repo_path, function(sha, err)
-      if err or not sha then return end
-      if sha == local_state.last_head_sha then return end
+    local timer = vim.uv.new_timer()
+    if not timer then return end
+    local_state.poll_timer = timer
+    timer:start(POLL_INTERVAL_MS, POLL_INTERVAL_MS, vim.schedule_wrap(function()
+      if not local_state.active then return end
 
-      local_state.last_head_sha = sha
-      refresh_commits()
-    end)
-  end))
+      git.get_current_sha(local_state.repo_path, function(new_sha, err)
+        if err or not new_sha then return end
+        if new_sha == local_state.last_head_sha then return end
+
+        local_state.last_head_sha = new_sha
+        refresh_commits()
+      end)
+    end))
+  end)
 end
 
 --- Load more commits (triggered by approaching end of list)
