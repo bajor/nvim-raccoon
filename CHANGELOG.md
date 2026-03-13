@@ -193,7 +193,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - `github_host` configuration option for GitHub Enterprise support — set to your GHE hostname instead of the default `github.com`
-- `pull_changes_interval` configuration option to control how often the auto-sync timer checks for new commits (default: 300 seconds, minimum: 10 seconds)
+- `poll_interval_seconds` configuration option to control how often the auto-sync timer checks for new commits (default: 300 seconds, minimum: 10 seconds)
 - Comprehensive configuration reference documentation (`config_docs.md`)
 
 ### Changed

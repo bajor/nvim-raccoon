@@ -3,7 +3,7 @@
 ---@field tokens table<string, string|{token:string, host:string}> Per-owner/org tokens
 ---@field repos string[] Optional list of repos to show PRs from ("owner/repo" format)
 ---@field clone_root string Root directory for cloned PR repos
----@field pull_changes_interval number Auto-sync interval in seconds (default: 300)
+---@field poll_interval_seconds number Auto-sync interval in seconds (default: 300)
 
 local M = {}
 
@@ -25,7 +25,7 @@ M.defaults = {
   tokens = {},
   repos = {},
   clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-  pull_changes_interval = 300,
+  poll_interval_seconds = 300,
   commit_viewer = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
@@ -140,6 +140,23 @@ function M.load()
     return nil, string.format("Invalid JSON in config file: %s", parsed)
   end
 
+  -- Warn about deprecated config keys
+  -- Warn about deprecated config keys
+  local deprecated = {
+    { key = "github_token", replacement = "tokens", since = "v0.5" },
+    { key = "pull_changes_interval", replacement = "poll_interval_seconds", since = "v0.7" },
+    { key = "github_username", replacement = nil, since = "v0.9.5" },
+  }
+  for _, dep in ipairs(deprecated) do
+    if parsed[dep.key] ~= nil then
+      local msg = string.format("Raccoon: '%s' was removed in %s", dep.key, dep.since)
+      if dep.replacement then
+        msg = msg .. string.format(", use '%s' instead", dep.replacement)
+      end
+      vim.schedule(function() vim.notify(msg, vim.log.levels.WARN) end)
+    end
+  end
+
   -- Merge with defaults
   local config = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), parsed)
 
@@ -189,7 +206,7 @@ function M.create_default()
     github_host = "github.com",
     tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
     clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-    pull_changes_interval = 300,
+    poll_interval_seconds = 300,
     commit_viewer = {
       grid = { rows = 2, cols = 2 },
       base_commits_count = 20,

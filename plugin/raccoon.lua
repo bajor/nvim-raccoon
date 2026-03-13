@@ -142,7 +142,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
   },
   "clone_root": "%s",
-  "pull_changes_interval": 300,
+  "poll_interval_seconds": 300,
   "commit_viewer": {
     "grid": { "rows": 2, "cols": 2 },
     "base_commits_count": 20

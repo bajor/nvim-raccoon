@@ -89,7 +89,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `tokens` | object | `{}` | Token per owner/org — string or `{"token": "...", "host": "..."}` for multi-host |
 | `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
-| `pull_changes_interval` | number | `300` | How often (in seconds) to auto-sync with remote |
+| `poll_interval_seconds` | number | `300` | How often (in seconds) to auto-sync with remote |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
 | `commit_viewer.grid.rows` | number | `2` | Rows in the commit viewer diff grid |
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
@@ -149,7 +149,7 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
   },
   "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
-  "pull_changes_interval": 120,
+  "poll_interval_seconds": 120,
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30,

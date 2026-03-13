@@ -10,7 +10,8 @@ The merge uses a deep merge strategy, so nested objects like `shortcuts` and `co
 
 Validation rules:
 - **`tokens`** is required and must contain at least one entry
-- Unknown fields are silently ignored (including legacy `github_username`)
+- Unknown fields are silently ignored
+- Deprecated fields (`github_token`, `pull_changes_interval`, `github_username`) trigger a warning with the replacement
 
 ## Minimal config
 
@@ -135,7 +136,7 @@ Supports tilde expansion (`~/...`).
 
 Clones persist on disk, so reopening a PR is fast — it fetches updates instead of cloning from scratch. Delete the directory to free disk space when you no longer need old review clones.
 
-### `pull_changes_interval`
+### `poll_interval_seconds`
 
 | Type | Default |
 |------|---------|
@@ -145,7 +146,7 @@ How often (in seconds) the plugin checks for new commits pushed to the PR branch
 
 ```json
 {
-  "pull_changes_interval": 120
+  "poll_interval_seconds": 120
 }
 ```
 
@@ -219,7 +220,7 @@ Width in columns of the commit list sidebar (right) and file tree panel (left). 
 
 How often (in seconds) the PR commit viewer checks for new commits pushed to the PR branch while commit viewer mode is active. On each tick, the plugin fetches the PR and base branches from origin, compares SHAs, and refreshes the sidebar and grid if changes are detected. Your selection is preserved across refreshes.
 
-Set lower for faster detection, higher to reduce network traffic. Clamped to 10–3600. This is separate from `pull_changes_interval`, which controls auto-sync during normal review mode.
+Set lower for faster detection, higher to reduce network traffic. Clamped to 10–3600. This is separate from `poll_interval_seconds`, which controls auto-sync during normal review mode.
 
 ```json
 {
@@ -288,7 +289,7 @@ Partial overrides are merged with defaults — you only need to specify keys you
   },
   "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
-  "pull_changes_interval": 120,
+  "poll_interval_seconds": 120,
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30,

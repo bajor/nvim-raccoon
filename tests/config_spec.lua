@@ -23,8 +23,8 @@ describe("raccoon.config", function()
       assert.is_table(config.defaults.tokens)
       assert.is_table(config.defaults.repos)
       assert.is_string(config.defaults.clone_root)
-      assert.is_number(config.defaults.pull_changes_interval)
-      assert.equals(300, config.defaults.pull_changes_interval)
+      assert.is_number(config.defaults.poll_interval_seconds)
+      assert.equals(300, config.defaults.poll_interval_seconds)
     end)
 
     it("repos defaults to empty table", function()
@@ -35,7 +35,6 @@ describe("raccoon.config", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
       assert.is_nil(config.defaults.notifications)
-      assert.is_nil(config.defaults.poll_interval_seconds)
     end)
   end)
 
@@ -107,17 +106,73 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("silently ignores github_username in config (backward compat)", function()
+    it("warns about deprecated github_username in config (backward compat)", function()
       local tmpfile = test_tmp_dir .. "/legacy_username.json"
       local f = io.open(tmpfile, "w")
       f:write('{"github_username": "old-user", "tokens": {"owner": "ghp_xxx"}}')
       f:close()
+
+      local warnings = {}
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        if level == vim.log.levels.WARN then table.insert(warnings, msg) end
+      end
 
       config.config_path = tmpfile
       local cfg, err = config.load()
       assert.is_not_nil(cfg)
       assert.is_nil(err)
 
+      -- Flush scheduled callbacks
+      vim.wait(10, function() return #warnings > 0 end)
+
+      assert.equals(1, #warnings)
+      assert.matches("github_username", warnings[1])
+      assert.matches("removed in v0.9.5", warnings[1])
+
+      vim.notify = orig_notify
+      os.remove(tmpfile)
+    end)
+
+    it("reads poll_interval_seconds from config", function()
+      local tmpfile = test_tmp_dir .. "/poll_interval.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"poll_interval_seconds": 120, "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_not_nil(cfg)
+      assert.is_nil(err)
+      assert.equals(120, cfg.poll_interval_seconds)
+
+      os.remove(tmpfile)
+    end)
+
+    it("warns about deprecated github_token with replacement", function()
+      local tmpfile = test_tmp_dir .. "/legacy_token.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"github_token": "ghp_old", "tokens": {"owner": "ghp_xxx"}}')
+      f:close()
+
+      local warnings = {}
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        if level == vim.log.levels.WARN then table.insert(warnings, msg) end
+      end
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_not_nil(cfg)
+      assert.is_nil(err)
+
+      vim.wait(10, function() return #warnings > 0 end)
+
+      assert.equals(1, #warnings)
+      assert.matches("github_token", warnings[1])
+      assert.matches("tokens", warnings[1])
+
+      vim.notify = orig_notify
       os.remove(tmpfile)
     end)
 
