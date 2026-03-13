@@ -1397,6 +1397,11 @@ function M.teardown_viewer(s, opts)
 
   if opts.on_before_only then opts.on_before_only() end
 
+  -- Switch to sidebar before :only so the main content window survives
+  -- (not the narrow filetree if it happened to have focus)
+  if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
+    vim.api.nvim_set_current_win(s.sidebar_win)
+  end
   vim.cmd("only")
 
   if s.saved_buf and vim.api.nvim_buf_is_valid(s.saved_buf) then
