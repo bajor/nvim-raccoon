@@ -938,6 +938,20 @@ function M.update_header(s, commit, pages)
     end
   end
 
+  -- Cap long messages with a truncation indicator
+  if #lines > MAX_HEADER_LINES then
+    local remaining = #lines - MAX_HEADER_LINES
+    lines[MAX_HEADER_LINES] = "    ... " .. remaining .. " more line" .. (remaining > 1 and "s" or "")
+    for i = #lines, MAX_HEADER_LINES + 1, -1 do
+      table.remove(lines, i)
+    end
+    -- Rebuild body indices for the truncated set and include the indicator line
+    body_line_indices = {}
+    for i = 2, #lines do
+      table.insert(body_line_indices, i - 1) -- 0-indexed
+    end
+  end
+
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -948,10 +962,14 @@ function M.update_header(s, commit, pages)
     pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #page_str)
   end
   for _, line_idx in ipairs(body_line_indices) do
-    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", line_idx, 0, -1)
+    local ok, err = pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", line_idx, 0, -1)
+    if not ok then
+      vim.notify("[raccoon] Header highlight failed: " .. tostring(err), vim.log.levels.DEBUG)
+      break
+    end
   end
 
-  vim.api.nvim_win_set_height(win, math.min(math.max(1, #lines), MAX_HEADER_LINES))
+  vim.api.nvim_win_set_height(win, math.max(1, #lines))
 end
 
 --- Render the current page of hunks into the grid

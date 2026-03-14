@@ -261,8 +261,8 @@ function M.get_remote_url(path, callback)
   })
 end
 
-local FIELD_SEP = "\0"
-local RECORD_SEP = "\1"
+local FIELD_SEP = "\0" -- NUL byte: git forbids this in commit messages, safe as field delimiter
+local RECORD_SEP = "\1" -- SOH byte: used as record delimiter; if a message contains SOH the record may be mis-split
 local LOG_FORMAT = "--format=%H%x00%B%x01"
 
 --- Parse git log output into commit tables.
