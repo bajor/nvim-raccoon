@@ -511,7 +511,9 @@ local function fetch_and_render_fifo_cell(cell_idx, generation)
   end)
 end
 
---- Render the FIFO grid: each cell shows the first hunk of a different recent commit
+--- Render the FIFO grid: each cell shows the first hunk of a different recent commit.
+--- Cell 1 = newest (working dir or most recent commit), cell N = oldest.
+--- Increments fifo_generation to invalidate any in-flight fetch callbacks.
 render_fifo_grid = function()
   if not local_state.fifo_mode then return end
 
@@ -532,18 +534,25 @@ render_fifo_grid = function()
   update_fifo_sidebar_highlights()
 end
 
---- Re-fetch and re-render a single FIFO cell (used by workdir poll for cell 1)
+--- Re-fetch and re-render a single FIFO cell (used by workdir poll for cell 1).
+--- Increments fifo_generation so any in-flight render_fifo_grid callbacks for this
+--- cell are invalidated, preventing stale data from overwriting the fresh result.
 ---@param cell_idx number 1-based cell index
 local function refresh_fifo_cell(cell_idx)
   if not local_state.fifo_mode then return end
+  local_state.fifo_generation = local_state.fifo_generation + 1
   fetch_and_render_fifo_cell(cell_idx, local_state.fifo_generation)
 end
 
---- Maximize a grid cell in FIFO mode
+--- Maximize a grid cell in FIFO mode.
+--- Opens the full-file diff for the commit shown in the given FIFO cell.
 ---@param cell_num number 1-based cell index
 maximize_fifo_cell = function(cell_num)
   local cell_data = local_state.fifo_cell_data[cell_num]
-  if not cell_data or not cell_data.filename then return end
+  if not cell_data or not cell_data.filename then
+    vim.notify("Cell " .. cell_num .. " has no content to maximize", vim.log.levels.WARN)
+    return
+  end
   if cell_data.filename == "dev/null" then return end
   if not local_state.repo_path then return end
 
@@ -560,7 +569,9 @@ maximize_fifo_cell = function(cell_num)
   })
 end
 
---- Toggle FIFO auto-focus mode
+--- Toggle FIFO auto-focus mode.
+--- On enable: resets page, renders FIFO grid across all cells.
+--- On disable: clears FIFO state, clamps selected_index, restores normal single-commit view.
 local function toggle_fifo_mode()
   local_state.fifo_mode = not local_state.fifo_mode
 
