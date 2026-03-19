@@ -154,8 +154,8 @@ local function render_pr_list(prs, buf_width, shortcuts)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-    table.insert(lines, string.format("  Press 'r' to refresh, '%s' to close", close_key))
+    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+    table.insert(lines, string.format("  Press 'r' to refresh, %s to close", close_hint))
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -211,8 +211,8 @@ local function render_pr_list(prs, buf_width, shortcuts)
 
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
-  local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", close_key))
+  local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. "/q/Esc") or "q/Esc"
+  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", close_hint))
 
   return lines, highlights
 end
@@ -391,6 +391,7 @@ function M.show_pr_list()
   if config.is_enabled(shortcuts.close) then
     vim.keymap.set(NORMAL_MODE, shortcuts.close, function() M.close_pr_list() end, opts)
   end
+  vim.keymap.set(NORMAL_MODE, "q", function() M.close_pr_list() end, opts)
   vim.keymap.set(NORMAL_MODE, "<Esc>", function() M.close_pr_list() end, opts)
 
   -- Refresh on r
