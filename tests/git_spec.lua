@@ -33,6 +33,10 @@ describe("raccoon.git", function()
     it("has build_pr_path function", function()
       assert.is_function(git.build_pr_path)
     end)
+
+    it("has get_commit_body function", function()
+      assert.is_function(git.get_commit_body)
+    end)
   end)
 
   describe("build_pr_path", function()

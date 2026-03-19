@@ -686,6 +686,23 @@ function M.log_branch_commits(path, base_ref, callback)
   })
 end
 
+--- Get the full commit message body for a single commit
+---@param path string Repository path
+---@param sha string Commit SHA
+---@param callback fun(body: string|nil, err: string|nil)
+function M.get_commit_body(path, sha, callback)
+  run_git({ "log", "-1", "--format=%B", sha }, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
+      end
+      callback(table.concat(stdout, "\n"), nil)
+    end,
+  })
+end
+
 --- Find the merge-base (common ancestor) between two refs
 ---@param path string Repository path
 ---@param ref1 string First ref

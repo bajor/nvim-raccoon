@@ -8,6 +8,7 @@ local diff = require("raccoon.diff")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
+M.MAX_COMMIT_MESSAGE_LENGTH = 2000
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
@@ -502,7 +503,7 @@ function M.create_grid_layout(s, rows, cols)
   vim.wo[s.header_win].number = false
   vim.wo[s.header_win].relativenumber = false
   vim.wo[s.header_win].signcolumn = "no"
-  vim.wo[s.header_win].wrap = false
+  vim.wo[s.header_win].wrap = true
   vim.wo[s.header_win].winhl = "Normal:Normal"
   M.lock_buf(s.header_buf)
 
@@ -971,7 +972,13 @@ function M.update_header(s, commit, pages)
     return
   end
 
-  local msg = commit.message or ""
+  local msg = commit.full_message or commit.message or ""
+
+  -- Apply max length truncation
+  if M.MAX_COMMIT_MESSAGE_LENGTH > 0 and #msg > M.MAX_COMMIT_MESSAGE_LENGTH then
+    msg = msg:sub(1, M.MAX_COMMIT_MESSAGE_LENGTH) .. "..."
+  end
+
   local msg_lines = vim.split(msg, "\n", { trimempty = true })
   if #msg_lines == 0 then msg_lines = { "" } end
 
@@ -991,7 +998,14 @@ function M.update_header(s, commit, pages)
     pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #page_str)
   end
 
-  vim.api.nvim_win_set_height(win, math.max(1, #lines))
+  -- Calculate visual height accounting for text wrapping
+  local win_width = vim.api.nvim_win_get_width(win)
+  local visual_lines = 0
+  for _, line in ipairs(lines) do
+    local display_width = vim.fn.strdisplaywidth(line)
+    visual_lines = visual_lines + math.max(1, math.ceil(display_width / math.max(1, win_width)))
+  end
+  vim.api.nvim_win_set_height(win, math.max(1, visual_lines))
 end
 
 --- Render the current page of hunks into the grid

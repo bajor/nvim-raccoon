@@ -115,13 +115,14 @@ describe("raccoon.localcommits", function()
   end)
 
   describe("context pass-through", function()
-    local original_show_commit, original_diff_working_dir, original_list_files
+    local original_show_commit, original_diff_working_dir, original_list_files, original_get_commit_body
     local captured_context
 
     before_each(function()
       original_show_commit = git.show_commit
       original_diff_working_dir = git.diff_working_dir
       original_list_files = git.list_files
+      original_get_commit_body = git.get_commit_body
       git.show_commit = function(_, _, ctx, cb)
         captured_context = ctx
         cb({}, nil)
@@ -131,6 +132,7 @@ describe("raccoon.localcommits", function()
         cb({}, nil)
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
+      git.get_commit_body = function(_, _, cb) cb("", nil) end
       local ls = localcommits._get_state()
       ls.branch_commits = { { sha = "aaaa", message = "commit 1" } }
       ls.active = true
@@ -139,12 +141,20 @@ describe("raccoon.localcommits", function()
       ls.grid_wins = {}
       ls.all_hunks = {}
       ls.select_generation = 0
+      ls.header_buf = vim.api.nvim_create_buf(false, true)
+      ls.header_win = vim.api.nvim_open_win(ls.header_buf, false, {
+        relative = "editor", row = 0, col = 0, width = 80, height = 1,
+      })
     end)
 
     after_each(function()
       git.show_commit = original_show_commit
       git.diff_working_dir = original_diff_working_dir
       git.list_files = original_list_files
+      git.get_commit_body = original_get_commit_body
+      local ls = localcommits._get_state()
+      pcall(vim.api.nvim_win_close, ls.header_win, true)
+      pcall(vim.api.nvim_buf_delete, ls.header_buf, { force = true })
       state.reset()
     end)
 

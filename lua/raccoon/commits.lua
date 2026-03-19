@@ -184,6 +184,20 @@ local function select_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
+  -- Immediately update header with subject line so it reflects the picked commit
+  ui.update_header(commit_state, commit, total_pages())
+
+  -- Fetch full commit body for header display
+  if commit.sha and not commit.full_message then
+    git.get_commit_body(clone_path, commit.sha, function(body, _)
+      if generation ~= commit_state.select_generation then return end
+      if body then
+        commit.full_message = body
+        ui.update_header(commit_state, commit, total_pages())
+      end
+    end)
+  end
+
   local context = ui.compute_grid_context(commit_state.grid_rows)
   git.show_commit(clone_path, commit.sha, context, function(files, err)
     if generation ~= commit_state.select_generation then return end
@@ -439,6 +453,7 @@ local function enter_commit_mode()
     end
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
     ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
+    ui.MAX_COMMIT_MESSAGE_LENGTH = ui.clamp_int(cfg.commit_viewer.max_commit_message_length, 2000, 100, 50000)
   end
 
   local base_branch = pr.base.ref

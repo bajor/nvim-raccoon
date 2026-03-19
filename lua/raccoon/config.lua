@@ -30,6 +30,7 @@ M.defaults = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
     sidebar_width = 50,
+    commit_message_max_lines = 2,
     passthrough_keys = {},
   },
   parallel_agents = {
