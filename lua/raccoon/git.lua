@@ -9,6 +9,7 @@ local M = {}
 local function run_git(args, opts)
   local stdout_data = {}
   local stderr_data = {}
+  local keep_empty = opts.keep_empty_lines
 
   local job_id = vim.fn.jobstart({ "git", "-c", "core.longpaths=true", unpack(args) }, {
     cwd = opts.cwd,
@@ -17,7 +18,7 @@ local function run_git(args, opts)
     on_stdout = function(_, data)
       if data then
         for _, line in ipairs(data) do
-          if line ~= "" then
+          if keep_empty or line ~= "" then
             table.insert(stdout_data, line)
           end
         end
@@ -693,10 +694,15 @@ end
 function M.get_commit_body(path, sha, callback)
   run_git({ "log", "-1", "--format=%B", sha }, {
     cwd = path,
+    keep_empty_lines = true,
     on_exit = function(code, stdout, stderr)
       if code ~= 0 then
         callback(nil, table.concat(stderr, "\n"))
         return
+      end
+      -- Strip trailing sentinel empty string from jobstart buffered output
+      while #stdout > 0 and stdout[#stdout] == "" do
+        table.remove(stdout)
       end
       callback(table.concat(stdout, "\n"), nil)
     end,

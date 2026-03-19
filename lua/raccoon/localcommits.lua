@@ -153,8 +153,8 @@ local function select_commit(index)
   local commit = get_commit(index)
   if not local_state.repo_path then return end
 
-  -- Immediately update header with subject line so it reflects the picked commit
-  ui.update_header(local_state, commit, total_pages())
+  -- Immediately update header with subject line (pages=1 since hunks aren't loaded yet)
+  ui.update_header(local_state, commit, 1)
 
   -- Fetch full commit body for header display
   if commit.sha and not commit.full_message then

@@ -981,11 +981,11 @@ function M.update_header(s, commit, pages)
   local max_lines = math.max(1, M.COMMIT_MESSAGE_MAX_LINES)
   local win_width = math.max(1, vim.api.nvim_win_get_width(win))
 
-  -- Truncate text to fit within max_lines of visual wrapping
+  -- Truncate text to fit within max_lines of visual wrapping (UTF-8 safe)
   local prefix = page_str .. " "
   local max_chars = max_lines * win_width - vim.fn.strdisplaywidth(prefix)
   if max_chars > 0 and vim.fn.strdisplaywidth(joined) > max_chars then
-    joined = joined:sub(1, max_chars) .. "..."
+    joined = vim.fn.strcharpart(joined, 0, max_chars) .. "..."
   end
 
   local lines = { prefix .. joined }
@@ -998,7 +998,13 @@ function M.update_header(s, commit, pages)
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
   pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, -1)
 
-  vim.api.nvim_win_set_height(win, max_lines)
+  -- Clamp to available screen space (reserve room for grid + statusline)
+  local max_safe = math.max(1, math.floor(vim.o.lines / 3))
+  local height = math.min(max_lines, max_safe)
+  local ok = pcall(vim.api.nvim_win_set_height, win, height)
+  if not ok then
+    pcall(vim.api.nvim_win_set_height, win, 1)
+  end
 end
 
 --- Render the current page of hunks into the grid
