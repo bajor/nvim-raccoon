@@ -184,19 +184,8 @@ local function select_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
-  -- Immediately update header with subject line (pages=1 since hunks aren't loaded yet)
-  ui.update_header(commit_state, commit, 1)
-
-  -- Fetch full commit body for header display
-  if commit.sha and not commit.full_message then
-    git.get_commit_body(clone_path, commit.sha, function(body, _)
-      if generation ~= commit_state.select_generation then return end
-      if body then
-        commit.full_message = body
-        ui.update_header(commit_state, commit, total_pages())
-      end
-    end)
-  end
+  -- Immediately show available message, then async-fetch full commit message
+  ui.fetch_and_display_commit_message(commit_state, commit, clone_path, generation, total_pages)
 
   local context = ui.compute_grid_context(commit_state.grid_rows)
   git.show_commit(clone_path, commit.sha, context, function(files, err)

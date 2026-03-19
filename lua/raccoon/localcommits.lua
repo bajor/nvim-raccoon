@@ -153,19 +153,8 @@ local function select_commit(index)
   local commit = get_commit(index)
   if not local_state.repo_path then return end
 
-  -- Immediately update header with subject line (pages=1 since hunks aren't loaded yet)
-  ui.update_header(local_state, commit, 1)
-
-  -- Fetch full commit body for header display
-  if commit.sha and not commit.full_message then
-    git.get_commit_body(local_state.repo_path, commit.sha, function(body, _)
-      if generation ~= local_state.select_generation then return end
-      if body then
-        commit.full_message = body
-        ui.update_header(local_state, commit, total_pages())
-      end
-    end)
-  end
+  -- Immediately show available message, then async-fetch full commit message
+  ui.fetch_and_display_commit_message(local_state, commit, local_state.repo_path, generation, total_pages)
 
   local context = ui.compute_grid_context(local_state.grid_rows)
   local fetch_diff = commit.sha

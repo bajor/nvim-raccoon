@@ -115,14 +115,14 @@ describe("raccoon.localcommits", function()
   end)
 
   describe("context pass-through", function()
-    local original_show_commit, original_diff_working_dir, original_list_files, original_get_commit_body
+    local original_show_commit, original_diff_working_dir, original_list_files, original_get_commit_message
     local captured_context
 
     before_each(function()
       original_show_commit = git.show_commit
       original_diff_working_dir = git.diff_working_dir
       original_list_files = git.list_files
-      original_get_commit_body = git.get_commit_body
+      original_get_commit_message = git.get_commit_message
       git.show_commit = function(_, _, ctx, cb)
         captured_context = ctx
         cb({}, nil)
@@ -132,7 +132,7 @@ describe("raccoon.localcommits", function()
         cb({}, nil)
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
-      git.get_commit_body = function(_, _, cb) cb("", nil) end
+      git.get_commit_message = function(_, _, cb) cb("", nil) end
       local ls = localcommits._get_state()
       ls.branch_commits = { { sha = "aaaa", message = "commit 1" } }
       ls.active = true
@@ -151,7 +151,7 @@ describe("raccoon.localcommits", function()
       git.show_commit = original_show_commit
       git.diff_working_dir = original_diff_working_dir
       git.list_files = original_list_files
-      git.get_commit_body = original_get_commit_body
+      git.get_commit_message = original_get_commit_message
       local ls = localcommits._get_state()
       pcall(vim.api.nvim_win_close, ls.header_win, true)
       pcall(vim.api.nvim_buf_delete, ls.header_buf, { force = true })

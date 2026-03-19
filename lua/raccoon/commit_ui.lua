@@ -908,7 +908,7 @@ function M.render_filetree(s)
     elseif path and commit_files[path] then
       hl_group = "RaccoonFileInCommit"
     else
-      hl_group = "Comment"
+      hl_group = "RaccoonFileNormal"
     end
     pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl_group, line_idx, 0, -1)
   end
@@ -951,9 +951,38 @@ function M.update_sidebar_winbar(s, count)
   end
 end
 
+--- Fetch the full commit message async and update the header.
+--- Immediately shows whatever message is available, then re-renders with the full text.
+---@param s table State table (needs header_buf, header_win, select_generation)
+---@param commit table Commit with {sha, message, full_message?}
+---@param repo_path string Repository path for git operations
+---@param generation number select_generation at call time (for stale-callback guard)
+---@param total_pages_fn fun(): number Function returning current total page count
+function M.fetch_and_display_commit_message(s, commit, repo_path, generation, total_pages_fn)
+  local git = require("raccoon.git")
+
+  -- Immediately update header with available message
+  M.update_header(s, commit, total_pages_fn())
+
+  -- Async-fetch full commit message; on completion, re-render header with the complete text
+  if commit.sha and not commit.full_message then
+    git.get_commit_message(repo_path, commit.sha, function(message, err)
+      if generation ~= s.select_generation then return end
+      if err then
+        vim.notify("Failed to load full commit message: " .. err, vim.log.levels.WARN)
+        return
+      end
+      if message then
+        commit.full_message = message
+        M.update_header(s, commit, total_pages_fn())
+      end
+    end)
+  end
+end
+
 --- Update the header bar with commit message and page indicator
 ---@param s table State table
----@param commit table|nil Current commit {message}
+---@param commit table|nil Current commit {message, full_message?}
 ---@param pages number Total page count
 function M.update_header(s, commit, pages)
   local buf = s.header_buf
@@ -982,7 +1011,7 @@ function M.update_header(s, commit, pages)
   local win_width = math.max(1, vim.api.nvim_win_get_width(win))
 
   -- Truncate text to fit within max_lines of visual wrapping (UTF-8 safe)
-  local prefix = page_str .. " "
+  local prefix = show_pages and (page_str .. " ") or ""
   local max_chars = max_lines * win_width - vim.fn.strdisplaywidth(prefix)
   if max_chars > 0 and vim.fn.strdisplaywidth(joined) > max_chars then
     joined = vim.fn.strcharpart(joined, 0, max_chars) .. "..."

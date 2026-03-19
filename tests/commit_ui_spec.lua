@@ -89,6 +89,47 @@ describe("raccoon.commit_ui", function()
       local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
       assert.equals(1, #lines)
     end)
+
+    it("handles commit with both message and full_message nil", function()
+      local state = {
+        header_buf = buf, header_win = win, current_page = 1,
+      }
+      local commit = {}
+
+      commit_ui.update_header(state, commit, 1)
+
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      assert.equals(1, #lines)
+    end)
+
+    it("joins multiline message with blank-line separators", function()
+      local state = {
+        header_buf = buf, header_win = win, current_page = 1,
+      }
+      local commit = {
+        full_message = "feat: add login\n\nLonger body paragraph\nwith details",
+      }
+
+      commit_ui.update_header(state, commit, 1)
+
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      assert.equals(1, #lines)
+      assert.truthy(lines[1]:find("feat: add login"))
+      assert.truthy(lines[1]:find("Longer body paragraph"))
+      assert.truthy(lines[1]:find("with details"))
+    end)
+
+    it("has no leading space when pages <= 1", function()
+      local state = {
+        header_buf = buf, header_win = win, current_page = 1,
+      }
+      local commit = { message = "test" }
+
+      commit_ui.update_header(state, commit, 1)
+
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      assert.equals("test", lines[1])
+    end)
   end)
 
   describe("COMMIT_MESSAGE_MAX_LINES", function()

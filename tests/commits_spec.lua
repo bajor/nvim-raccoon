@@ -612,19 +612,19 @@ describe("raccoon.commits select_generation guard", function()
   describe("context pass-through", function()
     local original_show_commit
     local original_list_files
-    local original_get_commit_body
+    local original_get_commit_message
     local captured_context
 
     before_each(function()
       original_show_commit = git.show_commit
       original_list_files = git.list_files
-      original_get_commit_body = git.get_commit_body
+      original_get_commit_message = git.get_commit_message
       git.show_commit = function(_, _, ctx, cb)
         captured_context = ctx
         cb({}, nil)
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
-      git.get_commit_body = function(_, _, cb) cb("", nil) end
+      git.get_commit_message = function(_, _, cb) cb("", nil) end
       local cs = commits._get_state()
       cs.pr_commits = { { sha = "aaaa", message = "commit 1" } }
       cs.active = true
@@ -643,7 +643,7 @@ describe("raccoon.commits select_generation guard", function()
     after_each(function()
       git.show_commit = original_show_commit
       git.list_files = original_list_files
-      git.get_commit_body = original_get_commit_body
+      git.get_commit_message = original_get_commit_message
       local cs = commits._get_state()
       pcall(vim.api.nvim_win_close, cs.header_win, true)
       pcall(vim.api.nvim_buf_delete, cs.header_buf, { force = true })
@@ -662,18 +662,18 @@ describe("raccoon.commits select_generation guard", function()
   describe("stale callback handling", function()
     local original_show_commit
     local original_list_files
-    local original_get_commit_body
+    local original_get_commit_message
     local captured_callback
 
     before_each(function()
       original_show_commit = git.show_commit
       original_list_files = git.list_files
-      original_get_commit_body = git.get_commit_body
+      original_get_commit_message = git.get_commit_message
       git.show_commit = function(_, _, _, cb)
         captured_callback = cb
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
-      git.get_commit_body = function(_, _, cb) cb("", nil) end
+      git.get_commit_message = function(_, _, cb) cb("", nil) end
       local cs = commits._get_state()
       cs.pr_commits = {
         { sha = "aaaa", message = "commit 1" },
@@ -695,7 +695,7 @@ describe("raccoon.commits select_generation guard", function()
     after_each(function()
       git.show_commit = original_show_commit
       git.list_files = original_list_files
-      git.get_commit_body = original_get_commit_body
+      git.get_commit_message = original_get_commit_message
       local cs = commits._get_state()
       pcall(vim.api.nvim_win_close, cs.header_win, true)
       pcall(vim.api.nvim_buf_delete, cs.header_buf, { force = true })
@@ -727,6 +727,29 @@ describe("raccoon.commits select_generation guard", function()
       -- Fire the current callback — should be accepted
       cb({ { filename = "fresh.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" } }, nil)
       assert.is_true(#cs.all_hunks > 0)
+    end)
+
+    it("discards stale get_commit_message callback", function()
+      local cs = commits._get_state()
+      local captured_message_cb
+
+      -- Override get_commit_message to capture its callback without firing it
+      git.get_commit_message = function(_, _, cb)
+        captured_message_cb = cb
+      end
+
+      commits._select_commit(1)
+      local stale_msg_cb = captured_message_cb
+      assert.equals(1, cs.select_generation)
+
+      -- Navigate to next commit, advancing generation
+      commits._select_commit(2)
+      assert.equals(2, cs.select_generation)
+
+      -- Fire the stale message callback — should not update commit
+      local commit1 = cs.pr_commits[1]
+      stale_msg_cb("full message from commit 1", nil)
+      assert.is_nil(commit1.full_message)
     end)
   end)
 end)
@@ -1192,19 +1215,19 @@ end)
 describe("raccoon.commits commit_files tracking", function()
   local original_show_commit
   local original_list_files
-  local original_get_commit_body
+  local original_get_commit_message
   local captured_callback
 
   before_each(function()
     state.reset()
     original_show_commit = git.show_commit
     original_list_files = git.list_files
-    original_get_commit_body = git.get_commit_body
+    original_get_commit_message = git.get_commit_message
     git.show_commit = function(_, _, _, cb)
       captured_callback = cb
     end
     git.list_files = function(_, _, cb) cb({}, nil) end
-    git.get_commit_body = function(_, _, cb) cb("", nil) end
+    git.get_commit_message = function(_, _, cb) cb("", nil) end
     local cs = commits._get_state()
     cs.pr_commits = {
       { sha = "aaaa", message = "commit with binary" },
@@ -1226,7 +1249,7 @@ describe("raccoon.commits commit_files tracking", function()
   after_each(function()
     git.show_commit = original_show_commit
     git.list_files = original_list_files
-    git.get_commit_body = original_get_commit_body
+    git.get_commit_message = original_get_commit_message
     local cs = commits._get_state()
     pcall(vim.api.nvim_win_close, cs.header_win, true)
     pcall(vim.api.nvim_buf_delete, cs.header_buf, { force = true })
@@ -1313,7 +1336,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     local hl = get_filetree_highlights(filetree_buf)
     assert.equals("RaccoonFileVisible", hl[0])
     assert.equals("RaccoonFileInCommit", hl[1])
-    assert.equals("Comment", hl[2])
+    assert.equals("RaccoonFileNormal", hl[2])
   end)
 
   it("applies RaccoonFileInCommit to commit files not on current page", function()
@@ -1340,7 +1363,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     assert.equals("RaccoonFileInCommit", hl[2])
   end)
 
-  it("applies Comment to directory lines", function()
+  it("applies RaccoonFileNormal to directory lines", function()
     cs.cached_sha = "test3"
     cs.cached_tree_lines = { "└ src/", "   └ main.lua" }
     cs.cached_line_paths = { [1] = "src/main.lua" }
@@ -1352,7 +1375,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     commits._render_filetree()
 
     local hl = get_filetree_highlights(filetree_buf)
-    assert.equals("Comment", hl[0])
+    assert.equals("RaccoonFileNormal", hl[0])
     assert.equals("RaccoonFileVisible", hl[1])
   end)
 
@@ -1378,7 +1401,7 @@ end)
 describe("raccoon.commits render_filetree early return path", function()
   local original_show_commit
   local original_list_files
-  local original_get_commit_body
+  local original_get_commit_message
   local captured_callback
   local cs
   local filetree_buf
@@ -1400,12 +1423,12 @@ describe("raccoon.commits render_filetree early return path", function()
     require("raccoon").setup()
     original_show_commit = git.show_commit
     original_list_files = git.list_files
-    original_get_commit_body = git.get_commit_body
+    original_get_commit_message = git.get_commit_message
     git.show_commit = function(_, _, _, cb)
       captured_callback = cb
     end
     git.list_files = function(_, _, cb) cb({}, nil) end
-    git.get_commit_body = function(_, _, cb) cb("", nil) end
+    git.get_commit_message = function(_, _, cb) cb("", nil) end
 
     cs = commits._get_state()
     cs.pr_commits = { { sha = "empty1", message = "binary-only commit" } }
@@ -1440,7 +1463,7 @@ describe("raccoon.commits render_filetree early return path", function()
   after_each(function()
     git.show_commit = original_show_commit
     git.list_files = original_list_files
-    git.get_commit_body = original_get_commit_body
+    git.get_commit_message = original_get_commit_message
     pcall(vim.api.nvim_win_close, cs.header_win, true)
     pcall(vim.api.nvim_buf_delete, cs.header_buf, { force = true })
     if filetree_buf and vim.api.nvim_buf_is_valid(filetree_buf) then
@@ -1506,10 +1529,10 @@ describe("raccoon.commits render_filetree early return path", function()
 end)
 
 describe("raccoon file tree highlight groups", function()
-  it("defines RaccoonFileNormal highlight group", function()
+  it("defines RaccoonFileNormal highlight group linked to Comment", function()
     require("raccoon").setup()
     local hl = vim.api.nvim_get_hl(0, { name = "RaccoonFileNormal" })
-    assert.is_not_nil(hl.fg)
+    assert.equals("Comment", hl.link)
   end)
 
   it("defines RaccoonFileInCommit highlight group", function()
