@@ -509,10 +509,30 @@ M.passthrough_keymaps = {}
 --- but vim.schedule can race with queued keys, so we use vim.defer_fn instead.
 local PASSTHROUGH_RESTORE_DELAY_MS = 50
 
+--- Remove all raccoon buffer-local keymaps from a buffer.
+--- This clears both regular review keymaps and passthrough wrappers so that
+--- fed keys can resolve against global plugin mappings without prefix conflicts.
+---@param buf number Buffer ID
+local function remove_all_raccoon_keymaps(buf)
+  for _, km in ipairs(M.keymaps) do
+    pcall(vim.keymap.del, km.mode, km.lhs, { buffer = buf })
+  end
+  for _, pt in ipairs(M.passthrough_keymaps) do
+    pcall(vim.keymap.del, pt.mode, pt.key, { buffer = buf })
+  end
+end
+
+--- Re-register all raccoon buffer-local keymaps on a buffer.
+--- Forward-declared because setup_passthrough_keymap and this function are mutually recursive.
+---@type fun(buf: number)
+local restore_all_raccoon_keymaps
+
 --- Setup a single passthrough keymap on a buffer.
---- Temporarily sets modifiable=true, removes the wrapper mapping, and feeds the original
---- key so external plugins can handle it. After PASSTHROUGH_RESTORE_DELAY_MS,
---- restores modifiable=false and re-registers the wrapper.
+--- Temporarily sets modifiable=true, removes ALL raccoon buffer-local keymaps, and feeds
+--- the original key so external plugins can handle it. Removing all raccoon keymaps (not
+--- just this wrapper) is necessary because same-prefix keymaps (e.g. <leader>j when
+--- passthrough is <leader>dd) shadow global plugin mappings during feedkeys resolution.
+--- After PASSTHROUGH_RESTORE_DELAY_MS, restores modifiable=false and re-registers everything.
 ---@param buf number Buffer ID
 ---@param mode string Vim mode ("n", "v", etc.)
 ---@param key string Key sequence (e.g. "gcc", "<leader>f")
@@ -521,7 +541,7 @@ local function setup_passthrough_keymap(buf, mode, key)
     if not vim.api.nvim_buf_is_valid(buf) then return end
     local ok, err = pcall(function()
       vim.bo[buf].modifiable = true
-      pcall(vim.keymap.del, mode, key, { buffer = buf })
+      remove_all_raccoon_keymaps(buf)
       local escaped = vim.api.nvim_replace_termcodes(key, true, false, true)
       vim.api.nvim_feedkeys(escaped, "m", false)
     end)
@@ -531,10 +551,20 @@ local function setup_passthrough_keymap(buf, mode, key)
     vim.defer_fn(function()
       if vim.api.nvim_buf_is_valid(buf) then
         pcall(function() vim.bo[buf].modifiable = false end)
-        setup_passthrough_keymap(buf, mode, key)
+        restore_all_raccoon_keymaps(buf)
       end
     end, PASSTHROUGH_RESTORE_DELAY_MS)
   end, { buffer = buf, noremap = true, silent = true, desc = "Raccoon passthrough: " .. key })
+end
+
+restore_all_raccoon_keymaps = function(buf)
+  for _, km in ipairs(M.keymaps) do
+    local opts = vim.tbl_extend("force", default_opts, { desc = km.desc, buffer = buf })
+    pcall(function() vim.keymap.set(km.mode, km.lhs, km.rhs, opts) end)
+  end
+  for _, pt in ipairs(M.passthrough_keymaps) do
+    setup_passthrough_keymap(buf, pt.mode, pt.key)
+  end
 end
 
 --- Build keymaps table and cache passthrough keymaps for buffer-local registration.
@@ -567,14 +597,7 @@ function M.setup_buffer(buf)
     M.setup()
   end
 
-  for _, km in ipairs(M.keymaps) do
-    local opts = vim.tbl_extend("force", default_opts, { desc = km.desc, buffer = buf })
-    vim.keymap.set(km.mode, km.lhs, km.rhs, opts)
-  end
-
-  for _, pt in ipairs(M.passthrough_keymaps) do
-    setup_passthrough_keymap(buf, pt.mode, pt.key)
-  end
+  restore_all_raccoon_keymaps(buf)
 end
 
 return M
