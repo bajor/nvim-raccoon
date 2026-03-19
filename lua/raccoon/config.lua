@@ -315,7 +315,7 @@ end
 local VALID_MODES = { n = true, v = true, x = true, s = true, o = true, i = true, c = true, t = true }
 
 --- Load passthrough keymaps from config.
---- These let external plugin keymaps work in raccoon buffers despite modifiable=false.
+--- These bypass raccoon's buffer-local keymaps so global plugin mappings can fire.
 ---@return {mode: string, key: string}[]
 function M.load_passthrough_keymaps()
   local parsed = read_config_json()

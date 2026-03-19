@@ -246,25 +246,27 @@ In **PR commit viewer** mode, agents run inside the shallow clone checked out to
 |------|---------|
 | array | `[]` |
 
-Keymaps from other plugins that should work inside raccoon review buffers even though those buffers are non-modifiable. Raccoon sets `modifiable = false` on PR file buffers to prevent accidental edits. This blocks any plugin keymap that tries to modify the buffer (e.g., comment.nvim's `gcc`, surround.nvim's `ysiw`). Adding a keymap to this list makes raccoon temporarily unlock the buffer for that keymap, execute it, then re-lock.
+Keymaps from other plugins that should work inside raccoon review buffers. Raccoon registers buffer-local keymaps (e.g. `<leader>j`, `<leader>k`) that can shadow global plugin mappings sharing the same prefix. Adding a keymap to this list makes raccoon temporarily remove its buffer-local keymaps so the global plugin mapping can fire, then re-register them.
+
+The buffer stays read-only (`modifiable = false`) — passthrough only solves keymap shadowing, not buffer writability. Plugin actions that don't modify the buffer (navigation, pickers, diagnostics, etc.) work directly. Plugin actions that need to modify buffer content will be blocked by the read-only state.
 
 Each entry is an object with:
-- **`key`** (required) — the key sequence, e.g. `"gcc"`, `"<leader>f"`, `"ysiw"`
+- **`key`** (required) — the key sequence, e.g. `"<leader>dd"`, `"<leader>f"`, `"gd"`
 - **`mode`** (optional, default `"n"`) — vim mode: `"n"` for normal, `"v"` for visual, etc.
 
 ```json
 {
   "passthrough_keymaps": [
-    { "mode": "n", "key": "gcc" },
-    { "mode": "v", "key": "gc" },
-    { "key": "<leader>f" }
+    { "mode": "n", "key": "<leader>dd" },
+    { "key": "<leader>f" },
+    { "key": "gd" }
   ]
 }
 ```
 
 Entries with missing or empty `key` are silently skipped. Invalid entries (non-objects, numbers, strings) are also skipped.
 
-> **Note:** Passthrough works by temporarily setting `modifiable = true`, removing the wrapper mapping, and feeding the original key via `nvim_feedkeys`. After the key is processed, `modifiable = false` is restored on the next event loop tick via `vim.schedule`. If an external plugin's action modifies the buffer asynchronously after a longer delay, the modification may be blocked by the re-lock. Most plugins (comment.nvim, surround.nvim, etc.) complete within a single event loop tick and work fine.
+> **Note:** Passthrough works by temporarily removing all raccoon buffer-local keymaps and feeding the original key via `nvim_feedkeys`. After a short delay (50ms), raccoon re-registers its keymaps. This is transparent to the user.
 
 ### `shortcuts`
 
