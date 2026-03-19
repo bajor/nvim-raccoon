@@ -8,7 +8,6 @@ local diff = require("raccoon.diff")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
-M.MAX_COMMIT_MESSAGE_LENGTH = 2000
 M.COMMIT_MESSAGE_MAX_LINES = 2
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
@@ -974,11 +973,6 @@ function M.update_header(s, commit, pages)
   end
 
   local msg = commit.full_message or commit.message or ""
-
-  -- Apply max length truncation
-  if M.MAX_COMMIT_MESSAGE_LENGTH > 0 and #msg > M.MAX_COMMIT_MESSAGE_LENGTH then
-    msg = msg:sub(1, M.MAX_COMMIT_MESSAGE_LENGTH) .. "..."
-  end
 
   -- Join all lines with spaces so the message flows continuously with wrapping
   local msg_lines = vim.split(msg, "\n", { trimempty = true })

@@ -715,7 +715,6 @@ local function enter_local_mode()
     end
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
     ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
-    ui.MAX_COMMIT_MESSAGE_LENGTH = ui.clamp_int(cfg.commit_viewer.max_commit_message_length, 2000, 100, 50000)
     ui.COMMIT_MESSAGE_MAX_LINES = ui.clamp_int(cfg.commit_viewer.commit_message_max_lines, 2, 1, 20)
   end
 

@@ -67,25 +67,6 @@ describe("raccoon.commit_ui", function()
       assert.truthy(lines[1]:find("fix: null check"))
     end)
 
-    it("truncates message exceeding max length", function()
-      local original = commit_ui.MAX_COMMIT_MESSAGE_LENGTH
-      commit_ui.MAX_COMMIT_MESSAGE_LENGTH = 20
-
-      local state = {
-        header_buf = buf, header_win = win, current_page = 1,
-      }
-      local commit = { message = "a]long message that exceeds the maximum length limit for display" }
-
-      commit_ui.update_header(state, commit, 1)
-
-      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-      local full_text = table.concat(lines, "\n")
-      -- Truncated to 20 chars + "..."
-      assert.truthy(full_text:find("%.%.%.$"))
-
-      commit_ui.MAX_COMMIT_MESSAGE_LENGTH = original
-    end)
-
     it("shows page indicator for multi-page commits", function()
       local state = {
         header_buf = buf, header_win = win, current_page = 2,
@@ -107,13 +88,6 @@ describe("raccoon.commit_ui", function()
 
       local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
       assert.equals(1, #lines)
-    end)
-  end)
-
-  describe("MAX_COMMIT_MESSAGE_LENGTH", function()
-    it("has a default value", function()
-      assert.is_number(commit_ui.MAX_COMMIT_MESSAGE_LENGTH)
-      assert.equals(2000, commit_ui.MAX_COMMIT_MESSAGE_LENGTH)
     end)
   end)
 
