@@ -329,7 +329,8 @@ function M.load_passthrough_keymaps()
       if VALID_MODES[m] then
         table.insert(result, { mode = m, key = entry.key })
       else
-        vim.notify(string.format("Raccoon: invalid mode '%s' in passthrough_keymaps entry #%d, skipping", m, i), vim.log.levels.WARN)
+        local msg = "Raccoon: invalid mode '%s' in passthrough_keymaps entry #%d, skipping"
+        vim.notify(string.format(msg, m, i), vim.log.levels.WARN)
       end
     end
   end
