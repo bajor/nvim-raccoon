@@ -908,7 +908,7 @@ function M.render_filetree(s)
     elseif path and commit_files[path] then
       hl_group = "RaccoonFileInCommit"
     else
-      hl_group = "RaccoonFileNormal"
+      hl_group = "Comment"
     end
     pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, hl_group, line_idx, 0, -1)
   end
@@ -992,9 +992,7 @@ function M.update_header(s, commit, pages)
 
   local hl_ns = vim.api.nvim_create_namespace("raccoon_header_hl")
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
-  if show_pages then
-    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #page_str)
-  end
+  pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, -1)
 
   -- Calculate visual height accounting for text wrapping
   local win_width = vim.api.nvim_win_get_width(win)

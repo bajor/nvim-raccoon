@@ -1313,7 +1313,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     local hl = get_filetree_highlights(filetree_buf)
     assert.equals("RaccoonFileVisible", hl[0])
     assert.equals("RaccoonFileInCommit", hl[1])
-    assert.equals("RaccoonFileNormal", hl[2])
+    assert.equals("Comment", hl[2])
   end)
 
   it("applies RaccoonFileInCommit to commit files not on current page", function()
@@ -1340,7 +1340,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     assert.equals("RaccoonFileInCommit", hl[2])
   end)
 
-  it("applies RaccoonFileNormal to directory lines", function()
+  it("applies Comment to directory lines", function()
     cs.cached_sha = "test3"
     cs.cached_tree_lines = { "└ src/", "   └ main.lua" }
     cs.cached_line_paths = { [1] = "src/main.lua" }
@@ -1352,7 +1352,7 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     commits._render_filetree()
 
     local hl = get_filetree_highlights(filetree_buf)
-    assert.equals("RaccoonFileNormal", hl[0])
+    assert.equals("Comment", hl[0])
     assert.equals("RaccoonFileVisible", hl[1])
   end)
 
