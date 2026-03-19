@@ -445,24 +445,34 @@ local function enter_commit_mode()
 
   vim.notify("Entering commit viewer mode...", vim.log.levels.INFO)
 
+  local function abort(reason)
+    vim.notify("Commit viewer failed: " .. reason, vim.log.levels.ERROR)
+    if commit_state.active then
+      M.toggle()
+    end
+  end
+
   git.unshallow_if_needed(clone_path, function(_, unshallow_err)
     if unshallow_err then
-      vim.notify("Warning: repository unshallow failed", vim.log.levels.WARN)
+      abort("repository unshallow failed — cannot list commits in a shallow clone")
+      return
     end
 
     git.fetch_branch(clone_path, base_branch, function(_, fetch_err)
       if fetch_err then
-        vim.notify("Failed to fetch base branch", vim.log.levels.ERROR)
-        M.toggle()
+        abort("could not fetch base branch '" .. base_branch .. "': " .. fetch_err)
         return
       end
 
       local pending = 2
+      local log_err_detail = nil
 
       local function on_both_ready()
         if #commit_state.pr_commits == 0 then
-          vim.notify("No commits found on PR branch", vim.log.levels.WARN)
-          M.toggle()
+          local reason = log_err_detail
+            and ("git log failed: " .. log_err_detail)
+            or ("no commits in origin/" .. base_branch .. "..HEAD")
+          abort(reason)
           return
         end
 
@@ -483,7 +493,7 @@ local function enter_commit_mode()
 
       git.log_commits(clone_path, base_branch, function(commits, err)
         if err then
-          vim.notify("Failed to get PR commits", vim.log.levels.ERROR)
+          log_err_detail = err
           commit_state.pr_commits = {}
         else
           commit_state.pr_commits = commits or {}
