@@ -37,13 +37,13 @@ describe("raccoon.commit_ui", function()
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end)
 
-    it("displays full_message when available, joined into single line", function()
+    it("displays full_message joined into single line", function()
       local state = {
         header_buf = buf, header_win = win, current_page = 1,
       }
       local commit = {
         message = "feat: add login",
-        full_message = "feat: add login\nThis adds the login flow with OAuth support.\nIncludes token refresh logic.",
+        full_message = "feat: add login\nshort body",
       }
 
       commit_ui.update_header(state, commit, 1)
@@ -51,8 +51,7 @@ describe("raccoon.commit_ui", function()
       local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
       assert.equals(1, #lines)
       assert.truthy(lines[1]:find("feat: add login"))
-      assert.truthy(lines[1]:find("This adds the login flow"))
-      assert.truthy(lines[1]:find("Includes token refresh"))
+      assert.truthy(lines[1]:find("short body"))
     end)
 
     it("falls back to message when full_message is nil", function()
@@ -115,6 +114,34 @@ describe("raccoon.commit_ui", function()
     it("has a default value", function()
       assert.is_number(commit_ui.MAX_COMMIT_MESSAGE_LENGTH)
       assert.equals(2000, commit_ui.MAX_COMMIT_MESSAGE_LENGTH)
+    end)
+  end)
+
+  describe("COMMIT_MESSAGE_MAX_LINES", function()
+    it("has a default value", function()
+      assert.is_number(commit_ui.COMMIT_MESSAGE_MAX_LINES)
+      assert.equals(2, commit_ui.COMMIT_MESSAGE_MAX_LINES)
+    end)
+
+    it("caps header window height", function()
+      local header_buf = vim.api.nvim_create_buf(false, true)
+      local header_win = vim.api.nvim_open_win(header_buf, false, {
+        relative = "editor", row = 0, col = 0, width = 40, height = 1,
+      })
+      vim.wo[header_win].wrap = true
+
+      local original = commit_ui.COMMIT_MESSAGE_MAX_LINES
+      commit_ui.COMMIT_MESSAGE_MAX_LINES = 2
+
+      local s = { header_buf = header_buf, header_win = header_win, current_page = 1 }
+      local commit = { message = "x" }
+
+      commit_ui.update_header(s, commit, 1)
+      assert.equals(2, vim.api.nvim_win_get_height(header_win))
+
+      commit_ui.COMMIT_MESSAGE_MAX_LINES = original
+      pcall(vim.api.nvim_win_close, header_win, true)
+      pcall(vim.api.nvim_buf_delete, header_buf, { force = true })
     end)
   end)
 end)

@@ -9,6 +9,7 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 M.MAX_COMMIT_MESSAGE_LENGTH = 2000
+M.COMMIT_MESSAGE_MAX_LINES = 2
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
@@ -493,11 +494,11 @@ function M.create_grid_layout(s, rows, cols)
     vim.wo[s.filetree_win].winhl = "WinBar:Normal,WinBarNC:Normal"
   end
 
-  -- Header at bottom (full width)
-  vim.api.nvim_set_current_win(grid_wins[#grid_wins])
+  -- Header at top (full width)
+  vim.api.nvim_set_current_win(grid_wins[1])
   vim.cmd("split")
   s.header_win = vim.api.nvim_get_current_win()
-  vim.cmd("wincmd J")
+  vim.cmd("wincmd K")
   s.header_buf = M.create_scratch_buf()
   vim.api.nvim_win_set_buf(s.header_win, s.header_buf)
   vim.wo[s.header_win].number = false
@@ -982,9 +983,18 @@ function M.update_header(s, commit, pages)
   -- Join all lines with spaces so the message flows continuously with wrapping
   local msg_lines = vim.split(msg, "\n", { trimempty = true })
   local joined = table.concat(msg_lines, " ")
-  if joined == "" then joined = "" end
 
-  local lines = { page_str .. " " .. joined }
+  local max_lines = math.max(1, M.COMMIT_MESSAGE_MAX_LINES)
+  local win_width = math.max(1, vim.api.nvim_win_get_width(win))
+
+  -- Truncate text to fit within max_lines of visual wrapping
+  local prefix = page_str .. " "
+  local max_chars = max_lines * win_width - vim.fn.strdisplaywidth(prefix)
+  if max_chars > 0 and vim.fn.strdisplaywidth(joined) > max_chars then
+    joined = joined:sub(1, max_chars) .. "..."
+  end
+
+  local lines = { prefix .. joined }
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -994,14 +1004,7 @@ function M.update_header(s, commit, pages)
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
   pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, -1)
 
-  -- Calculate visual height accounting for text wrapping
-  local win_width = vim.api.nvim_win_get_width(win)
-  local visual_lines = 0
-  for _, line in ipairs(lines) do
-    local display_width = vim.fn.strdisplaywidth(line)
-    visual_lines = visual_lines + math.max(1, math.ceil(display_width / math.max(1, win_width)))
-  end
-  vim.api.nvim_win_set_height(win, math.max(1, visual_lines))
+  vim.api.nvim_win_set_height(win, max_lines)
 end
 
 --- Render the current page of hunks into the grid
