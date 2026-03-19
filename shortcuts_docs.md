@@ -8,6 +8,8 @@ Run `:Raccoon shortcuts` (or press `<leader>?` by default) to see your active bi
 
 Shortcuts are loaded from `config.json` at startup and whenever a floating window opens. The plugin merges your overrides with the built-in defaults using a deep merge, so you can override a single key without affecting the rest.
 
+**Keymaps are buffer-local.** Raccoon shortcuts are only active in raccoon-managed buffers (PR file views). Your other plugin keymaps work normally in all other buffers — raccoon never sets global keymaps that could shadow them.
+
 Values are validated on load:
 - **Strings** are accepted as keybindings (e.g. `"<leader>j"`, `"<C-n>"`, `"gj"`)
 - **`false`** disables the shortcut — the keymap is not registered, but the feature remains available via `:Raccoon` commands

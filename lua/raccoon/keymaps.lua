@@ -500,21 +500,38 @@ end
 --- Current active keymaps (built from config at setup time)
 M.keymaps = {}
 
---- Setup all keymaps for PR review mode
+--- Setup a single passthrough keymap on a buffer.
+--- Temporarily sets modifiable=true, removes the wrapper mapping, feeds the original
+--- key so external plugins can handle it, then restores modifiable and re-registers.
+---@param buf number Buffer ID
+---@param mode string Vim mode ("n", "v", etc.)
+---@param key string Key sequence (e.g. "gcc", "<leader>f")
+local function setup_passthrough_keymap(buf, mode, key)
+  vim.keymap.set(mode, key, function()
+    vim.bo[buf].modifiable = true
+    pcall(vim.keymap.del, mode, key, { buffer = buf })
+    local escaped = vim.api.nvim_replace_termcodes(key, true, false, true)
+    vim.api.nvim_feedkeys(escaped, "m", false)
+    vim.schedule(function()
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.bo[buf].modifiable = false
+        setup_passthrough_keymap(buf, mode, key)
+      end
+    end)
+  end, { buffer = buf, noremap = true, silent = true, desc = "Raccoon passthrough: " .. key })
+end
+
+--- Build keymaps table and prepare for buffer-local registration.
+--- Does NOT set global keymaps — keymaps are only active on raccoon-managed buffers.
 function M.setup()
   local shortcuts = config.load_shortcuts()
   M.keymaps = M.build_keymaps(shortcuts)
-  for _, km in ipairs(M.keymaps) do
-    local opts = vim.tbl_extend("force", default_opts, { desc = km.desc })
-    vim.keymap.set(km.mode, km.lhs, km.rhs, opts)
-  end
 end
 
---- Clear all PR review keymaps
+--- Clear the keymaps table.
+--- Buffer-local keymaps are automatically cleaned up when buffers are deleted.
 function M.clear()
-  for _, km in ipairs(M.keymaps) do
-    pcall(vim.keymap.del, km.mode, km.lhs)
-  end
+  M.keymaps = {}
 end
 
 --- Setup buffer-local keymaps for a specific buffer
@@ -524,9 +541,20 @@ function M.setup_buffer(buf)
     return
   end
 
+  -- Ensure keymaps are built
+  if #M.keymaps == 0 then
+    M.setup()
+  end
+
   for _, km in ipairs(M.keymaps) do
     local opts = vim.tbl_extend("force", default_opts, { desc = km.desc, buffer = buf })
     vim.keymap.set(km.mode, km.lhs, km.rhs, opts)
+  end
+
+  -- Setup passthrough keymaps from config
+  local passthrough = config.load_passthrough_keymaps()
+  for _, pt in ipairs(passthrough) do
+    setup_passthrough_keymap(buf, pt.mode, pt.key)
   end
 end
 

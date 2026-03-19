@@ -860,6 +860,99 @@ describe("raccoon.config", function()
     end)
   end)
 
+  describe("load_passthrough_keymaps", function()
+    it("returns empty table when config file does not exist", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local pt = config.load_passthrough_keymaps()
+      assert.same({}, pt)
+    end)
+
+    it("returns empty table when key is missing", function()
+      local tmpfile = test_tmp_dir .. "/pt_missing.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"tokens": {"user": "ghp_xxx"}}')
+      f:close()
+
+      config.config_path = tmpfile
+      local pt = config.load_passthrough_keymaps()
+      assert.same({}, pt)
+
+      os.remove(tmpfile)
+    end)
+
+    it("returns empty table when key is not an array", function()
+      local tmpfile = test_tmp_dir .. "/pt_scalar.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"passthrough_keymaps": "invalid"}')
+      f:close()
+
+      config.config_path = tmpfile
+      local pt = config.load_passthrough_keymaps()
+      assert.same({}, pt)
+
+      os.remove(tmpfile)
+    end)
+
+    it("parses valid entries", function()
+      local tmpfile = test_tmp_dir .. "/pt_valid.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "passthrough_keymaps": [
+          {"mode": "n", "key": "gcc"},
+          {"mode": "v", "key": "gc"}
+        ]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local pt = config.load_passthrough_keymaps()
+      assert.equals(2, #pt)
+      assert.equals("n", pt[1].mode)
+      assert.equals("gcc", pt[1].key)
+      assert.equals("v", pt[2].mode)
+      assert.equals("gc", pt[2].key)
+
+      os.remove(tmpfile)
+    end)
+
+    it("defaults mode to n when omitted", function()
+      local tmpfile = test_tmp_dir .. "/pt_no_mode.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"passthrough_keymaps": [{"key": "<leader>f"}]}')
+      f:close()
+
+      config.config_path = tmpfile
+      local pt = config.load_passthrough_keymaps()
+      assert.equals(1, #pt)
+      assert.equals("n", pt[1].mode)
+      assert.equals("<leader>f", pt[1].key)
+
+      os.remove(tmpfile)
+    end)
+
+    it("skips entries with missing or empty key", function()
+      local tmpfile = test_tmp_dir .. "/pt_bad_entries.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "passthrough_keymaps": [
+          {"mode": "n"},
+          {"mode": "n", "key": ""},
+          {"mode": "n", "key": "gcc"},
+          "not-a-table",
+          42
+        ]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local pt = config.load_passthrough_keymaps()
+      assert.equals(1, #pt)
+      assert.equals("gcc", pt[1].key)
+
+      os.remove(tmpfile)
+    end)
+  end)
+
   describe("multi-host tokens", function()
     it("get_token_for_owner returns token and default host for string token", function()
       local cfg = {

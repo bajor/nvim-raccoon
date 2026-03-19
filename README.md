@@ -95,6 +95,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 | `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (20–120) |
 | `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
+| `passthrough_keymaps` | array | `[]` | External plugin keymaps to allow inside raccoon buffers (see [config_docs.md](config_docs.md#passthrough_keymaps)) |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
 
@@ -242,6 +243,8 @@ One review session is active at a time. Opening a second PR closes the first.
 ## Keymaps
 
 All keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Set any shortcut to `false` to disable it entirely — the keymap won't be registered, but the underlying `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
+
+Keymaps are **buffer-local** — they are only active in raccoon-managed buffers (PR file views). Your other plugin keymaps work normally everywhere else. To let specific external plugin keymaps work *inside* raccoon buffers (which are non-modifiable), add them to `passthrough_keymaps` in config — see [config_docs.md](config_docs.md#passthrough_keymaps).
 
 | Key | Config key | Action |
 |-----|------------|--------|

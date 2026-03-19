@@ -240,6 +240,32 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
 
 In **PR commit viewer** mode, agents run inside the shallow clone checked out to the PR branch (`{clone_root}/{owner}/{repo}/pr-{number}`), so "commit and push" pushes directly to the PR. In **local commit viewer** mode, agents run in your working directory.
 
+### `passthrough_keymaps`
+
+| Type | Default |
+|------|---------|
+| array | `[]` |
+
+Keymaps from other plugins that should work inside raccoon review buffers even though those buffers are non-modifiable. Raccoon sets `modifiable = false` on PR file buffers to prevent accidental edits. This blocks any plugin keymap that tries to modify the buffer (e.g., comment.nvim's `gcc`, surround.nvim's `ysiw`). Adding a keymap to this list makes raccoon temporarily unlock the buffer for that keymap, execute it, then re-lock.
+
+Each entry is an object with:
+- **`key`** (required) — the key sequence, e.g. `"gcc"`, `"<leader>f"`, `"ysiw"`
+- **`mode`** (optional, default `"n"`) — vim mode: `"n"` for normal, `"v"` for visual, etc.
+
+```json
+{
+  "passthrough_keymaps": [
+    { "mode": "n", "key": "gcc" },
+    { "mode": "v", "key": "gc" },
+    { "key": "<leader>f" }
+  ]
+}
+```
+
+Entries with missing or empty `key` are silently skipped. Invalid entries (non-objects, numbers, strings) are also skipped.
+
+> **Note:** Passthrough works by temporarily setting `modifiable = true`, executing the original mapping, then restoring `modifiable = false`. This is synchronous — if the plugin's action is async and modifies the buffer after a delay, the modification may be blocked. Most plugins (comment.nvim, surround.nvim, etc.) work fine.
+
 ### `shortcuts`
 
 | Type | Default |
@@ -280,6 +306,10 @@ Partial overrides are merged with defaults — you only need to specify keys you
     "command": "claude --dangerously-skip-permissions -p <PROMPT>",
     "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request."
   },
+  "passthrough_keymaps": [
+    { "mode": "n", "key": "gcc" },
+    { "mode": "v", "key": "gc" }
+  ],
   "shortcuts": {
     "pr_list": "<leader>pr",
     "next_point": "<C-n>",

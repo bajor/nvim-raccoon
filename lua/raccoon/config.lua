@@ -38,6 +38,7 @@ M.defaults = {
     shortcut = "<leader>aa",
     popup_width = 70,
   },
+  passthrough_keymaps = {},
   shortcuts = {
     -- Global
     pr_list = "<leader>pr",
@@ -308,6 +309,26 @@ function M.load_parallel_agents()
     popup_width = type(user.popup_width) == "number" and user.popup_width > 0
       and math.floor(user.popup_width) or defaults.popup_width,
   }
+end
+
+--- Load passthrough keymaps from config.
+--- These let external plugin keymaps work in raccoon buffers despite modifiable=false.
+---@return {mode: string, key: string}[]
+function M.load_passthrough_keymaps()
+  local parsed = read_config_json()
+  if not parsed then return {} end
+  local raw = parsed.passthrough_keymaps
+  if type(raw) ~= "table" then return {} end
+  local result = {}
+  for _, entry in ipairs(raw) do
+    if type(entry) == "table" and type(entry.key) == "string" and entry.key ~= "" then
+      table.insert(result, {
+        mode = type(entry.mode) == "string" and entry.mode or "n",
+        key = entry.key,
+      })
+    end
+  end
+  return result
 end
 
 --- Get the token and host for a given owner/org from the tokens table

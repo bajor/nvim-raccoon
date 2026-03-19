@@ -217,6 +217,9 @@ function M.open_file(file)
   state.add_buffer(buf)
   vim.bo[buf].modifiable = false
 
+  -- Setup buffer-local keymaps (lazy require to avoid circular dependency)
+  require("raccoon.keymaps").setup_buffer(buf)
+
   -- Apply diff highlights
   if file.patch then
     -- Defer to allow buffer to fully load

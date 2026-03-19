@@ -143,7 +143,7 @@ local function open_first_file()
     return
   end
 
-  -- Setup all PR review keymaps
+  -- Build keymaps table (buffer-local keymaps are set inside diff.open_file)
   keymaps.setup()
 
   -- Open file with diff highlighting
@@ -683,7 +683,7 @@ function M.close_pr()
   -- Reset statusline to default
   vim.wo.statusline = ""
 
-  -- Clear all PR review keymaps
+  -- Clear keymaps table (buffer-local keymaps are cleaned up with buffer deletion)
   keymaps.clear()
 
   state.stop()
