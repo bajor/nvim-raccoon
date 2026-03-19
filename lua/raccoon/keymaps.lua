@@ -503,9 +503,15 @@ M.keymaps = {}
 --- Cached passthrough keymaps (loaded from config at setup time)
 M.passthrough_keymaps = {}
 
+--- Delay (ms) before restoring modifiable=false after a passthrough keymap fires.
+--- Must be long enough for nvim_feedkeys ("m" mode) to fully execute the external
+--- plugin's mapping. Most plugins complete within a single event-loop tick (~1ms),
+--- but vim.schedule can race with queued keys, so we use vim.defer_fn instead.
+local PASSTHROUGH_RESTORE_DELAY_MS = 50
+
 --- Setup a single passthrough keymap on a buffer.
 --- Temporarily sets modifiable=true, removes the wrapper mapping, and feeds the original
---- key so external plugins can handle it. On the next event loop tick (via vim.schedule),
+--- key so external plugins can handle it. After PASSTHROUGH_RESTORE_DELAY_MS,
 --- restores modifiable=false and re-registers the wrapper.
 ---@param buf number Buffer ID
 ---@param mode string Vim mode ("n", "v", etc.)
@@ -513,18 +519,21 @@ M.passthrough_keymaps = {}
 local function setup_passthrough_keymap(buf, mode, key)
   vim.keymap.set(mode, key, function()
     if not vim.api.nvim_buf_is_valid(buf) then return end
-    pcall(function()
+    local ok, err = pcall(function()
       vim.bo[buf].modifiable = true
       pcall(vim.keymap.del, mode, key, { buffer = buf })
       local escaped = vim.api.nvim_replace_termcodes(key, true, false, true)
       vim.api.nvim_feedkeys(escaped, "m", false)
     end)
-    vim.schedule(function()
+    if not ok then
+      vim.notify("Raccoon passthrough error (" .. key .. "): " .. tostring(err), vim.log.levels.WARN)
+    end
+    vim.defer_fn(function()
       if vim.api.nvim_buf_is_valid(buf) then
         pcall(function() vim.bo[buf].modifiable = false end)
         setup_passthrough_keymap(buf, mode, key)
       end
-    end)
+    end, PASSTHROUGH_RESTORE_DELAY_MS)
   end, { buffer = buf, noremap = true, silent = true, desc = "Raccoon passthrough: " .. key })
 end
 
@@ -550,7 +559,10 @@ function M.setup_buffer(buf)
     return
   end
 
-  -- Ensure keymaps are built
+  -- Auto-build on first call: open_file() in diff.lua calls setup_buffer() before
+  -- open_first_file() has a chance to call setup(), so we lazily initialize here.
+  -- This is safe because clear() only runs during close_pr(), which also deletes
+  -- all raccoon buffers — no stale buffer can trigger an unintended re-init.
   if #M.keymaps == 0 then
     M.setup()
   end
