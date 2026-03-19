@@ -218,7 +218,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fetch base branch with explicit refspec to support shallow single-branch clones
 - Sidebar on the right listing PR branch commits and recent base branch commits
 - Seamless navigation between PR branch and base branch commits (j/k crosses the boundary)
-- Configurable grid layout via `commit_viewer.grid` in config.json (default 2x2)
+- Configurable grid layout via `commit_viewer.grid` in config.json (default 2x1)
 - j/k navigation in sidebar auto-loads the selected commit's diffs into the grid
 - `<leader>j`/`<leader>k` to page through diff hunks when there are more than the grid can show
 - `<leader>l` as alias for next page

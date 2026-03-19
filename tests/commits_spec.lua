@@ -438,7 +438,7 @@ describe("raccoon.commits keybinding lockdown", function()
     it("blocks cell maximize keys", function()
       local buf = create_scratch_buf()
       commits._lock_maximize_buf(buf)
-      -- Default 2x2 grid = 4 cells
+      -- Default 2x1 grid = 2 cells; maximize keys cover up to 4
       for i = 1, 4 do
         assert.is_true(has_buf_keymap(buf, "n", " m" .. i), "expected <leader>m" .. i .. " to be blocked")
       end
@@ -623,7 +623,7 @@ describe("raccoon.config commit_viewer defaults", function()
   it("has grid config with rows and cols", function()
     assert.is_table(config.defaults.commit_viewer.grid)
     assert.equals(2, config.defaults.commit_viewer.grid.rows)
-    assert.equals(2, config.defaults.commit_viewer.grid.cols)
+    assert.equals(1, config.defaults.commit_viewer.grid.cols)
   end)
 
   it("has base_commits_count default", function()

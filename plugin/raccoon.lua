@@ -144,7 +144,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   "clone_root": "%s",
   "pull_changes_interval": 300,
   "commit_viewer": {
-    "grid": { "rows": 2, "cols": 2 },
+    "grid": { "rows": 2, "cols": 1 },
     "base_commits_count": 20
   },
   "shortcuts": {

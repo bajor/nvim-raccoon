@@ -167,9 +167,9 @@ Number of rows in the commit viewer diff grid. Each cell shows one diff hunk.
 
 | Type | Default |
 |------|---------|
-| number | `2` |
+| number | `1` |
 
-Number of columns in the commit viewer diff grid. A 2x2 grid shows 4 diff hunks at once.
+Number of columns in the commit viewer diff grid. A 2x2 grid shows 4 diff hunks at once; the default 2x1 shows 2 hunks stacked vertically.
 
 ```json
 {
