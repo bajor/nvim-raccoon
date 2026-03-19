@@ -37,7 +37,7 @@ describe("raccoon.commit_ui", function()
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end)
 
-    it("displays full_message when available", function()
+    it("displays full_message when available, joined into single line", function()
       local state = {
         header_buf = buf, header_win = win, current_page = 1,
       }
@@ -49,10 +49,10 @@ describe("raccoon.commit_ui", function()
       commit_ui.update_header(state, commit, 1)
 
       local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-      assert.equals(3, #lines)
+      assert.equals(1, #lines)
       assert.truthy(lines[1]:find("feat: add login"))
-      assert.truthy(lines[2]:find("This adds the login flow"))
-      assert.truthy(lines[3]:find("Includes token refresh"))
+      assert.truthy(lines[1]:find("This adds the login flow"))
+      assert.truthy(lines[1]:find("Includes token refresh"))
     end)
 
     it("falls back to message when full_message is nil", function()

@@ -493,11 +493,11 @@ function M.create_grid_layout(s, rows, cols)
     vim.wo[s.filetree_win].winhl = "WinBar:Normal,WinBarNC:Normal"
   end
 
-  -- Header at top (full width)
-  vim.api.nvim_set_current_win(grid_wins[1])
+  -- Header at bottom (full width)
+  vim.api.nvim_set_current_win(grid_wins[#grid_wins])
   vim.cmd("split")
   s.header_win = vim.api.nvim_get_current_win()
-  vim.cmd("wincmd K")
+  vim.cmd("wincmd J")
   s.header_buf = M.create_scratch_buf()
   vim.api.nvim_win_set_buf(s.header_win, s.header_buf)
   vim.wo[s.header_win].number = false
@@ -979,14 +979,12 @@ function M.update_header(s, commit, pages)
     msg = msg:sub(1, M.MAX_COMMIT_MESSAGE_LENGTH) .. "..."
   end
 
+  -- Join all lines with spaces so the message flows continuously with wrapping
   local msg_lines = vim.split(msg, "\n", { trimempty = true })
-  if #msg_lines == 0 then msg_lines = { "" } end
+  local joined = table.concat(msg_lines, " ")
+  if joined == "" then joined = "" end
 
-  local lines = {}
-  table.insert(lines, page_str .. " " .. msg_lines[1])
-  for i = 2, #msg_lines do
-    table.insert(lines, " " .. msg_lines[i])
-  end
+  local lines = { page_str .. " " .. joined }
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
