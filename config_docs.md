@@ -264,7 +264,7 @@ Each entry is an object with:
 
 Entries with missing or empty `key` are silently skipped. Invalid entries (non-objects, numbers, strings) are also skipped.
 
-> **Note:** Passthrough works by temporarily setting `modifiable = true`, executing the original mapping, then restoring `modifiable = false`. This is synchronous — if the plugin's action is async and modifies the buffer after a delay, the modification may be blocked. Most plugins (comment.nvim, surround.nvim, etc.) work fine.
+> **Note:** Passthrough works by temporarily setting `modifiable = true`, removing the wrapper mapping, and feeding the original key via `nvim_feedkeys`. After the key is processed, `modifiable = false` is restored on the next event loop tick via `vim.schedule`. If an external plugin's action modifies the buffer asynchronously after a longer delay, the modification may be blocked by the re-lock. Most plugins (comment.nvim, surround.nvim, etc.) complete within a single event loop tick and work fine.
 
 ### `shortcuts`
 

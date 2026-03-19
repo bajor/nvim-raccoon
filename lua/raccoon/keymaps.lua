@@ -1,6 +1,6 @@
 ---@class RaccoonKeymaps
----Keymap management for PR review sessions
----All keymaps use <leader> prefix to avoid conflicts with Vim builtins
+---Keymap management for PR review sessions.
+---Review shortcuts use <leader> prefix by default; passthrough keymaps forward arbitrary keys to external plugins.
 local M = {}
 
 local api = require("raccoon.api")
@@ -500,38 +500,47 @@ end
 --- Current active keymaps (built from config at setup time)
 M.keymaps = {}
 
+--- Cached passthrough keymaps (loaded from config at setup time)
+M.passthrough_keymaps = {}
+
 --- Setup a single passthrough keymap on a buffer.
---- Temporarily sets modifiable=true, removes the wrapper mapping, feeds the original
---- key so external plugins can handle it, then restores modifiable and re-registers.
+--- Temporarily sets modifiable=true, removes the wrapper mapping, and feeds the original
+--- key so external plugins can handle it. On the next event loop tick (via vim.schedule),
+--- restores modifiable=false and re-registers the wrapper.
 ---@param buf number Buffer ID
 ---@param mode string Vim mode ("n", "v", etc.)
 ---@param key string Key sequence (e.g. "gcc", "<leader>f")
 local function setup_passthrough_keymap(buf, mode, key)
   vim.keymap.set(mode, key, function()
-    vim.bo[buf].modifiable = true
-    pcall(vim.keymap.del, mode, key, { buffer = buf })
-    local escaped = vim.api.nvim_replace_termcodes(key, true, false, true)
-    vim.api.nvim_feedkeys(escaped, "m", false)
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+    pcall(function()
+      vim.bo[buf].modifiable = true
+      pcall(vim.keymap.del, mode, key, { buffer = buf })
+      local escaped = vim.api.nvim_replace_termcodes(key, true, false, true)
+      vim.api.nvim_feedkeys(escaped, "m", false)
+    end)
     vim.schedule(function()
       if vim.api.nvim_buf_is_valid(buf) then
-        vim.bo[buf].modifiable = false
+        pcall(function() vim.bo[buf].modifiable = false end)
         setup_passthrough_keymap(buf, mode, key)
       end
     end)
   end, { buffer = buf, noremap = true, silent = true, desc = "Raccoon passthrough: " .. key })
 end
 
---- Build keymaps table and prepare for buffer-local registration.
+--- Build keymaps table and cache passthrough keymaps for buffer-local registration.
 --- Does NOT set global keymaps — keymaps are only active on raccoon-managed buffers.
 function M.setup()
   local shortcuts = config.load_shortcuts()
   M.keymaps = M.build_keymaps(shortcuts)
+  M.passthrough_keymaps = config.load_passthrough_keymaps()
 end
 
---- Clear the keymaps table.
+--- Clear the keymaps and passthrough tables.
 --- Buffer-local keymaps are automatically cleaned up when buffers are deleted.
 function M.clear()
   M.keymaps = {}
+  M.passthrough_keymaps = {}
 end
 
 --- Setup buffer-local keymaps for a specific buffer
@@ -551,9 +560,7 @@ function M.setup_buffer(buf)
     vim.keymap.set(km.mode, km.lhs, km.rhs, opts)
   end
 
-  -- Setup passthrough keymaps from config
-  local passthrough = config.load_passthrough_keymaps()
-  for _, pt in ipairs(passthrough) do
+  for _, pt in ipairs(M.passthrough_keymaps) do
     setup_passthrough_keymap(buf, pt.mode, pt.key)
   end
 end

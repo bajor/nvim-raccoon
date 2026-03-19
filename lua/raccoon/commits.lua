@@ -49,7 +49,7 @@ local commit_state = {
   focus_target = "sidebar",
 }
 
---- Commit mode keymaps (global)
+--- Commit mode keymaps
 local commit_mode_keymaps = {}
 
 --- Reset module state
@@ -423,7 +423,7 @@ local function enter_commit_mode()
   commit_state.saved_laststatus = vim.o.laststatus
   vim.o.laststatus = 3
 
-  keymaps.clear() -- reset keymaps table (buffer-local keymaps stay on PR buffers, harmless)
+  keymaps.clear()
   open.pause_sync()
   state.set_commit_mode(true)
   commit_state.active = true
@@ -538,7 +538,7 @@ local function exit_commit_mode(opts)
     vim.api.nvim_set_current_buf(commit_state.saved_buf)
   end
 
-  keymaps.setup() -- rebuild keymaps table (buffer-local keymaps on saved_buf are still intact)
+  keymaps.setup()
   if opts.resume_sync ~= false then
     open.resume_sync()
   end

@@ -669,7 +669,7 @@ local function activate_mode(repo_root, rows, cols, notify_msg)
   local_state.saved_laststatus = vim.o.laststatus
   local_state.pr_was_active = state.is_active()
   if local_state.pr_was_active then
-    keymaps.clear() -- reset keymaps table; buffer-local keymaps stay on PR buffers
+    keymaps.clear()
     open.pause_sync()
   end
   vim.o.laststatus = 3
@@ -830,7 +830,7 @@ local function exit_local_mode(opts)
 
   -- Restore PR session if it was active
   if local_state.pr_was_active and opts.resume_pr ~= false then
-    keymaps.setup() -- rebuild keymaps table; buffer-local keymaps on PR buffers are still intact
+    keymaps.setup()
     open.resume_sync()
   end
 

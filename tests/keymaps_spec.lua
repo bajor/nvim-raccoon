@@ -1,6 +1,33 @@
 local keymaps = require("raccoon.keymaps")
 local config = require("raccoon.config")
 
+--- Resolve lhs to match how Neovim stores it (e.g. "<leader>j" -> " j")
+local function resolve_lhs(lhs)
+  return vim.api.nvim_replace_termcodes(lhs, true, false, true)
+end
+
+local function has_buf_keymap(buf, mode, lhs)
+  local resolved = resolve_lhs(lhs)
+  local maps = vim.api.nvim_buf_get_keymap(buf, mode)
+  for _, map in ipairs(maps) do
+    if map.lhs == resolved then
+      return true
+    end
+  end
+  return false
+end
+
+local function has_global_keymap(mode, lhs)
+  local resolved = resolve_lhs(lhs)
+  local maps = vim.api.nvim_get_keymap(mode)
+  for _, map in ipairs(maps) do
+    if map.lhs == resolved then
+      return true
+    end
+  end
+  return false
+end
+
 describe("raccoon.keymaps", function()
   after_each(function()
     -- Clean up keymaps after each test
@@ -149,8 +176,13 @@ describe("raccoon.keymaps", function()
 
     it("sets up keymaps for valid buffer", function()
       local buf = vim.api.nvim_create_buf(false, true)
-      -- Should not error
       keymaps.setup_buffer(buf)
+      -- Verify keymaps are actually registered on the buffer
+      -- nvim_buf_get_keymap stores resolved lhs (e.g. " j" not "<leader>j")
+      local built = keymaps.keymaps
+      assert.is_true(#built > 0, "expected keymaps to be built")
+      assert.is_true(has_buf_keymap(buf, built[1].mode, built[1].lhs),
+        "expected first keymap on buffer")
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
@@ -158,9 +190,12 @@ describe("raccoon.keymaps", function()
       local buf1 = vim.api.nvim_create_buf(false, true)
       local buf2 = vim.api.nvim_create_buf(false, true)
 
-      -- Should not error
       keymaps.setup_buffer(buf1)
       keymaps.setup_buffer(buf2)
+
+      local built = keymaps.keymaps
+      assert.is_true(has_buf_keymap(buf1, built[1].mode, built[1].lhs))
+      assert.is_true(has_buf_keymap(buf2, built[1].mode, built[1].lhs))
 
       vim.api.nvim_buf_delete(buf1, { force = true })
       vim.api.nvim_buf_delete(buf2, { force = true })
@@ -235,20 +270,93 @@ describe("raccoon.keymaps", function()
       assert.is_true(#keymaps.keymaps > 0)
     end)
 
+    it("does NOT create global keymaps", function()
+      keymaps.setup()
+      -- Use the resolved lhs values from built keymaps
+      for _, km in ipairs(keymaps.keymaps) do
+        assert.is_false(has_global_keymap(km.mode, km.lhs),
+          "global keymap " .. km.lhs .. " was unexpectedly added by setup()")
+      end
+    end)
+
     it("clear resets keymaps table to empty", function()
       keymaps.setup()
       keymaps.clear()
       assert.same({}, keymaps.keymaps)
     end)
+
+    it("clear resets passthrough_keymaps to empty", function()
+      keymaps.setup()
+      keymaps.clear()
+      assert.same({}, keymaps.passthrough_keymaps)
+    end)
   end)
 
   describe("setup_buffer auto-builds keymaps if empty", function()
-    it("builds keymaps on first setup_buffer call", function()
+    it("builds keymaps and registers them on buffer", function()
       keymaps.clear()
       assert.same({}, keymaps.keymaps)
       local buf = vim.api.nvim_create_buf(false, true)
       keymaps.setup_buffer(buf)
       assert.is_true(#keymaps.keymaps > 0)
+      local built = keymaps.keymaps
+      assert.is_true(has_buf_keymap(buf, built[1].mode, built[1].lhs),
+        "expected first keymap on buffer after auto-build")
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+  end)
+
+  describe("passthrough keymap registration", function()
+    local saved_config_path
+
+    before_each(function()
+      saved_config_path = config.config_path
+    end)
+
+    after_each(function()
+      config.config_path = saved_config_path
+    end)
+
+    it("registers passthrough keymaps on buffer with correct desc", function()
+      local tmpdir = vim.fn.tempname()
+      vim.fn.mkdir(tmpdir, "p")
+      local tmpfile = tmpdir .. "/config.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"passthrough_keymaps": [{"mode": "n", "key": "gcc"}]}')
+      f:close()
+
+      config.config_path = tmpfile
+      keymaps.setup()
+      local buf = vim.api.nvim_create_buf(false, true)
+      keymaps.setup_buffer(buf)
+
+      assert.is_true(has_buf_keymap(buf, "n", "gcc"),
+        "expected passthrough keymap gcc on buffer")
+
+      -- Verify desc
+      local maps = vim.api.nvim_buf_get_keymap(buf, "n")
+      local found_desc = false
+      for _, map in ipairs(maps) do
+        if map.lhs == "gcc" and map.desc == "Raccoon passthrough: gcc" then
+          found_desc = true
+        end
+      end
+      assert.is_true(found_desc, "expected passthrough desc on gcc keymap")
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      os.remove(tmpfile)
+      vim.fn.delete(tmpdir, "rf")
+    end)
+
+    it("does not register passthrough keymaps when config is empty", function()
+      config.config_path = "/nonexistent/path/config.json"
+      keymaps.setup()
+      local buf = vim.api.nvim_create_buf(false, true)
+      keymaps.setup_buffer(buf)
+
+      assert.is_false(has_buf_keymap(buf, "n", "gcc"),
+        "should not have passthrough keymap when config is empty")
+
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
   end)

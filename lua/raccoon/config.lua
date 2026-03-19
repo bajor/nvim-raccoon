@@ -311,6 +311,9 @@ function M.load_parallel_agents()
   }
 end
 
+--- Valid vim mode shortnames for keymap registration.
+local VALID_MODES = { n = true, v = true, x = true, s = true, o = true, i = true, c = true, t = true }
+
 --- Load passthrough keymaps from config.
 --- These let external plugin keymaps work in raccoon buffers despite modifiable=false.
 ---@return {mode: string, key: string}[]
@@ -320,12 +323,14 @@ function M.load_passthrough_keymaps()
   local raw = parsed.passthrough_keymaps
   if type(raw) ~= "table" then return {} end
   local result = {}
-  for _, entry in ipairs(raw) do
+  for i, entry in ipairs(raw) do
     if type(entry) == "table" and type(entry.key) == "string" and entry.key ~= "" then
-      table.insert(result, {
-        mode = type(entry.mode) == "string" and entry.mode or "n",
-        key = entry.key,
-      })
+      local m = type(entry.mode) == "string" and entry.mode or "n"
+      if VALID_MODES[m] then
+        table.insert(result, { mode = m, key = entry.key })
+      else
+        vim.notify(string.format("Raccoon: invalid mode '%s' in passthrough_keymaps entry #%d, skipping", m, i), vim.log.levels.WARN)
+      end
     end
   end
   return result

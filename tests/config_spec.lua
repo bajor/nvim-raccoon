@@ -951,6 +951,27 @@ describe("raccoon.config", function()
 
       os.remove(tmpfile)
     end)
+
+    it("skips entries with invalid mode", function()
+      local tmpfile = test_tmp_dir .. "/pt_bad_mode.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "passthrough_keymaps": [
+          {"mode": "normal", "key": "gcc"},
+          {"mode": "nv", "key": "gc"},
+          {"mode": "v", "key": "<leader>f"}
+        ]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local pt = config.load_passthrough_keymaps()
+      assert.equals(1, #pt)
+      assert.equals("v", pt[1].mode)
+      assert.equals("<leader>f", pt[1].key)
+
+      os.remove(tmpfile)
+    end)
   end)
 
   describe("multi-host tokens", function()
