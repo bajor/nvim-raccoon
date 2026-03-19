@@ -6,11 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.11] - 2026-03-19
+
 ### Changed
 - **Keymaps are now buffer-local** — raccoon shortcuts are only active in raccoon-managed buffers (PR file views), no longer set globally. Other plugin keymaps work normally in all other buffers without conflicts.
 
 ### Added
 - **Passthrough keymaps** — configure external plugin keymaps (e.g. `gcc` from comment.nvim) to work inside raccoon's non-modifiable review buffers via the new `passthrough_keymaps` config option. Raccoon temporarily unlocks the buffer for the keymap, executes the original mapping, then re-locks.
+
+### Fixed
+- Hardened passthrough keymap restore timing and error surfacing
+- Strengthened passthrough keymap reliability with additional edge-case handling
 
 ## [0.10.4] - 2026-03-13
 
