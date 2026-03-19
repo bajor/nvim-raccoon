@@ -184,7 +184,6 @@ local function select_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
-  -- Immediately show available message, then async-fetch full commit message
   ui.fetch_and_display_commit_message(commit_state, commit, clone_path, generation, total_pages)
 
   local context = ui.compute_grid_context(commit_state.grid_rows)

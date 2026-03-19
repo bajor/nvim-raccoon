@@ -700,7 +700,7 @@ function M.get_commit_message(path, sha, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      -- Strip trailing sentinel empty string from jobstart buffered output
+      -- Strip trailing empty string that jobstart always appends to buffered output
       while #stdout > 0 and stdout[#stdout] == "" do
         table.remove(stdout)
       end

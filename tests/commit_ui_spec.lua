@@ -138,10 +138,10 @@ describe("raccoon.commit_ui", function()
       assert.equals(2, commit_ui.COMMIT_MESSAGE_MAX_LINES)
     end)
 
-    it("caps header window height", function()
+    it("caps header window height at max_lines for long messages", function()
       local header_buf = vim.api.nvim_create_buf(false, true)
       local header_win = vim.api.nvim_open_win(header_buf, false, {
-        relative = "editor", row = 0, col = 0, width = 40, height = 1,
+        relative = "editor", row = 0, col = 0, width = 20, height = 1,
       })
       vim.wo[header_win].wrap = true
 
@@ -149,7 +149,8 @@ describe("raccoon.commit_ui", function()
       commit_ui.COMMIT_MESSAGE_MAX_LINES = 2
 
       local s = { header_buf = header_buf, header_win = header_win, current_page = 1 }
-      local commit = { message = "x" }
+      -- 60 chars in 20-col window = 3 visual lines, capped to max_lines=2
+      local commit = { message = string.rep("abcdefghij", 6) }
 
       commit_ui.update_header(s, commit, 1)
       assert.equals(2, vim.api.nvim_win_get_height(header_win))
@@ -157,6 +158,189 @@ describe("raccoon.commit_ui", function()
       commit_ui.COMMIT_MESSAGE_MAX_LINES = original
       pcall(vim.api.nvim_win_close, header_win, true)
       pcall(vim.api.nvim_buf_delete, header_buf, { force = true })
+    end)
+
+    it("uses height 1 for short messages even when max_lines is larger", function()
+      local header_buf = vim.api.nvim_create_buf(false, true)
+      local header_win = vim.api.nvim_open_win(header_buf, false, {
+        relative = "editor", row = 0, col = 0, width = 80, height = 1,
+      })
+      vim.wo[header_win].wrap = true
+
+      local original = commit_ui.COMMIT_MESSAGE_MAX_LINES
+      commit_ui.COMMIT_MESSAGE_MAX_LINES = 3
+
+      local s = { header_buf = header_buf, header_win = header_win, current_page = 1 }
+      local commit = { message = "short" }
+
+      commit_ui.update_header(s, commit, 1)
+      assert.equals(1, vim.api.nvim_win_get_height(header_win))
+
+      commit_ui.COMMIT_MESSAGE_MAX_LINES = original
+      pcall(vim.api.nvim_win_close, header_win, true)
+      pcall(vim.api.nvim_buf_delete, header_buf, { force = true })
+    end)
+  end)
+
+  describe("truncate_to_display_width", function()
+    it("returns full text when within limit", function()
+      assert.equals("hello", commit_ui.truncate_to_display_width("hello", 10))
+    end)
+
+    it("truncates text exceeding limit", function()
+      assert.equals("hel", commit_ui.truncate_to_display_width("hello", 3))
+    end)
+
+    it("returns empty string for zero max_width", function()
+      assert.equals("", commit_ui.truncate_to_display_width("hello", 0))
+    end)
+
+    it("handles empty input", function()
+      assert.equals("", commit_ui.truncate_to_display_width("", 10))
+    end)
+
+    it("handles wide characters correctly", function()
+      -- CJK characters are 2 display columns each
+      local cjk = "中文测试"
+      local result = commit_ui.truncate_to_display_width(cjk, 4)
+      -- Should fit exactly 2 CJK characters (4 columns)
+      assert.equals("中文", result)
+    end)
+
+    it("does not split a wide character at boundary", function()
+      -- "a" is 1 col, "中" is 2 cols — budget of 2 fits "a" + nothing more (next char needs 2)
+      assert.equals("a", commit_ui.truncate_to_display_width("a中b", 2))
+    end)
+  end)
+
+  describe("update_header truncation", function()
+    local buf, win
+
+    before_each(function()
+      buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[buf].modifiable = true
+      win = vim.api.nvim_open_win(buf, false, {
+        relative = "editor", row = 0, col = 0, width = 20, height = 1,
+      })
+      vim.wo[win].wrap = true
+    end)
+
+    after_each(function()
+      pcall(vim.api.nvim_win_close, win, true)
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end)
+
+    it("truncates long message with ellipsis", function()
+      local original = commit_ui.COMMIT_MESSAGE_MAX_LINES
+      commit_ui.COMMIT_MESSAGE_MAX_LINES = 1
+
+      local state = { header_buf = buf, header_win = win, current_page = 1 }
+      -- 30 chars in a 20-col window with max_lines=1 → must truncate
+      local commit = { message = "this is a very long commit msg" }
+
+      commit_ui.update_header(state, commit, 1)
+
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      assert.truthy(lines[1]:find("%.%.%.$"))
+
+      commit_ui.COMMIT_MESSAGE_MAX_LINES = original
+    end)
+
+    it("does not truncate short message", function()
+      local original = commit_ui.COMMIT_MESSAGE_MAX_LINES
+      commit_ui.COMMIT_MESSAGE_MAX_LINES = 1
+
+      local state = { header_buf = buf, header_win = win, current_page = 1 }
+      local commit = { message = "short" }
+
+      commit_ui.update_header(state, commit, 1)
+
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      assert.equals("short", lines[1])
+
+      commit_ui.COMMIT_MESSAGE_MAX_LINES = original
+    end)
+  end)
+
+  describe("fetch_and_display_commit_message", function()
+    local buf, win, git
+
+    before_each(function()
+      buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[buf].modifiable = true
+      win = vim.api.nvim_open_win(buf, false, {
+        relative = "editor", row = 0, col = 0, width = 80, height = 1,
+      })
+      vim.wo[win].wrap = true
+      git = require("raccoon.git")
+    end)
+
+    after_each(function()
+      pcall(vim.api.nvim_win_close, win, true)
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end)
+
+    it("handles nil commit gracefully", function()
+      local s = {
+        header_buf = buf, header_win = win, current_page = 1,
+        select_generation = 1,
+      }
+
+      -- Should not error
+      commit_ui.fetch_and_display_commit_message(s, nil, "/tmp", 1, function() return 1 end)
+
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      assert.equals(1, #lines)
+    end)
+
+    it("skips fetch when full_message is already cached", function()
+      local fetch_called = false
+      local orig = git.get_commit_message
+      git.get_commit_message = function() fetch_called = true end
+
+      local s = {
+        header_buf = buf, header_win = win, current_page = 1,
+        select_generation = 1,
+      }
+      local commit = { sha = "abc123", message = "subject", full_message = "subject\nbody" }
+
+      commit_ui.fetch_and_display_commit_message(s, commit, "/tmp", 1, function() return 1 end)
+
+      assert.is_false(fetch_called)
+      git.get_commit_message = orig
+    end)
+
+    it("skips fetch when commit has no sha", function()
+      local fetch_called = false
+      local orig = git.get_commit_message
+      git.get_commit_message = function() fetch_called = true end
+
+      local s = {
+        header_buf = buf, header_win = win, current_page = 1,
+        select_generation = 1,
+      }
+      local commit = { message = "working directory changes" }
+
+      commit_ui.fetch_and_display_commit_message(s, commit, "/tmp", 1, function() return 1 end)
+
+      assert.is_false(fetch_called)
+      git.get_commit_message = orig
+    end)
+
+    it("does not set full_message when callback returns empty string", function()
+      local orig = git.get_commit_message
+      git.get_commit_message = function(_, _, cb) cb("", nil) end
+
+      local s = {
+        header_buf = buf, header_win = win, current_page = 1,
+        select_generation = 1,
+      }
+      local commit = { sha = "abc123", message = "subject" }
+
+      commit_ui.fetch_and_display_commit_message(s, commit, "/tmp", 1, function() return 1 end)
+
+      assert.is_nil(commit.full_message)
+      git.get_commit_message = orig
     end)
   end)
 end)

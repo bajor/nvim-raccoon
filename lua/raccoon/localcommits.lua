@@ -153,7 +153,6 @@ local function select_commit(index)
   local commit = get_commit(index)
   if not local_state.repo_path then return end
 
-  -- Immediately show available message, then async-fetch full commit message
   ui.fetch_and_display_commit_message(local_state, commit, local_state.repo_path, generation, total_pages)
 
   local context = ui.compute_grid_context(local_state.grid_rows)

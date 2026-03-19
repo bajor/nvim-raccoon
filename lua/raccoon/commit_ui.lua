@@ -13,6 +13,25 @@ M.COMMIT_MESSAGE_MAX_LINES = 2
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 
+--- Truncate a string to fit within a given number of display columns.
+--- Walks codepoints accumulating strdisplaywidth so wide characters (CJK, emoji) are measured correctly.
+---@param text string
+---@param max_width number Maximum display columns
+---@return string
+function M.truncate_to_display_width(text, max_width)
+  local width = 0
+  local chars = 0
+  local len = vim.fn.strchars(text)
+  while chars < len do
+    local ch = vim.fn.strcharpart(text, chars, 1)
+    local ch_width = vim.fn.strdisplaywidth(ch)
+    if width + ch_width > max_width then break end
+    width = width + ch_width
+    chars = chars + 1
+  end
+  return vim.fn.strcharpart(text, 0, chars)
+end
+
 --- Approximate usable editor height for grid layout.
 --- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
 --- header content height and inter-row separators since this feeds a heuristic, not exact layout.
@@ -953,18 +972,21 @@ end
 
 --- Fetch the full commit message async and update the header.
 --- Immediately shows whatever message is available, then re-renders with the full text.
----@param s table State table (needs header_buf, header_win, select_generation)
----@param commit table Commit with {sha, message, full_message?}
+---@param s table State table (needs header_buf, header_win, select_generation, current_page)
+---@param commit table|nil Commit with {sha, message, full_message?}
 ---@param repo_path string Repository path for git operations
 ---@param generation number select_generation at call time (for stale-callback guard)
 ---@param total_pages_fn fun(): number Function returning current total page count
 function M.fetch_and_display_commit_message(s, commit, repo_path, generation, total_pages_fn)
+  if not commit then
+    M.update_header(s, nil, total_pages_fn())
+    return
+  end
+
   local git = require("raccoon.git")
 
-  -- Immediately update header with available message
   M.update_header(s, commit, total_pages_fn())
 
-  -- Async-fetch full commit message; on completion, re-render header with the complete text
   if commit.sha and not commit.full_message then
     git.get_commit_message(repo_path, commit.sha, function(message, err)
       if generation ~= s.select_generation then return end
@@ -972,7 +994,7 @@ function M.fetch_and_display_commit_message(s, commit, repo_path, generation, to
         vim.notify("Failed to load full commit message: " .. err, vim.log.levels.WARN)
         return
       end
-      if message then
+      if message and message ~= "" then
         commit.full_message = message
         M.update_header(s, commit, total_pages_fn())
       end
@@ -997,7 +1019,7 @@ function M.update_header(s, commit, pages)
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { page_str })
     vim.bo[buf].modifiable = false
-    vim.api.nvim_win_set_height(win, 1)
+    pcall(vim.api.nvim_win_set_height, win, 1)
     return
   end
 
@@ -1010,11 +1032,11 @@ function M.update_header(s, commit, pages)
   local max_lines = math.max(1, M.COMMIT_MESSAGE_MAX_LINES)
   local win_width = math.max(1, vim.api.nvim_win_get_width(win))
 
-  -- Truncate text to fit within max_lines of visual wrapping (UTF-8 safe)
-  local prefix = show_pages and (page_str .. " ") or ""
-  local max_chars = max_lines * win_width - vim.fn.strdisplaywidth(prefix)
-  if max_chars > 0 and vim.fn.strdisplaywidth(joined) > max_chars then
-    joined = vim.fn.strcharpart(joined, 0, max_chars) .. "..."
+  -- Truncate text to fit within max_lines of visual wrapping
+  local prefix = show_pages and page_str or ""
+  local max_display_width = max_lines * win_width - vim.fn.strdisplaywidth(prefix)
+  if max_display_width > 0 and vim.fn.strdisplaywidth(joined) > max_display_width then
+    joined = M.truncate_to_display_width(joined, max_display_width) .. "..."
   end
 
   local lines = { prefix .. joined }
@@ -1027,9 +1049,11 @@ function M.update_header(s, commit, pages)
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
   pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, -1)
 
-  -- Clamp to available screen space (reserve room for grid + statusline)
+  -- Cap header height to at most 1/3 of the editor to preserve grid space
   local max_safe = math.max(1, math.floor(vim.o.lines / 3))
-  local height = math.min(max_lines, max_safe)
+  local content_width = vim.fn.strdisplaywidth(lines[1])
+  local visual_lines = math.max(1, math.ceil(content_width / win_width))
+  local height = math.min(visual_lines, max_lines, max_safe)
   local ok = pcall(vim.api.nvim_win_set_height, win, height)
   if not ok then
     pcall(vim.api.nvim_win_set_height, win, 1)
