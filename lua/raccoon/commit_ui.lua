@@ -536,8 +536,8 @@ function M.create_grid_layout(s, rows, cols)
   end
   vim.api.nvim_win_set_height(s.header_win, 1)
   local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
-  -- After wincmd = equalizes all windows, re-forcing sidebar widths leaves grid columns unbalanced.
-  -- Layout (each | is a 1-char separator): filetree | col1 | ... | colN | sidebar = (cols + 1)
+  -- Equalize grid column widths: sidebar resizes leave columns unbalanced
+  -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
   local grid_width = vim.o.columns - 2 * M.SIDEBAR_WIDTH - (cols + 1)
   local col_width = math.max(1, math.floor(grid_width / math.max(1, cols)))
   for _, win in ipairs(grid_wins) do
