@@ -107,6 +107,35 @@ function M.compute_grid_context(rows)
   return math.max(MIN_DIFF_CONTEXT, math.floor(row_height / 2))
 end
 
+--- Clamp sidebar width so both side panels fit symmetrically in the current editor width.
+--- Leaves at least one column for each grid cell plus the vertical separators.
+---@param cols number Number of grid columns
+---@param requested_width? number Preferred sidebar width
+---@return number
+function M.compute_effective_sidebar_width(cols, requested_width)
+  cols = math.max(1, cols or 1)
+  requested_width = requested_width or M.SIDEBAR_WIDTH
+
+  local separators = cols + 1
+  local remaining = vim.o.columns - cols * MIN_GRID_COL_WIDTH - separators
+  local max_width = math.floor(remaining / 2)
+  return math.max(1, math.min(requested_width, max_width))
+end
+
+--- Truncate sidebar text to fit the available sidebar width.
+---@param text string
+---@param sidebar_width? number
+---@return string
+function M.truncate_sidebar_text(text, sidebar_width)
+  text = text or ""
+  sidebar_width = math.max(1, sidebar_width or M.SIDEBAR_WIDTH)
+  if #text <= sidebar_width - 2 then
+    return text
+  end
+  local keep = math.max(1, sidebar_width - 5)
+  return text:sub(1, keep) .. "..."
+end
+
 --- Compute per-file addition/deletion counts from diff patches
 ---@param files table[] Array of {filename, patch}
 ---@return table<string, {additions: number, deletions: number}>
