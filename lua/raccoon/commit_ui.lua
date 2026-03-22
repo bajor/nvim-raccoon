@@ -147,6 +147,150 @@ local function setup_parallel_agent_keymap(buf, opts, pa_cfg)
   vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
 end
 
+--- Map a diff buffer line to the corresponding real file line number.
+--- Walks hl_lines to find the nearest add/ctx entry at or before cursor_line.
+---@param hl_lines table[] Array of {type, line_num} from parsed diff
+---@param cursor_line number 1-based cursor line in the maximize buffer
+---@return number file_line 1-based line in the real file (fallback: 1)
+local function diff_line_to_file_line(hl_lines, cursor_line)
+  if not hl_lines or #hl_lines == 0 then return 1 end
+  -- Try exact line first, then search backward for nearest add/ctx
+  for i = math.min(cursor_line, #hl_lines), 1, -1 do
+    local entry = hl_lines[i]
+    if entry.line_num and entry.type ~= "del" then
+      return entry.line_num
+    end
+  end
+  return 1
+end
+
+--- Set up the human edit keymap on a maximize buffer.
+--- Opens the actual file in an editable floating window.
+---@param buf number Buffer to bind the keymap on
+---@param opts table {repo_path, filename, state}
+local function setup_human_edit_keymap(buf, opts)
+  local he_cfg = config.load_human_edit()
+  if not config.is_enabled(he_cfg.shortcut) then return end
+
+  local shortcuts = config.load_shortcuts()
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+
+  vim.keymap.set(NORMAL_MODE, he_cfg.shortcut, function()
+    local filepath = opts.repo_path .. "/" .. opts.filename
+    if vim.fn.filereadable(filepath) ~= 1 then
+      vim.notify("File not found: " .. filepath, vim.log.levels.WARN)
+      return
+    end
+
+    -- Map diff cursor position to real file line
+    local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+    local file_line = diff_line_to_file_line(opts.state.maximize_hl_lines, cursor_line)
+
+    local edit_buf = vim.fn.bufadd(filepath)
+    vim.fn.bufload(edit_buf)
+
+    local width = math.floor(vim.o.columns * 0.85)
+    local height = math.floor(vim.o.lines * 0.85)
+    local row = math.floor((vim.o.lines - height) / 2)
+    local col = math.floor((vim.o.columns - width) / 2)
+
+    local save_key = config.is_enabled(shortcuts.comment_save) and shortcuts.comment_save or "<leader>s"
+    local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "q"
+
+    local edit_win = vim.api.nvim_open_win(edit_buf, true, {
+      relative = "editor",
+      width = width,
+      height = height,
+      row = row,
+      col = col,
+      border = "rounded",
+      zindex = 60,
+    })
+
+    vim.wo[edit_win].winbar = " Edit: " .. opts.filename
+      .. "%=%#Comment# " .. save_key .. "=save  " .. close_key .. " or q to close %*"
+    vim.wo[edit_win].number = true
+    vim.wo[edit_win].wrap = true
+    vim.wo[edit_win].signcolumn = "yes:1"
+
+    -- Jump to mapped line
+    local line_count = vim.api.nvim_buf_line_count(edit_buf)
+    file_line = math.min(file_line, line_count)
+    vim.api.nvim_win_set_cursor(edit_win, { file_line, 0 })
+
+    -- Track popup on state for focus lock
+    opts.state.popup_win = edit_win
+
+    local function run_post_command()
+      local cmd = he_cfg.command
+      if not cmd or cmd == "" then return end
+
+      -- Replace <FILE> placeholder with the relative filename
+      local escaped_file = vim.fn.shellescape(opts.filename)
+      cmd = cmd:gsub("<FILE>", escaped_file)
+
+      -- Replace <TIMESTAMP> placeholder with ISO 8601 timestamp
+      cmd = cmd:gsub("<TIMESTAMP>", os.date("%%Y-%%m-%%d_%%H:%%M:%%S"))
+
+      local stderr_lines = {}
+      local job_id = vim.fn.jobstart({ "sh", "-c", cmd .. " </dev/null" }, {
+        cwd = opts.repo_path,
+        on_stderr = function(_, data)
+          if data then
+            for _, line in ipairs(data) do
+              if line ~= "" then table.insert(stderr_lines, line) end
+            end
+          end
+        end,
+        on_exit = function(_, exit_code)
+          vim.schedule(function()
+            if exit_code == 0 then
+              vim.notify("Post-edit command finished: " .. opts.filename, vim.log.levels.INFO)
+            else
+              local msg = string.format("Post-edit command failed (exit %d)", exit_code)
+              if #stderr_lines > 0 then
+                msg = msg .. "\n" .. table.concat(stderr_lines, "\n")
+              end
+              vim.notify(msg, vim.log.levels.WARN)
+            end
+          end)
+        end,
+      })
+      if job_id > 0 then
+        vim.notify("Running post-edit command...", vim.log.levels.INFO)
+      end
+    end
+
+    local function close_edit()
+      -- Auto-save if modified
+      if vim.bo[edit_buf].modified then
+        vim.api.nvim_buf_call(edit_buf, function() vim.cmd("silent! write") end)
+      end
+      opts.state.popup_win = nil
+      if vim.api.nvim_win_is_valid(edit_win) then
+        vim.api.nvim_win_close(edit_win, true)
+      end
+      -- Refresh maximize diff for working-dir views
+      if opts.state.maximize_workdir_opts then
+        M.refresh_maximize(opts.state)
+      end
+      run_post_command()
+    end
+
+    local edit_km = { buffer = edit_buf, noremap = true, silent = true }
+    if config.is_enabled(shortcuts.comment_save) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, function()
+        vim.cmd("silent! write")
+        vim.notify("Saved " .. opts.filename, vim.log.levels.INFO)
+      end, edit_km)
+    end
+    if config.is_enabled(shortcuts.close) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_edit, edit_km)
+    end
+    vim.keymap.set(NORMAL_MODE, "q", close_edit, edit_km)
+  end, buf_opts)
+end
+
 --- Block editing and commit-mode navigation keys in a maximize floating window
 ---@param buf number Buffer ID
 ---@param grid_rows number Grid row count (for maximize prefix blocking)
@@ -488,6 +632,7 @@ function M.close_win_pair(s, win_key, buf_key)
   if win_key == "maximize_win" then
     M.stop_maximize_watcher(s)
     s.maximize_workdir_opts = nil
+    s.maximize_hl_lines = nil
   end
 end
 
@@ -528,7 +673,7 @@ function M.open_maximize(opts)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, { type = line_data.type, line_num = line_data.line_num })
       end
     end
 
@@ -570,6 +715,7 @@ function M.open_maximize(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    opts.state.maximize_hl_lines = hl_lines
     M.stop_maximize_watcher(opts.state)
     if opts.is_working_dir then
       opts.state.maximize_workdir_opts = {
@@ -633,6 +779,7 @@ function M.open_maximize(opts)
     end
 
     setup_parallel_agent_keymap(buf, opts, pa_cfg)
+    setup_human_edit_keymap(buf, opts)
   end)
 end
 
@@ -700,9 +847,10 @@ function M.refresh_maximize(s)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, { type = line_data.type, line_num = line_data.line_num })
       end
     end
+    s.maximize_hl_lines = hl_lines
 
     local cursor = vim.api.nvim_win_get_cursor(win)
 
@@ -758,6 +906,7 @@ function M.open_file_content(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    opts.state.maximize_hl_lines = nil
 
     local shortcuts = config.load_shortcuts()
     local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
@@ -777,6 +926,7 @@ function M.open_file_content(opts)
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
 
     setup_parallel_agent_keymap(buf, opts, pa_cfg)
+    setup_human_edit_keymap(buf, opts)
   end)
 end
 

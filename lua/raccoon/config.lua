@@ -38,6 +38,10 @@ M.defaults = {
     shortcut = "<leader>aa",
     popup_width = 70,
   },
+  human_edit = {
+    shortcut = "<leader>ee",
+    command = "git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push",
+  },
   shortcuts = {
     -- Global
     pr_list = "<leader>pr",
@@ -308,6 +312,40 @@ function M.load_parallel_agents()
     popup_width = type(user.popup_width) == "number" and user.popup_width > 0
       and math.floor(user.popup_width) or defaults.popup_width,
   }
+end
+
+--- Load human_edit config, falling back to defaults gracefully.
+---@return table human_edit
+function M.load_human_edit()
+  local defaults = M.defaults.human_edit
+
+  local parsed = read_config_json()
+  if not parsed then
+    return vim.deepcopy(defaults)
+  end
+
+  local user = parsed.human_edit
+  if type(user) ~= "table" then
+    return vim.deepcopy(defaults)
+  end
+
+  local shortcut
+  if user.shortcut == false then
+    shortcut = false
+  elseif type(user.shortcut) == "string" and user.shortcut ~= "" then
+    shortcut = user.shortcut
+  else
+    shortcut = defaults.shortcut
+  end
+
+  local command
+  if type(user.command) == "string" then
+    command = user.command
+  else
+    command = defaults.command
+  end
+
+  return { shortcut = shortcut, command = command }
 end
 
 --- Get the token and host for a given owner/org from the tokens table
