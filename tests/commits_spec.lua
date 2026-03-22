@@ -322,13 +322,43 @@ describe("raccoon.commits keybinding lockdown", function()
   end
 
   local function has_buf_keymap(buf, mode, lhs)
+    local expected_lhs = vim.fn.keytrans(vim.api.nvim_replace_termcodes(lhs, true, true, true))
     local maps = vim.api.nvim_buf_get_keymap(buf, mode)
     for _, map in ipairs(maps) do
-      if map.lhs == lhs then
+      local actual_lhs = vim.fn.keytrans(vim.api.nvim_replace_termcodes(map.lhs, true, true, true))
+      if actual_lhs == expected_lhs then
         return true
       end
     end
     return false
+  end
+
+  local function with_raccoon_config(config_table, callback)
+    local original_config_path = config.config_path
+    local tmpdir = "/tmp/claude/raccoon-tests"
+    local tmpfile = tmpdir .. "/commit_mode_passthrough.json"
+    vim.fn.mkdir(tmpdir, "p")
+
+    local f = assert(io.open(tmpfile, "w"))
+    f:write(vim.json.encode(config_table))
+    f:close()
+
+    config.config_path = tmpfile
+    local ok, err = xpcall(callback, debug.traceback)
+    config.config_path = original_config_path
+    os.remove(tmpfile)
+
+    if not ok then
+      error(err)
+    end
+  end
+
+  local function with_commit_viewer_passthrough_keys(keys, callback)
+    with_raccoon_config({
+      commit_viewer = {
+        passthrough_keys = keys,
+      },
+    }, callback)
   end
 
   describe("_lock_buf", function()
@@ -374,6 +404,91 @@ describe("raccoon.commits keybinding lockdown", function()
       commits._lock_buf(buf)
       assert.is_true(has_buf_keymap(buf, "n", "q"))
       vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("shadows arbitrary global mappings buffer-locally", function()
+      local lhs = "<F19>"
+      vim.keymap.set("n", lhs, function() end)
+
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+
+      assert.is_true(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
+    end)
+
+    it("keeps configured passthrough mappings active", function()
+      with_commit_viewer_passthrough_keys({ "<F20>" }, function()
+        vim.keymap.set("n", "<F20>", function() end)
+
+        local buf = create_scratch_buf()
+        commits._lock_buf(buf)
+
+        assert.is_false(has_buf_keymap(buf, "n", "<F20>"))
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.keymap.del("n", "<F20>")
+      end)
+    end)
+
+    it("keeps configured leader passthrough mappings active", function()
+      with_commit_viewer_passthrough_keys({ "<leader>tp" }, function()
+        vim.keymap.set("n", "<leader>tp", function() end)
+
+        local buf = create_scratch_buf()
+        commits._lock_buf(buf)
+
+        assert.is_false(has_buf_keymap(buf, "n", "<leader>tp"))
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.keymap.del("n", "<leader>tp")
+      end)
+    end)
+
+    it("keeps legacy passthrough_keymaps mappings active", function()
+      with_raccoon_config({
+        passthrough_keymaps = {
+          { key = "<Space>n" },
+        },
+      }, function()
+        vim.keymap.set("n", "<Leader>n", ":nohl<CR>", { silent = true })
+
+        local buf = create_scratch_buf()
+        commits._lock_buf(buf)
+
+        assert.is_false(has_buf_keymap(buf, "n", "<leader>n"))
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.keymap.del("n", "<Leader>n")
+      end)
+    end)
+
+    it("keeps raccoon global mappings active", function()
+      local lhs = "<F23>"
+      vim.keymap.set("n", lhs, function() end, { desc = "Raccoon: PR list" })
+
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+
+      assert.is_false(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
+    end)
+
+    it("keeps custom :Raccoon command mappings active", function()
+      local lhs = "<F24>"
+      vim.keymap.set("n", lhs, ":Raccoon close<CR>", { silent = true })
+
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+
+      assert.is_false(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
     end)
 
     it("does not block j or k", function()
@@ -443,6 +558,32 @@ describe("raccoon.commits keybinding lockdown", function()
         assert.is_true(has_buf_keymap(buf, "n", " m" .. i), "expected <leader>m" .. i .. " to be blocked")
       end
       vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("shadows arbitrary global mappings in maximize view", function()
+      local lhs = "<F21>"
+      vim.keymap.set("n", lhs, function() end)
+
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+
+      assert.is_true(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
+    end)
+
+    it("keeps raccoon global mappings in maximize view", function()
+      local lhs = "<F25>"
+      vim.keymap.set("n", lhs, function() end, { desc = "Raccoon: PR list" })
+
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+
+      assert.is_false(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
     end)
 
     it("handles invalid buffer gracefully", function()

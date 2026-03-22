@@ -94,12 +94,63 @@ function M.create_scratch_buf()
   return buf
 end
 
---- Block editing keys on a buffer (allows navigation and scrolling)
+--- Shadow global keymaps buffer-locally so commit mode can own the input surface.
+--- Skips <Plug> mappings and any keys listed in passthrough_keys config.
+---@param buf number Buffer ID
+---@param mode string Vim mode passed to nvim_get_keymap / keymap.set
+local function shadow_global_keymaps(buf, mode)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local shortcuts = config.load_shortcuts()
+  local function normalize_lhs(lhs)
+    if type(lhs) ~= "string" or lhs == "" then return nil end
+    return vim.fn.keytrans(vim.api.nvim_replace_termcodes(lhs, true, true, true))
+  end
+
+  local pr_list_lhs = normalize_lhs(shortcuts.pr_list)
+  local show_shortcuts_lhs = normalize_lhs(shortcuts.show_shortcuts)
+  local passthrough = {}
+  for _, lhs in ipairs(config.load_commit_viewer().passthrough_keys or {}) do
+    local normalized_lhs = normalize_lhs(lhs)
+    if normalized_lhs then
+      passthrough[normalized_lhs] = true
+    end
+  end
+
+  local function is_raccoon_global_map(map, normalized_lhs)
+    if normalized_lhs == pr_list_lhs or normalized_lhs == show_shortcuts_lhs then
+      return true
+    end
+
+    if type(map.desc) == "string" and map.desc:match("^Raccoon:") then
+      return true
+    end
+
+    return type(map.rhs) == "string" and map.rhs:match("[<:]Raccoon%s")
+  end
+
+  local opts = { buffer = buf, noremap = true, silent = true }
+  local nop = function() end
+  for _, map in ipairs(vim.api.nvim_get_keymap(mode)) do
+    local lhs = map.lhs
+    local normalized_lhs = normalize_lhs(lhs)
+    if type(lhs) == "string"
+        and lhs ~= ""
+        and not passthrough[normalized_lhs]
+        and not is_raccoon_global_map(map, normalized_lhs)
+        and not lhs:match("^<Plug>")
+    then
+      pcall(vim.keymap.set, mode, lhs, nop, opts)
+    end
+  end
+end
+
+--- Disable most normal-mode keys on a buffer and shadow global mappings.
 ---@param buf number Buffer ID
 function M.lock_buf(buf)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local opts = { buffer = buf, noremap = true, silent = true }
   local nop = function() end
+  shadow_global_keymaps(buf, NORMAL_MODE)
   local blocked = {
     "i", "I", "a", "A", "o", "O", "s", "S", "c", "C", "R",
     "d", "x", "p", "P", "u", "<C-r>",
@@ -147,7 +198,8 @@ local function setup_parallel_agent_keymap(buf, opts, pa_cfg)
   vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
 end
 
---- Block editing and commit-mode navigation keys in a maximize floating window
+--- Block editing and commit-mode navigation keys in a maximize floating window.
+--- Global normal-mode mappings are shadowed so only explicit maximize bindings remain active.
 ---@param buf number Buffer ID
 ---@param grid_rows number Grid row count (for maximize prefix blocking)
 ---@param grid_cols number Grid column count
@@ -157,6 +209,7 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
   local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
   local nop = function() end
+  shadow_global_keymaps(buf, NORMAL_MODE)
   local blocked = {
     "i", "I", "a", "A", "o", "O", "s", "S", "c", "C", "R",
     "d", "x", "p", "P", "u", "<C-r>",
@@ -1009,6 +1062,7 @@ end
 function M.setup_sidebar_nav(buf, callbacks)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local o = { buffer = buf, noremap = true, silent = true }
+  M.lock_buf(buf)
   vim.keymap.set(NORMAL_MODE, "j", callbacks.move_down, o)
   vim.keymap.set(NORMAL_MODE, "k", callbacks.move_up, o)
   vim.keymap.set(NORMAL_MODE, "<Down>", callbacks.move_down, o)
@@ -1016,7 +1070,6 @@ function M.setup_sidebar_nav(buf, callbacks)
   vim.keymap.set(NORMAL_MODE, "gg", callbacks.move_to_top, o)
   vim.keymap.set(NORMAL_MODE, "G", callbacks.move_to_bottom, o)
   vim.keymap.set(NORMAL_MODE, "<CR>", callbacks.select_at_cursor, o)
-  M.lock_buf(buf)
 end
 
 --- Setup the focus-lock autocmd that keeps cursor in the active panel (or maximize window).

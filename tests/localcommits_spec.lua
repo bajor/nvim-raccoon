@@ -93,6 +93,27 @@ describe("raccoon.localcommits", function()
     end)
   end)
 
+  describe("exit_local_mode", function()
+    it("falls back to a normal buffer when the saved buffer was wiped", function()
+      local ls = localcommits._get_state()
+      local scratch = commit_ui.create_scratch_buf()
+
+      vim.api.nvim_set_current_buf(scratch)
+      commit_ui.lock_buf(scratch)
+
+      ls.active = true
+      ls.saved_buf = 999999
+      ls.saved_laststatus = vim.o.laststatus
+
+      localcommits.exit_local_mode()
+
+      local current_buf = vim.api.nvim_get_current_buf()
+      assert.is_true(vim.api.nvim_buf_is_valid(current_buf))
+      assert.equals("", vim.bo[current_buf].buftype)
+      assert.is_false(vim.bo[current_buf].modified)
+    end)
+  end)
+
   describe("context pass-through", function()
     local original_show_commit, original_diff_working_dir, original_list_files
     local captured_context

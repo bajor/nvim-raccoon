@@ -803,6 +803,18 @@ local function enter_local_mode()
   end)
 end
 
+--- Restore the buffer that was active before local mode, or fall back to a fresh
+--- normal buffer if that source buffer was wiped while the local viewer was open.
+---@param saved_buf number|nil
+local function restore_saved_buffer(saved_buf)
+  if saved_buf and vim.api.nvim_buf_is_valid(saved_buf) then
+    vim.api.nvim_set_current_buf(saved_buf)
+    return
+  end
+
+  vim.cmd("enew")
+end
+
 --- Exit local commit viewer mode
 local function exit_local_mode(opts)
   opts = opts or {}
@@ -824,14 +836,14 @@ local function exit_local_mode(opts)
   end
 
   vim.cmd("only")
-  if local_state.saved_buf and vim.api.nvim_buf_is_valid(local_state.saved_buf) then
-    vim.api.nvim_set_current_buf(local_state.saved_buf)
-  end
+  restore_saved_buffer(local_state.saved_buf)
 
   -- Restore PR session if it was active
   if local_state.pr_was_active and opts.resume_pr ~= false then
     keymaps.setup()
     open.resume_sync()
+  else
+    keymaps.clear()
   end
 
   local_state = make_initial_state()

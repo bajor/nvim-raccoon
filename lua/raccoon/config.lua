@@ -30,6 +30,7 @@ M.defaults = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
     sidebar_width = 50,
+    passthrough_keys = {},
   },
   parallel_agents = {
     enabled = false,
@@ -238,6 +239,42 @@ local function bool_field(val, default)
   return default
 end
 
+--- Return only non-empty string entries from a list, preserving order and removing duplicates.
+---@param val any
+---@return string[]
+local function sanitize_string_list(val)
+  if type(val) ~= "table" then return {} end
+
+  local result = {}
+  local seen = {}
+  for _, item in ipairs(val) do
+    if type(item) == "string" and item ~= "" and not seen[item] then
+      seen[item] = true
+      table.insert(result, item)
+    end
+  end
+  return result
+end
+
+--- Return only valid key strings from the legacy top-level passthrough_keymaps list.
+--- Supports entries shaped like { key = "<leader>x" } for backward compatibility.
+---@param val any
+---@return string[]
+local function sanitize_legacy_passthrough_keymaps(val)
+  if type(val) ~= "table" then return {} end
+
+  local keys = {}
+  for _, item in ipairs(val) do
+    if type(item) == "string" then
+      table.insert(keys, item)
+    elseif type(item) == "table" then
+      table.insert(keys, item.key)
+    end
+  end
+
+  return sanitize_string_list(keys)
+end
+
 --- Sanitize merged shortcuts against the defaults structure.
 --- Each leaf must be a non-empty string (valid binding) or false (disabled).
 --- Anything else (vim.NIL, numbers, empty strings, tables at leaf positions) falls back to the default.
@@ -273,6 +310,26 @@ function M.load_shortcuts()
 
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
   return sanitize_shortcuts(merged, M.defaults.shortcuts)
+end
+
+--- Load commit viewer config, falling back to defaults gracefully.
+--- Unlike load(), this does not require valid tokens.
+---@return table commit_viewer
+function M.load_commit_viewer()
+  local defaults = M.defaults.commit_viewer
+  local parsed = read_config_json()
+  if not parsed then
+    return vim.deepcopy(defaults)
+  end
+
+  local user = type(parsed.commit_viewer) == "table" and parsed.commit_viewer or {}
+  local viewer = vim.tbl_deep_extend("force", vim.deepcopy(defaults), user)
+  local passthrough_keys = sanitize_string_list(user.passthrough_keys)
+  for _, lhs in ipairs(sanitize_legacy_passthrough_keymaps(parsed.passthrough_keymaps)) do
+    table.insert(passthrough_keys, lhs)
+  end
+  viewer.passthrough_keys = sanitize_string_list(passthrough_keys)
+  return viewer
 end
 
 --- Load parallel_agents config, falling back to defaults gracefully.

@@ -1031,4 +1031,53 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
   end)
+
+  describe("load_commit_viewer", function()
+    it("returns defaults when config file does not exist", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local viewer = config.load_commit_viewer()
+      assert.is_table(viewer)
+      assert.same(config.defaults.commit_viewer.grid, viewer.grid)
+      assert.same({}, viewer.passthrough_keys)
+    end)
+
+    it("keeps only valid passthrough keys", function()
+      local tmpfile = test_tmp_dir .. "/commit_viewer_passthrough.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "commit_viewer": {
+          "passthrough_keys": ["<D-S-e>", "", 42, "<D-S-e>", "<leader>p"]
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local viewer = config.load_commit_viewer()
+      assert.same({ "<D-S-e>", "<leader>p" }, viewer.passthrough_keys)
+
+      os.remove(tmpfile)
+    end)
+
+    it("accepts legacy passthrough_keymaps entries", function()
+      local tmpfile = test_tmp_dir .. "/legacy_commit_viewer_passthrough.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "passthrough_keymaps": [
+          { "key": "<Space>n" },
+          { "key": "" },
+          { "key": "<Space>n" },
+          {},
+          "x",
+          42
+        ]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local viewer = config.load_commit_viewer()
+      assert.same({ "<Space>n", "x" }, viewer.passthrough_keys)
+
+      os.remove(tmpfile)
+    end)
+  end)
 end)
