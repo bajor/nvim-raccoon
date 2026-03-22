@@ -280,6 +280,16 @@ local function sanitize_legacy_passthrough_keymaps(val)
   return sanitize_string_list(keys)
 end
 
+--- Resolve a shortcut field: false to disable, valid string to override, else default.
+---@param user_val any Value from user config
+---@param default_val string Default shortcut
+---@return string|false
+local function resolve_shortcut(user_val, default_val)
+  if user_val == false then return false end
+  if type(user_val) == "string" and user_val ~= "" then return user_val end
+  return default_val
+end
+
 --- Sanitize merged shortcuts against the defaults structure.
 --- Each leaf must be a non-empty string (valid binding) or false (disabled).
 --- Anything else (vim.NIL, numbers, empty strings, tables at leaf positions) falls back to the default.
@@ -353,20 +363,11 @@ function M.load_parallel_agents()
     return vim.deepcopy(defaults)
   end
 
-  local shortcut
-  if user.shortcut == false then
-    shortcut = false
-  elseif type(user.shortcut) == "string" and user.shortcut ~= "" then
-    shortcut = user.shortcut
-  else
-    shortcut = defaults.shortcut
-  end
-
   return {
     enabled = bool_field(user.enabled, defaults.enabled),
     command = type(user.command) == "string" and user.command or defaults.command,
     suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
-    shortcut = shortcut,
+    shortcut = resolve_shortcut(user.shortcut, defaults.shortcut),
     popup_width = type(user.popup_width) == "number" and user.popup_width > 0
       and math.floor(user.popup_width) or defaults.popup_width,
   }
@@ -387,23 +388,10 @@ function M.load_human_edit()
     return vim.deepcopy(defaults)
   end
 
-  local shortcut
-  if user.shortcut == false then
-    shortcut = false
-  elseif type(user.shortcut) == "string" and user.shortcut ~= "" then
-    shortcut = user.shortcut
-  else
-    shortcut = defaults.shortcut
-  end
-
-  local command
-  if type(user.command) == "string" then
-    command = user.command
-  else
-    command = defaults.command
-  end
-
-  return { shortcut = shortcut, command = command }
+  return {
+    shortcut = resolve_shortcut(user.shortcut, defaults.shortcut),
+    command = type(user.command) == "string" and user.command or defaults.command,
+  }
 end
 
 --- Get the token and host for a given owner/org from the tokens table

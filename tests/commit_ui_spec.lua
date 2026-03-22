@@ -380,4 +380,75 @@ describe("raccoon.commit_ui", function()
     -- A small width that fits should pass through unchanged
     assert.equals(10, commit_ui.compute_effective_sidebar_width(cols, 10))
   end)
+
+  describe("diff_line_to_file_line", function()
+    it("returns 1 for nil hl_lines", function()
+      assert.equals(1, commit_ui.diff_line_to_file_line(nil, 5))
+    end)
+
+    it("returns 1 for empty hl_lines", function()
+      assert.equals(1, commit_ui.diff_line_to_file_line({}, 5))
+    end)
+
+    it("returns exact match for add line", function()
+      local hl_lines = {
+        { type = "ctx", line_num = 10 },
+        { type = "add", line_num = 11 },
+        { type = "ctx", line_num = 12 },
+      }
+      assert.equals(11, commit_ui.diff_line_to_file_line(hl_lines, 2))
+    end)
+
+    it("returns exact match for ctx line", function()
+      local hl_lines = {
+        { type = "ctx", line_num = 5 },
+        { type = "ctx", line_num = 6 },
+      }
+      assert.equals(6, commit_ui.diff_line_to_file_line(hl_lines, 2))
+    end)
+
+    it("skips del lines and searches backward", function()
+      local hl_lines = {
+        { type = "ctx", line_num = 10 },
+        { type = "del" },
+        { type = "del" },
+      }
+      assert.equals(10, commit_ui.diff_line_to_file_line(hl_lines, 3))
+    end)
+
+    it("clamps cursor beyond hl_lines length", function()
+      local hl_lines = {
+        { type = "ctx", line_num = 7 },
+        { type = "add", line_num = 8 },
+      }
+      assert.equals(8, commit_ui.diff_line_to_file_line(hl_lines, 100))
+    end)
+
+    it("returns 1 when all entries are del lines", function()
+      local hl_lines = {
+        { type = "del" },
+        { type = "del" },
+      }
+      assert.equals(1, commit_ui.diff_line_to_file_line(hl_lines, 2))
+    end)
+
+    it("returns 1 when entries have no line_num", function()
+      local hl_lines = {
+        { type = "ctx" },
+        { type = "add" },
+      }
+      assert.equals(1, commit_ui.diff_line_to_file_line(hl_lines, 2))
+    end)
+
+    it("finds nearest add/ctx backward from cursor", function()
+      local hl_lines = {
+        { type = "add", line_num = 1 },
+        { type = "add", line_num = 2 },
+        { type = "del" },
+        { type = "del" },
+        { type = "ctx", line_num = 3 },
+      }
+      assert.equals(2, commit_ui.diff_line_to_file_line(hl_lines, 4))
+    end)
+  end)
 end)

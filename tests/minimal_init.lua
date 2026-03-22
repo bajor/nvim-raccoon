@@ -1,7 +1,7 @@
 -- Minimal init for running tests with plenary.busted
 
 -- Add the plugin to runtimepath
-vim.opt.runtimepath:prepend(vim.fn.getcwd() .. "/nvim")
+vim.opt.runtimepath:prepend(vim.fn.getcwd())
 
 -- Add plenary to runtimepath (for CI and local dev)
 local plenary_path = vim.fn.expand("~/.local/share/nvim/site/pack/vendor/start/plenary.nvim")

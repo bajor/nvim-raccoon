@@ -97,7 +97,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.commit_message_max_lines` | number | `3` | Max lines shown in the commit message header (1–50) |
 | `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
 | `human_edit.shortcut` | string/false | `"<leader>ee"` | Shortcut to open file for editing from maximized diff view (set to `false` to disable) |
-| `human_edit.command` | string | `"git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"` | Post-edit command template (`<FILE>` = relative path, `<TIMESTAMP>` = ISO timestamp; set to `""` to disable) |
+| `human_edit.command` | string | `"git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"` | Post-edit command template (`<FILE>` = shell-escaped relative path, `<TIMESTAMP>` = current timestamp; set to `""` to disable) |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
 
@@ -325,7 +325,7 @@ Configure with the `parallel_agents` block in `config.json`. Set `command` to yo
 
 ## Human Edit
 
-Press `<leader>ee` in a maximized diff view to open the actual file in an editable floating window. Unlike the read-only maximize view, this gives you full Vim editing capabilities — insert mode, all editing keys, LSP support, and undo history. The cursor maps from your position in the diff to the corresponding line in the real file.
+Press `<leader>ee` in a maximized diff view to open the actual file in an editable floating window. Unlike the read-only maximize view, this gives you full Vim editing capabilities — insert mode, all editing keys, and undo history. If your LSP is configured to auto-attach, it will work in the edit window since it opens the real file buffer. The cursor maps from your position in the diff to the corresponding line in the real file.
 
 Use `<leader>s` to save and `q` or `<leader>q` to close. Modified files are auto-saved on close. When viewing working-directory changes, the maximize diff refreshes automatically after edits to show your updated diff.
 
@@ -335,7 +335,7 @@ After closing the edit window, a configurable post-edit command runs automatical
 git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push
 ```
 
-The `<FILE>` placeholder is replaced with the relative file path and `<TIMESTAMP>` with the current ISO timestamp (e.g. `2026-03-22_14:30:05`). Set `command` to `""` to disable post-edit execution.
+The `<FILE>` placeholder is replaced with the relative file path and `<TIMESTAMP>` with the current timestamp (e.g. `2026-03-22_14:30:05`). Set `command` to `""` to disable post-edit execution.
 
 ```json
 {
