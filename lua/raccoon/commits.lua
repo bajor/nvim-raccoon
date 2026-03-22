@@ -47,6 +47,7 @@ local commit_state = {
   cached_stat_lines = nil,
   cached_file_count = nil,
   focus_target = "sidebar",
+  sidebar_width = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -86,6 +87,7 @@ local function reset_state()
     cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
+    sidebar_width = nil,
   }
 end
 
@@ -256,6 +258,7 @@ local function render_sidebar()
     section1_commits = commit_state.pr_commits,
     section2_header = "── Base Branch ──",
     section2_commits = commit_state.base_commits,
+    sidebar_width = commit_state.sidebar_width,
   })
   ui.update_sidebar_winbar(commit_state, total_commits())
   update_sidebar_selection()

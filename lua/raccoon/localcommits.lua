@@ -64,6 +64,7 @@ local function make_initial_state()
     cached_file_count = nil,
     focus_target = "sidebar",
     pr_was_active = false,
+    sidebar_width = nil,
   }
 end
 
@@ -256,21 +257,20 @@ local function render_sidebar()
         if commit.sha == nil then return "DiagnosticInfo" end
       end,
       loading = local_state.loading_more,
+      sidebar_width = local_state.sidebar_width,
     })
   else
     -- Flat mode: single section
     local lines = {}
     local highlights = {}
+    local sidebar_width = local_state.sidebar_width or ui.SIDEBAR_WIDTH
 
     local commit_count = math.max(0, total_commits() - 1)
     table.insert(lines, "── Commits (" .. commit_count .. ") ──")
     table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
     for i, commit in ipairs(local_state.branch_commits) do
-      local msg = commit.message
-      if #msg > ui.SIDEBAR_WIDTH - 2 then
-        msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
-      end
+      local msg = ui.truncate_sidebar_text(commit.message, sidebar_width)
       table.insert(lines, "  " .. msg)
       if commit.sha == nil then
         table.insert(highlights, { line = i, hl = "DiagnosticInfo" })
