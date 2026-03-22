@@ -860,6 +860,140 @@ describe("raccoon.config", function()
     end)
   end)
 
+  describe("load_human_edit", function()
+    it("returns defaults when config file does not exist", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local he = config.load_human_edit()
+      assert.is_table(he)
+      assert.equals("<leader>ee", he.shortcut)
+      assert.equals("git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push", he.command)
+    end)
+
+    it("returns defaults for invalid JSON", function()
+      local tmpfile = test_tmp_dir .. "/he_invalid.json"
+      local f = io.open(tmpfile, "w")
+      f:write("{ bad json }")
+      f:close()
+
+      config.config_path = tmpfile
+      local he = config.load_human_edit()
+      assert.equals("<leader>ee", he.shortcut)
+
+      os.remove(tmpfile)
+    end)
+
+    it("merges user overrides correctly", function()
+      local tmpfile = test_tmp_dir .. "/he_override.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "human_edit": {
+          "shortcut": "<leader>he",
+          "command": "git add <FILE>"
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local he = config.load_human_edit()
+      assert.equals("<leader>he", he.shortcut)
+      assert.equals("git add <FILE>", he.command)
+
+      os.remove(tmpfile)
+    end)
+
+    it("handles invalid types gracefully", function()
+      local tmpfile = test_tmp_dir .. "/he_bad_types.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "human_edit": {
+          "shortcut": 99,
+          "command": 42
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local he = config.load_human_edit()
+      assert.equals("<leader>ee", he.shortcut)
+      assert.equals("git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push", he.command)
+
+      os.remove(tmpfile)
+    end)
+
+    it("shortcut false disables shortcut", function()
+      local tmpfile = test_tmp_dir .. "/he_no_shortcut.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "human_edit": {
+          "shortcut": false
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local he = config.load_human_edit()
+      assert.is_false(he.shortcut)
+      assert.is_false(config.is_enabled(he.shortcut))
+
+      os.remove(tmpfile)
+    end)
+
+    it("command false disables command", function()
+      local tmpfile = test_tmp_dir .. "/he_no_command.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "human_edit": {
+          "command": false
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local he = config.load_human_edit()
+      assert.equals("", he.command)
+
+      os.remove(tmpfile)
+    end)
+
+    it("empty command string is preserved", function()
+      local tmpfile = test_tmp_dir .. "/he_empty_cmd.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "human_edit": {
+          "command": ""
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local he = config.load_human_edit()
+      assert.equals("", he.command)
+
+      os.remove(tmpfile)
+    end)
+
+    it("returns defaults when human_edit is not a table", function()
+      local tmpfile = test_tmp_dir .. "/he_scalar.json"
+      local f = io.open(tmpfile, "w")
+      f:write('{"human_edit": "invalid"}')
+      f:close()
+
+      config.config_path = tmpfile
+      local he = config.load_human_edit()
+      assert.equals("<leader>ee", he.shortcut)
+
+      os.remove(tmpfile)
+    end)
+
+    it("returns independent copies (no mutation)", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local h1 = config.load_human_edit()
+      local h2 = config.load_human_edit()
+      h1.command = "MUTATED"
+      assert.is_not_equal("MUTATED", h2.command)
+    end)
+  end)
+
   describe("multi-host tokens", function()
     it("get_token_for_owner returns token and default host for string token", function()
       local cfg = {

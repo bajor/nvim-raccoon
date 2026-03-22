@@ -332,7 +332,8 @@ function M.load_human_edit()
 
   return {
     shortcut = resolve_shortcut(user.shortcut, defaults.shortcut),
-    command = type(user.command) == "string" and user.command or defaults.command,
+    command = user.command == false and ""
+      or (type(user.command) == "string" and user.command or defaults.command),
   }
 end
 
