@@ -95,6 +95,8 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 | `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (20–120) |
 | `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
+| `human_edit.shortcut` | string/false | `"<leader>ee"` | Shortcut to open file for editing from maximized diff view (set to `false` to disable) |
+| `human_edit.command` | string | `"git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"` | Post-edit command template (`<FILE>` = shell-escaped relative path, `<TIMESTAMP>` = current timestamp; set to `""` to disable) |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
 
@@ -156,6 +158,10 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
     "enabled": true,
     "command": "claude -p <PROMPT>",
     "suffix_prompt": "Commit and push when done."
+  },
+  "human_edit": {
+    "shortcut": "<leader>ee",
+    "command": "git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"
   },
   "shortcuts": {
     "pr_list": "<leader>pr",
@@ -278,6 +284,7 @@ Commit mode shortcuts live under `shortcuts.commit_mode` in config:
 | `<leader>l` | `commit_mode.next_page_alt` | Next page of diff hunks (alias) |
 | `<leader>f` | `commit_mode.browse_files` | Toggle focus between commit sidebar and file tree |
 | `<leader>m1`..`m9` | `commit_mode.maximize_prefix` | Maximize a grid cell (full file diff) |
+| `<leader>ee` | `human_edit.shortcut` | Edit the file from maximized view (local mode only) |
 | `<leader>q` / `q` | `close` | Exit maximized view |
 | `<leader>cm` | `commit_mode.exit` | Exit commit viewer mode |
 
@@ -285,7 +292,7 @@ Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter s
 
 Most vim keybindings are disabled in commit mode to prevent breaking the layout. Only the keys listed above work. Exit with `<leader>cm`. Auto-sync is paused while commit viewer mode is active and resumes automatically when you exit.
 
-Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. Close with `q` or `<leader>q`.
+Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. In local mode (working-directory diffs), press `<leader>ee` to edit the file directly, or `<leader>aa` to dispatch an agent. Close with `q` or `<leader>q`.
 
 ### File tree browsing
 
@@ -311,9 +318,32 @@ Local mode works alongside an active PR review — entering `:Raccoon local` pau
 
 ## Parallel Agents
 
-Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. Review a commit, optionally select code lines, and press `<leader>aa` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
+Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. This feature is only available in **local mode** (working-directory diffs) where files exist on disk. Review a diff, optionally select code lines, and press `<leader>aa` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
 
 Configure with the `parallel_agents` block in `config.json`. Set `command` to your CLI agent template (e.g. `claude --dangerously-skip-permissions -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
+
+## Human Edit
+
+Press `<leader>ee` in a maximized diff view to open the actual file in an editable floating window. This feature is only available in **local mode** (working-directory diffs) where the file exists on disk. Unlike the read-only maximize view, this gives you full Vim editing capabilities — insert mode, all editing keys, and undo history. If your LSP is configured to auto-attach, it will work in the edit window since it opens the real file buffer. The cursor maps from your position in the diff to the corresponding line in the real file.
+
+Use `<leader>s` to save and `q` or `<leader>q` to close. Modified files are auto-saved on close. When viewing working-directory changes, the maximize diff refreshes automatically after edits to show your updated diff.
+
+After closing the edit window, a configurable post-edit command runs automatically. By default it stages the edited file, commits with a "human edit" timestamp message, and pushes:
+
+```
+git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push
+```
+
+The `<FILE>` placeholder is replaced with the relative file path and `<TIMESTAMP>` with the current timestamp (e.g. `2026-03-22_14:30:05`). Set `command` to `""` to disable post-edit execution.
+
+```json
+{
+  "human_edit": {
+    "shortcut": "<leader>ee",
+    "command": "git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"
+  }
+}
+```
 
 ## Statusline
 

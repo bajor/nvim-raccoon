@@ -147,6 +147,222 @@ local function setup_parallel_agent_keymap(buf, opts, pa_cfg)
   vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
 end
 
+--- Compute centered floating window dimensions.
+---@param scale? number Scale factor (default 0.85)
+---@return number width, number height, number row, number col
+local function float_dimensions(scale)
+  scale = scale or 0.85
+  local width = math.floor(vim.o.columns * scale)
+  local height = math.floor(vim.o.lines * scale)
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+  return width, height, row, col
+end
+
+--- Map a diff buffer line to the corresponding real file line number.
+--- Walks hl_lines backward to find the nearest non-deletion entry with a line_num
+--- at or before cursor_line.
+---@param hl_lines table[] Array of {type, line_num} from parsed diff
+---@param cursor_line number 1-based cursor line in the maximize buffer
+---@return number file_line 1-based line in the real file (fallback: 1)
+local function diff_line_to_file_line(hl_lines, cursor_line)
+  if not hl_lines or #hl_lines == 0 then return 1 end
+  for i = math.min(cursor_line, #hl_lines), 1, -1 do
+    local entry = hl_lines[i]
+    if entry.line_num and entry.type ~= "del" then
+      return entry.line_num
+    end
+  end
+  return 1
+end
+
+--- Run the configured post-edit shell command asynchronously.
+---@param command string Command template with <FILE> and <TIMESTAMP> placeholders
+---@param filename string Relative file path
+---@param repo_path string Repository root directory
+local function run_post_command(command, filename, repo_path)
+  if not command or command == "" then return end
+
+  if vim.fn.isdirectory(repo_path) ~= 1 then
+    vim.notify("Post-edit command skipped: repo path no longer exists: " .. repo_path, vim.log.levels.ERROR)
+    return
+  end
+
+  local escaped_file = vim.fn.shellescape(filename)
+  local cmd = command:gsub("<FILE>", function() return escaped_file end)
+  local timestamp = os.date("%Y-%m-%d_%H:%M:%S")
+  cmd = cmd:gsub("<TIMESTAMP>", function() return timestamp end)
+
+  local stderr_lines = {}
+  local job_id = vim.fn.jobstart({ "sh", "-c", cmd .. " </dev/null" }, {
+    cwd = repo_path,
+    on_stderr = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then table.insert(stderr_lines, line) end
+        end
+      end
+    end,
+    on_exit = function(_, exit_code)
+      vim.schedule(function()
+        if exit_code == 0 then
+          vim.notify("Post-edit command finished: " .. filename, vim.log.levels.INFO)
+        else
+          local msg = string.format("Post-edit command failed (exit %d)", exit_code)
+          if #stderr_lines > 0 then
+            msg = msg .. "\n" .. table.concat(stderr_lines, "\n")
+          end
+          vim.notify(msg, vim.log.levels.ERROR)
+        end
+      end)
+    end,
+  })
+  if job_id > 0 then
+    vim.notify("Running post-edit command...", vim.log.levels.INFO)
+  else
+    vim.notify("Post-edit command failed: " .. (job_id == 0 and "invalid arguments" or "command not executable"),
+      vim.log.levels.ERROR)
+  end
+end
+
+--- Set up the human edit keymap on a maximize buffer.
+--- Opens the actual file in an editable floating window.
+---@param buf number Buffer to bind the keymap on
+---@param opts table {repo_path, filename, state}
+---@param shortcuts table Pre-loaded shortcuts config (avoids redundant disk read)
+local function setup_human_edit_keymap(buf, opts, shortcuts)
+  local he_cfg = config.load_human_edit()
+  if not config.is_enabled(he_cfg.shortcut) then return end
+
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+
+  vim.keymap.set(NORMAL_MODE, he_cfg.shortcut, function()
+    -- Prevent opening multiple edit windows
+    if opts.state.popup_win and vim.api.nvim_win_is_valid(opts.state.popup_win) then
+      vim.api.nvim_set_current_win(opts.state.popup_win)
+      return
+    end
+
+    local filepath = vim.fs.joinpath(opts.repo_path, opts.filename)
+    if vim.fn.filereadable(filepath) ~= 1 then
+      vim.notify("File not found: " .. filepath, vim.log.levels.WARN)
+      return
+    end
+
+    -- Map diff cursor position to real file line
+    local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+    local file_line = diff_line_to_file_line(opts.state.maximize_hl_lines, cursor_line)
+
+    local edit_buf = vim.fn.bufadd(filepath)
+    if edit_buf == 0 then
+      vim.notify("Failed to open buffer for: " .. filepath, vim.log.levels.ERROR)
+      return
+    end
+    vim.fn.bufload(edit_buf)
+    if not vim.api.nvim_buf_is_valid(edit_buf) then
+      vim.notify("Failed to load buffer for: " .. filepath, vim.log.levels.ERROR)
+      return
+    end
+
+    local width, height, row, col = float_dimensions()
+
+    local save_key = config.is_enabled(shortcuts.comment_save) and shortcuts.comment_save or "<leader>s"
+    local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "q"
+
+    -- Set sentinel before open_win so the WinEnter focus lock sees it
+    -- (open_win fires WinEnter synchronously before we can assign the real handle)
+    opts.state.popup_win = -1
+
+    local ok_win, edit_win = pcall(vim.api.nvim_open_win, edit_buf, true, {
+      relative = "editor",
+      width = width,
+      height = height,
+      row = row,
+      col = col,
+      border = "rounded",
+      zindex = 60,
+    })
+    if not ok_win then
+      opts.state.popup_win = nil
+      vim.notify("Failed to open edit window: " .. tostring(edit_win), vim.log.levels.ERROR)
+      return
+    end
+
+    vim.wo[edit_win].winbar = " Edit: " .. opts.filename
+      .. "%=%#Comment# " .. save_key .. "=save  " .. close_key .. " or q to close %*"
+    vim.wo[edit_win].number = true
+    vim.wo[edit_win].wrap = true
+    vim.wo[edit_win].signcolumn = "yes:1"
+
+    -- Jump to mapped line
+    local line_count = vim.api.nvim_buf_line_count(edit_buf)
+    file_line = math.min(file_line, line_count)
+    vim.api.nvim_win_set_cursor(edit_win, { file_line, 0 })
+
+    -- Register as popup_win so the focus-lock system keeps this window focusable
+    opts.state.popup_win = edit_win
+
+    local edit_closed = false
+    local function close_edit()
+      if edit_closed then return end
+      edit_closed = true
+      -- Auto-save if modified
+      local save_ok = true
+      if vim.api.nvim_buf_is_valid(edit_buf) and vim.bo[edit_buf].modified then
+        local ok, err = pcall(function()
+          vim.api.nvim_buf_call(edit_buf, function() vim.cmd("write") end)
+        end)
+        if not ok then
+          vim.notify("Failed to save " .. opts.filename .. ": " .. tostring(err), vim.log.levels.ERROR)
+          save_ok = false
+        end
+      end
+      opts.state.popup_win = nil
+      if vim.api.nvim_win_is_valid(edit_win) then
+        vim.api.nvim_win_close(edit_win, true)
+      end
+      -- Clean up buffer-local keymaps to avoid corrupting the real file buffer
+      pcall(vim.keymap.del, NORMAL_MODE, "q", { buffer = edit_buf })
+      if config.is_enabled(shortcuts.close) then
+        pcall(vim.keymap.del, NORMAL_MODE, shortcuts.close, { buffer = edit_buf })
+      end
+      if config.is_enabled(shortcuts.comment_save) then
+        pcall(vim.keymap.del, NORMAL_MODE, shortcuts.comment_save, { buffer = edit_buf })
+      end
+      -- Refresh maximize diff for working-dir views
+      if opts.state.maximize_workdir_opts then
+        M.refresh_maximize(opts.state)
+      end
+      if save_ok then
+        run_post_command(he_cfg.command, opts.filename, opts.repo_path)
+      end
+    end
+
+    -- Clean up on any window close method (:q, :close, <C-w>c, etc.)
+    vim.api.nvim_create_autocmd("WinClosed", {
+      pattern = tostring(edit_win),
+      once = true,
+      callback = function() close_edit() end,
+    })
+
+    local edit_km = { buffer = edit_buf, noremap = true, silent = true }
+    if config.is_enabled(shortcuts.comment_save) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, function()
+        local ok, err = pcall(vim.cmd, "write")
+        if ok then
+          vim.notify("Saved " .. opts.filename, vim.log.levels.INFO)
+        else
+          vim.notify("Failed to save " .. opts.filename .. ": " .. tostring(err), vim.log.levels.ERROR)
+        end
+      end, edit_km)
+    end
+    if config.is_enabled(shortcuts.close) then
+      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_edit, edit_km)
+    end
+    vim.keymap.set(NORMAL_MODE, "q", close_edit, edit_km)
+  end, buf_opts)
+end
+
 --- Block editing and commit-mode navigation keys in a maximize floating window
 ---@param buf number Buffer ID
 ---@param grid_rows number Grid row count (for maximize prefix blocking)
@@ -488,6 +704,7 @@ function M.close_win_pair(s, win_key, buf_key)
   if win_key == "maximize_win" then
     M.stop_maximize_watcher(s)
     s.maximize_workdir_opts = nil
+    s.maximize_hl_lines = nil
   end
 end
 
@@ -528,7 +745,7 @@ function M.open_maximize(opts)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, { type = line_data.type, line_num = line_data.line_num })
       end
     end
 
@@ -542,10 +759,7 @@ function M.open_maximize(opts)
       end
     end
 
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
-    local row = math.floor((vim.o.lines - height) / 2)
-    local col = math.floor((vim.o.columns - width) / 2)
+    local width, height, row, col = float_dimensions()
 
     local buf = M.create_scratch_buf()
     vim.bo[buf].modifiable = true
@@ -570,6 +784,7 @@ function M.open_maximize(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    opts.state.maximize_hl_lines = hl_lines
     M.stop_maximize_watcher(opts.state)
     if opts.is_working_dir then
       opts.state.maximize_workdir_opts = {
@@ -590,7 +805,6 @@ function M.open_maximize(opts)
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
 
-    local pa_cfg = config.load_parallel_agents()
     local skip_keys
     if #change_starts > 0 then
       skip_keys = {
@@ -632,7 +846,12 @@ function M.open_maximize(opts)
       end, buf_opts)
     end
 
-    setup_parallel_agent_keymap(buf, opts, pa_cfg)
+    -- Parallel agents and human edit are only available in local (working-dir) mode
+    -- where the files exist on disk and edits/agents are meaningful.
+    if opts.is_working_dir then
+      setup_parallel_agent_keymap(buf, opts)
+      setup_human_edit_keymap(buf, opts, shortcuts)
+    end
   end)
 end
 
@@ -700,9 +919,10 @@ function M.refresh_maximize(s)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, { type = line_data.type, line_num = line_data.line_num })
       end
     end
+    s.maximize_hl_lines = hl_lines
 
     local cursor = vim.api.nvim_win_get_cursor(win)
 
@@ -732,10 +952,7 @@ function M.open_file_content(opts)
       return
     end
 
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
-    local row = math.floor((vim.o.lines - height) / 2)
-    local col = math.floor((vim.o.columns - width) / 2)
+    local width, height, row, col = float_dimensions()
 
     local buf = M.create_scratch_buf()
     vim.bo[buf].modifiable = true
@@ -758,13 +975,13 @@ function M.open_file_content(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    opts.state.maximize_hl_lines = nil
 
     local shortcuts = config.load_shortcuts()
     local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].wrap = true
 
-    local pa_cfg = config.load_parallel_agents()
     M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
 
     local buf_opts = { buffer = buf, noremap = true, silent = true }
@@ -775,8 +992,6 @@ function M.open_file_content(opts)
       vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
     end
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
-
-    setup_parallel_agent_keymap(buf, opts, pa_cfg)
   end)
 end
 
@@ -1276,5 +1491,7 @@ function M.split_sidebar_cursor_to_index(cursor_line, section1_count)
 
   return line_0 - 2 -- subtract blank + header to get combined index
 end
+
+M.diff_line_to_file_line = diff_line_to_file_line
 
 return M
