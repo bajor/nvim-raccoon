@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.10.6] - 2026-03-22
 
 ### Fixed
+- Commit viewer sidebars (commit list and file tree) now use the same computed width in both PR and local commit modes instead of diverging
 - Commit mode now locks down only conflicting global shortcuts while preserving raccoon-specific ones (e.g. leader-pr, exit raccoon)
 - Commit mode passthrough keys now honor normalized mappings like `<leader>...`
 - Legacy top-level `passthrough_keymaps` config entries now work as commit-mode passthrough keys
