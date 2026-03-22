@@ -176,7 +176,7 @@ local function setup_human_edit_keymap(buf, opts)
   local buf_opts = { buffer = buf, noremap = true, silent = true }
 
   vim.keymap.set(NORMAL_MODE, he_cfg.shortcut, function()
-    local filepath = opts.repo_path .. "/" .. opts.filename
+    local filepath = vim.fs.joinpath(opts.repo_path, opts.filename)
     if vim.fn.filereadable(filepath) ~= 1 then
       vim.notify("File not found: " .. filepath, vim.log.levels.WARN)
       return
@@ -225,12 +225,13 @@ local function setup_human_edit_keymap(buf, opts)
       local cmd = he_cfg.command
       if not cmd or cmd == "" then return end
 
-      -- Replace <FILE> placeholder with the relative filename
+      -- Replace <FILE> placeholder with the shell-escaped relative filename
       local escaped_file = vim.fn.shellescape(opts.filename)
-      cmd = cmd:gsub("<FILE>", escaped_file)
+      cmd = cmd:gsub("<FILE>", function() return escaped_file end)
 
-      -- Replace <TIMESTAMP> placeholder with ISO 8601 timestamp
-      cmd = cmd:gsub("<TIMESTAMP>", os.date("%%Y-%%m-%%d_%%H:%%M:%%S"))
+      -- Replace <TIMESTAMP> placeholder with timestamp
+      local timestamp = os.date("%Y-%m-%d_%H:%M:%S")
+      cmd = cmd:gsub("<TIMESTAMP>", function() return timestamp end)
 
       local stderr_lines = {}
       local job_id = vim.fn.jobstart({ "sh", "-c", cmd .. " </dev/null" }, {
@@ -258,13 +259,27 @@ local function setup_human_edit_keymap(buf, opts)
       })
       if job_id > 0 then
         vim.notify("Running post-edit command...", vim.log.levels.INFO)
+      elseif job_id == 0 then
+        vim.notify("Post-edit command failed: invalid arguments", vim.log.levels.ERROR)
+      else
+        vim.notify("Post-edit command failed: command not executable", vim.log.levels.ERROR)
       end
     end
 
+    local edit_closed = false
     local function close_edit()
+      if edit_closed then return end
+      edit_closed = true
       -- Auto-save if modified
+      local save_ok = true
       if vim.bo[edit_buf].modified then
-        vim.api.nvim_buf_call(edit_buf, function() vim.cmd("silent! write") end)
+        local ok, err = pcall(function()
+          vim.api.nvim_buf_call(edit_buf, function() vim.cmd("write") end)
+        end)
+        if not ok then
+          vim.notify("Failed to save " .. opts.filename .. ": " .. tostring(err), vim.log.levels.ERROR)
+          save_ok = false
+        end
       end
       opts.state.popup_win = nil
       if vim.api.nvim_win_is_valid(edit_win) then
@@ -274,14 +289,20 @@ local function setup_human_edit_keymap(buf, opts)
       if opts.state.maximize_workdir_opts then
         M.refresh_maximize(opts.state)
       end
-      run_post_command()
+      if save_ok then
+        run_post_command()
+      end
     end
 
     local edit_km = { buffer = edit_buf, noremap = true, silent = true }
     if config.is_enabled(shortcuts.comment_save) then
       vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, function()
-        vim.cmd("silent! write")
-        vim.notify("Saved " .. opts.filename, vim.log.levels.INFO)
+        local ok, err = pcall(vim.cmd, "write")
+        if ok then
+          vim.notify("Saved " .. opts.filename, vim.log.levels.INFO)
+        else
+          vim.notify("Failed to save " .. opts.filename .. ": " .. tostring(err), vim.log.levels.ERROR)
+        end
       end, edit_km)
     end
     if config.is_enabled(shortcuts.close) then
@@ -687,10 +708,7 @@ function M.open_maximize(opts)
       end
     end
 
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
-    local row = math.floor((vim.o.lines - height) / 2)
-    local col = math.floor((vim.o.columns - width) / 2)
+    local width, height, row, col = float_dimensions()
 
     local buf = M.create_scratch_buf()
     vim.bo[buf].modifiable = true
@@ -779,7 +797,7 @@ function M.open_maximize(opts)
     end
 
     setup_parallel_agent_keymap(buf, opts, pa_cfg)
-    setup_human_edit_keymap(buf, opts)
+    setup_human_edit_keymap(buf, opts, shortcuts)
   end)
 end
 
@@ -880,10 +898,7 @@ function M.open_file_content(opts)
       return
     end
 
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
-    local row = math.floor((vim.o.lines - height) / 2)
-    local col = math.floor((vim.o.columns - width) / 2)
+    local width, height, row, col = float_dimensions()
 
     local buf = M.create_scratch_buf()
     vim.bo[buf].modifiable = true
@@ -926,7 +941,6 @@ function M.open_file_content(opts)
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
 
     setup_parallel_agent_keymap(buf, opts, pa_cfg)
-    setup_human_edit_keymap(buf, opts)
   end)
 end
 
@@ -1426,5 +1440,7 @@ function M.split_sidebar_cursor_to_index(cursor_line, section1_count)
 
   return line_0 - 2 -- subtract blank + header to get combined index
 end
+
+M.diff_line_to_file_line = diff_line_to_file_line
 
 return M

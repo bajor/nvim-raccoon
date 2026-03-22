@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.10.5] - 2026-03-22
+## [0.11.0] - 2026-03-22
 
 ### Added
 - Human edit mode — press `<leader>ee` in a maximized diff view to open the actual file in an editable floating window with full Vim editing capabilities (insert mode, all editing keys)
