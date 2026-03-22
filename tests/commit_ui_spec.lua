@@ -1,6 +1,60 @@
 local commit_ui = require("raccoon.commit_ui")
 
 describe("raccoon.commit_ui", function()
+  describe("compute_effective_sidebar_width", function()
+    it("keeps the requested width when it fits", function()
+      assert.equals(10, commit_ui.compute_effective_sidebar_width(2, 10))
+    end)
+
+    it("clamps oversized sidebars to fit symmetrically", function()
+      local expected = math.floor((vim.o.columns - 2 - 3) / 2)
+      assert.equals(expected, commit_ui.compute_effective_sidebar_width(2, 200))
+    end)
+  end)
+
+  describe("create_grid_layout", function()
+    local state
+    local original_sidebar_width
+    local original_columns
+    local original_lines
+    local original_winwidth
+
+    before_each(function()
+      state = { grid_wins = {}, grid_bufs = {} }
+      original_sidebar_width = commit_ui.SIDEBAR_WIDTH
+      original_columns = vim.o.columns
+      original_lines = vim.o.lines
+      original_winwidth = vim.o.winwidth
+      vim.o.columns = 120
+      vim.o.lines = 40
+      vim.o.winwidth = 1
+    end)
+
+    after_each(function()
+      if state then
+        commit_ui.close_grid(state)
+        commit_ui.close_win_pair(state, "header_win", "header_buf")
+        commit_ui.close_win_pair(state, "sidebar_win", "sidebar_buf")
+        commit_ui.close_win_pair(state, "filetree_win", "filetree_buf")
+      end
+      vim.cmd("only")
+      commit_ui.SIDEBAR_WIDTH = original_sidebar_width
+      vim.o.columns = original_columns
+      vim.o.lines = original_lines
+      vim.o.winwidth = original_winwidth
+    end)
+
+    it("applies the requested small width to both sidebars", function()
+      commit_ui.SIDEBAR_WIDTH = 10
+
+      commit_ui.create_grid_layout(state, 2, 2)
+
+      assert.equals(10, state.sidebar_width)
+      assert.equals(10, vim.api.nvim_win_get_width(state.filetree_win))
+      assert.equals(10, vim.api.nvim_win_get_width(state.sidebar_win))
+    end)
+  end)
+
   describe("setup_focus_lock", function()
     it("clears stale popup_win handles", function()
       local state = {
