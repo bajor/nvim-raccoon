@@ -64,6 +64,7 @@ local function make_initial_state()
     cached_file_count = nil,
     focus_target = "sidebar",
     pr_was_active = false,
+    saved_equalalways = nil,
   }
 end
 
@@ -669,12 +670,14 @@ end
 local function activate_mode(repo_root, rows, cols, notify_msg)
   local_state.saved_buf = vim.api.nvim_get_current_buf()
   local_state.saved_laststatus = vim.o.laststatus
+  local_state.saved_equalalways = vim.o.equalalways
   local_state.pr_was_active = state.is_active()
   if local_state.pr_was_active then
     keymaps.clear()
     open.pause_sync()
   end
   vim.o.laststatus = 3
+  vim.o.equalalways = false
   local_state.active = true
   local_state.repo_path = repo_root
   local_state.last_change_time = vim.uv.now()
@@ -704,6 +707,9 @@ local function enter_local_mode()
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
     ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
     ui.COMMIT_MESSAGE_MAX_LINES = ui.clamp_int(cfg.commit_viewer.commit_message_max_lines, 2, 1, 20)
+    if type(cfg.commit_viewer.passthrough_keys) == "table" then
+      ui.PASSTHROUGH_KEYS = cfg.commit_viewer.passthrough_keys
+    end
   end
 
   vim.notify("Loading commits...", vim.log.levels.INFO)
@@ -836,6 +842,9 @@ local function exit_local_mode(opts)
 
   if local_state.saved_laststatus then
     vim.o.laststatus = local_state.saved_laststatus
+  end
+  if local_state.saved_equalalways ~= nil then
+    vim.o.equalalways = local_state.saved_equalalways
   end
 
   vim.cmd("only")

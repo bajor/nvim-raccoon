@@ -9,6 +9,7 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 M.COMMIT_MESSAGE_MAX_LINES = 2 -- max visual lines for the header commit message (controls truncation and window height)
+M.PASSTHROUGH_KEYS = {} -- keys that bypass lock_buf blocking (loaded from config)
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
@@ -116,10 +117,11 @@ function M.create_scratch_buf()
 end
 
 --- Shadow global keymaps buffer-locally so commit mode can own the input surface.
---- Skips <Plug> mappings and any keys listed in passthrough_keys config.
+--- Skips <Plug> mappings, raccoon global mappings, and configured passthrough keys.
 ---@param buf number Buffer ID
 ---@param mode string Vim mode passed to nvim_get_keymap / keymap.set
-local function shadow_global_keymaps(buf, mode)
+---@param passthrough_keys? string[] Keys to skip shadowing
+local function shadow_global_keymaps(buf, mode, passthrough_keys)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local shortcuts = config.load_shortcuts()
   local function normalize_lhs(lhs)
@@ -130,7 +132,18 @@ local function shadow_global_keymaps(buf, mode)
   local pr_list_lhs = normalize_lhs(shortcuts.pr_list)
   local show_shortcuts_lhs = normalize_lhs(shortcuts.show_shortcuts)
   local passthrough = {}
-  for _, lhs in ipairs(config.load_commit_viewer().passthrough_keys or {}) do
+  local viewer_cfg = config.load_commit_viewer()
+  local merged_passthrough = {}
+  for _, lhs in ipairs(viewer_cfg.passthrough_keys or {}) do
+    table.insert(merged_passthrough, lhs)
+  end
+  for _, lhs in ipairs(M.PASSTHROUGH_KEYS or {}) do
+    table.insert(merged_passthrough, lhs)
+  end
+  for _, lhs in ipairs(passthrough_keys or {}) do
+    table.insert(merged_passthrough, lhs)
+  end
+  for _, lhs in ipairs(merged_passthrough) do
     local normalized_lhs = normalize_lhs(lhs)
     if normalized_lhs then
       passthrough[normalized_lhs] = true
@@ -165,23 +178,60 @@ local function shadow_global_keymaps(buf, mode)
   end
 end
 
---- Disable most normal-mode keys on a buffer and shadow global mappings.
+--- Block all keys on a buffer. Raccoon keymaps set AFTER this call override specific keys.
 ---@param buf number Buffer ID
-function M.lock_buf(buf)
+---@param passthrough_keys? string[] Keys to skip blocking
+function M.lock_buf(buf, passthrough_keys)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local opts = { buffer = buf, noremap = true, silent = true }
   local nop = function() end
-  shadow_global_keymaps(buf, NORMAL_MODE)
-  local blocked = {
-    "i", "I", "a", "A", "o", "O", "s", "S", "c", "C", "R",
-    "d", "x", "p", "P", "u", "<C-r>",
-    "q", "Q", "gQ",
-    "ZZ", "ZQ",
-    "<C-z>",
-    ":",
-  }
+  shadow_global_keymaps(buf, NORMAL_MODE, passthrough_keys)
+
+  local skip = {}
+  for _, key in ipairs(passthrough_keys or M.PASSTHROUGH_KEYS) do
+    skip[key] = true
+  end
+
+  local blocked = {}
+
+  -- All lowercase and uppercase letters
+  for c = string.byte("a"), string.byte("z") do
+    table.insert(blocked, string.char(c))
+    table.insert(blocked, string.char(c - 32))
+  end
+  -- Digits
+  for c = string.byte("0"), string.byte("9") do
+    table.insert(blocked, string.char(c))
+  end
+  -- Punctuation and symbols
+  for _, key in ipairs({
+    "`", "~", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")",
+    "-", "_", "=", "+", "[", "]", "{", "}", "\\", "|",
+    ";", ":", "'", '"', ",", ".", "<", ">", "/", "?", " ",
+  }) do
+    table.insert(blocked, key)
+  end
+  -- Ctrl combos
+  for c = string.byte("a"), string.byte("z") do
+    table.insert(blocked, "<C-" .. string.char(c) .. ">")
+  end
+  -- Special keys
+  for _, key in ipairs({
+    "<Tab>", "<S-Tab>", "<Insert>", "<Del>", "<Home>", "<End>",
+    "<PageUp>", "<PageDown>", "<Up>", "<Down>", "<Left>", "<Right>",
+    "<F1>", "<F2>", "<F3>", "<F4>", "<F5>", "<F6>",
+    "<F7>", "<F8>", "<F9>", "<F10>", "<F11>", "<F12>",
+  }) do
+    table.insert(blocked, key)
+  end
+  -- Multi-key sequences
+  for _, key in ipairs({ "ZZ", "ZQ", "gQ", "gg", "gq" }) do
+    table.insert(blocked, key)
+  end
   for _, key in ipairs(blocked) do
-    vim.keymap.set(NORMAL_MODE, key, nop, opts)
+    if not skip[key] then
+      vim.keymap.set(NORMAL_MODE, key, nop, opts)
+    end
   end
 end
 
@@ -1032,7 +1082,9 @@ function M.update_header(s, commit, pages)
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { page_str })
     vim.bo[buf].modifiable = false
-    pcall(vim.api.nvim_win_set_height, win, 1)
+    local max_lines = math.max(1, M.COMMIT_MESSAGE_MAX_LINES)
+    local max_safe = math.max(1, math.floor(vim.o.lines / 3))
+    pcall(vim.api.nvim_win_set_height, win, math.min(max_lines, max_safe))
     return
   end
 
@@ -1140,11 +1192,13 @@ function M.collect_bufs(s)
   return bufs
 end
 
---- Setup sidebar navigation keymaps (j/k/gg/G/Enter/arrows) and lock the buffer
+--- Setup sidebar navigation keymaps (j/k/gg/G/Enter/arrows) and lock the buffer.
+--- lock_buf is called first to block everything, then nav keymaps override specific keys.
 ---@param buf number Buffer ID
 ---@param callbacks table {move_down, move_up, move_to_top, move_to_bottom, select_at_cursor}
 function M.setup_sidebar_nav(buf, callbacks)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  M.lock_buf(buf)
   local o = { buffer = buf, noremap = true, silent = true }
   M.lock_buf(buf)
   vim.keymap.set(NORMAL_MODE, "j", callbacks.move_down, o)

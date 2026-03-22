@@ -491,11 +491,41 @@ describe("raccoon.commits keybinding lockdown", function()
       vim.keymap.del("n", lhs)
     end)
 
-    it("does not block j or k", function()
+    it("blocks all letter keys", function()
       local buf = create_scratch_buf()
       commits._lock_buf(buf)
+      for _, key in ipairs({ "j", "k", "g", "G", "w", "b", "e" }) do
+        assert.is_true(has_buf_keymap(buf, "n", key), "expected " .. key .. " to be blocked")
+      end
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks ctrl combos", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+      -- Neovim normalizes <C-a> to <C-A> in keymap lhs
+      for _, key in ipairs({ "<C-A>", "<C-Z>", "<C-R>" }) do
+        assert.is_true(has_buf_keymap(buf, "n", key), "expected " .. key .. " to be blocked")
+      end
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("blocks special keys", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+      for _, key in ipairs({ "<Tab>", "<F1>", "<Insert>", "<Del>" }) do
+        assert.is_true(has_buf_keymap(buf, "n", key), "expected " .. key .. " to be blocked")
+      end
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("respects passthrough_keys", function()
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf, { "j", "k" })
       assert.is_false(has_buf_keymap(buf, "n", "j"))
       assert.is_false(has_buf_keymap(buf, "n", "k"))
+      -- Other keys still blocked
+      assert.is_true(has_buf_keymap(buf, "n", "i"))
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 

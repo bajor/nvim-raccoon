@@ -47,6 +47,7 @@ local commit_state = {
   cached_stat_lines = nil,
   cached_file_count = nil,
   focus_target = "sidebar",
+  saved_equalalways = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -86,6 +87,7 @@ local function reset_state()
     cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
+    saved_equalalways = nil,
   }
 end
 
@@ -423,7 +425,9 @@ local function enter_commit_mode()
 
   commit_state.saved_buf = vim.api.nvim_get_current_buf()
   commit_state.saved_laststatus = vim.o.laststatus
+  commit_state.saved_equalalways = vim.o.equalalways
   vim.o.laststatus = 3
+  vim.o.equalalways = false
 
   keymaps.clear()
   open.pause_sync()
@@ -442,6 +446,9 @@ local function enter_commit_mode()
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
     ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
     ui.COMMIT_MESSAGE_MAX_LINES = ui.clamp_int(cfg.commit_viewer.commit_message_max_lines, 2, 1, 20)
+    if type(cfg.commit_viewer.passthrough_keys) == "table" then
+      ui.PASSTHROUGH_KEYS = cfg.commit_viewer.passthrough_keys
+    end
   end
 
   local base_branch = pr.base.ref
@@ -534,6 +541,9 @@ local function exit_commit_mode(opts)
 
   if commit_state.saved_laststatus then
     vim.o.laststatus = commit_state.saved_laststatus
+  end
+  if commit_state.saved_equalalways ~= nil then
+    vim.o.equalalways = commit_state.saved_equalalways
   end
 
   vim.cmd("only")
