@@ -342,5 +342,54 @@ describe("raccoon.commit_ui", function()
       assert.is_nil(commit.full_message)
       git.get_commit_message = orig
     end)
+
+    it("ignores stale callback when select_generation has changed", function()
+      local captured_cb
+      local orig = git.get_commit_message
+      git.get_commit_message = function(_, _, cb) captured_cb = cb end
+
+      local s = {
+        header_buf = buf, header_win = win, current_page = 1,
+        select_generation = 1,
+      }
+      local commit = { sha = "abc123", message = "subject" }
+
+      commit_ui.fetch_and_display_commit_message(s, commit, "/tmp", 1, function() return 1 end)
+
+      -- Simulate user navigating to a different commit before callback fires
+      s.select_generation = 2
+
+      captured_cb("subject\nfull body text", nil)
+
+      assert.is_nil(commit.full_message)
+      git.get_commit_message = orig
+    end)
+
+    it("notifies on error and does not set full_message", function()
+      local orig = git.get_commit_message
+      git.get_commit_message = function(_, _, cb) cb(nil, "git error") end
+
+      local notified = false
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        if level == vim.log.levels.WARN and msg:match("git error") then
+          notified = true
+        end
+      end
+
+      local s = {
+        header_buf = buf, header_win = win, current_page = 1,
+        select_generation = 1,
+      }
+      local commit = { sha = "abc123", message = "subject" }
+
+      commit_ui.fetch_and_display_commit_message(s, commit, "/tmp", 1, function() return 1 end)
+
+      assert.is_nil(commit.full_message)
+      assert.is_true(notified)
+
+      vim.notify = orig_notify
+      git.get_commit_message = orig
+    end)
   end)
 end)

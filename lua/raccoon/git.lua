@@ -4,7 +4,7 @@ local M = {}
 
 --- Run a git command asynchronously
 ---@param args string[] Git command arguments
----@param opts table Options: cwd, on_exit(code, stdout, stderr)
+---@param opts table Options: cwd, on_exit(code, stdout, stderr), keep_empty_lines (boolean)
 ---@return number job_id
 local function run_git(args, opts)
   local stdout_data = {}
@@ -52,6 +52,14 @@ local function run_git(args, opts)
       end
     end,
   })
+
+  if job_id <= 0 and opts.on_exit then
+    vim.schedule(function()
+      local err_msg = job_id == 0 and "Invalid git command arguments"
+        or "Failed to start git process (is git installed?)"
+      opts.on_exit(-1, {}, { err_msg })
+    end)
+  end
 
   return job_id
 end
@@ -692,6 +700,10 @@ end
 ---@param sha string Commit SHA
 ---@param callback fun(message: string|nil, err: string|nil)
 function M.get_commit_message(path, sha, callback)
+  if not sha or sha == "" then
+    callback(nil, "Invalid commit SHA")
+    return
+  end
   run_git({ "log", "-1", "--format=%B", sha }, {
     cwd = path,
     keep_empty_lines = true,
@@ -700,7 +712,8 @@ function M.get_commit_message(path, sha, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      -- Strip trailing empty string that jobstart always appends to buffered output
+      -- Strip trailing empty lines (includes the final empty string that jobstart
+      -- always appends to buffered output, plus any trailing blank lines from the message)
       while #stdout > 0 and stdout[#stdout] == "" do
         table.remove(stdout)
       end

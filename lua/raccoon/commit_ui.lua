@@ -8,7 +8,7 @@ local diff = require("raccoon.diff")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
-M.COMMIT_MESSAGE_MAX_LINES = 2
+M.COMMIT_MESSAGE_MAX_LINES = 2 -- max visual lines for the header commit message (controls truncation and window height)
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
@@ -34,7 +34,8 @@ end
 
 --- Approximate usable editor height for grid layout.
 --- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
---- header content height and inter-row separators since this feeds a heuristic, not exact layout.
+--- header content height (up to COMMIT_MESSAGE_MAX_LINES) and inter-row separators since this
+--- feeds a heuristic, not exact layout.
 ---@return number
 function M.grid_total_height()
   return math.max(1, vim.o.lines - vim.o.cmdheight - GRID_CHROME_LINES)
@@ -1034,9 +1035,13 @@ function M.update_header(s, commit, pages)
 
   -- Truncate text to fit within max_lines of visual wrapping
   local prefix = show_pages and page_str or ""
+  local ellipsis = "..."
+  local ellipsis_width = vim.fn.strdisplaywidth(ellipsis)
   local max_display_width = max_lines * win_width - vim.fn.strdisplaywidth(prefix)
-  if max_display_width > 0 and vim.fn.strdisplaywidth(joined) > max_display_width then
-    joined = M.truncate_to_display_width(joined, max_display_width) .. "..."
+  if max_display_width <= ellipsis_width then
+    joined = ""
+  elseif vim.fn.strdisplaywidth(joined) > max_display_width then
+    joined = M.truncate_to_display_width(joined, max_display_width - ellipsis_width) .. ellipsis
   end
 
   local lines = { prefix .. joined }
@@ -1049,11 +1054,16 @@ function M.update_header(s, commit, pages)
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
   pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, -1)
 
-  -- Always use configured max_lines to keep header height stable across commits
+  -- Size header to actual content lines, capped by max_lines and screen safety limit
+  local content_width = vim.fn.strdisplaywidth(lines[1])
+  local visual_lines = math.max(1, math.ceil(content_width / win_width))
   local max_safe = math.max(1, math.floor(vim.o.lines / 3))
-  local height = math.min(max_lines, max_safe)
-  local ok = pcall(vim.api.nvim_win_set_height, win, height)
+  local height = math.min(visual_lines, max_lines, max_safe)
+  local ok, err = pcall(vim.api.nvim_win_set_height, win, height)
   if not ok then
+    if err and not tostring(err):match("Invalid window") then
+      vim.notify("Header height error: " .. tostring(err), vim.log.levels.DEBUG)
+    end
     pcall(vim.api.nvim_win_set_height, win, 1)
   end
 end
