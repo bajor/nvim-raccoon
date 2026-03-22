@@ -427,7 +427,9 @@ function M.equalize_grid(s)
     vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
   end
   if s.header_win and vim.api.nvim_win_is_valid(s.header_win) then
-    pcall(vim.api.nvim_win_set_height, s.header_win, 1)
+    local max_lines = math.max(1, M.COMMIT_MESSAGE_MAX_LINES)
+    local max_safe = math.max(1, math.floor(vim.o.lines / 3))
+    pcall(vim.api.nvim_win_set_height, s.header_win, math.min(max_lines, max_safe))
   end
   local rows = s.grid_rows or 1
   local cols = s.grid_cols or 1
@@ -1064,11 +1066,9 @@ function M.update_header(s, commit, pages)
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
   pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, -1)
 
-  -- Size header to actual content lines, capped by max_lines and screen safety limit
-  local content_width = vim.fn.strdisplaywidth(lines[1])
-  local visual_lines = math.max(1, math.ceil(content_width / win_width))
+  -- Always use max_lines so the header stays a fixed size (no jumping between commits)
   local max_safe = math.max(1, math.floor(vim.o.lines / 3))
-  local height = math.min(visual_lines, max_lines, max_safe)
+  local height = math.min(max_lines, max_safe)
   local ok, err = pcall(vim.api.nvim_win_set_height, win, height)
   if not ok then
     if err and not tostring(err):match("Invalid window") then

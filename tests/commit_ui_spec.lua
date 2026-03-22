@@ -214,7 +214,7 @@ describe("raccoon.commit_ui", function()
       pcall(vim.api.nvim_buf_delete, header_buf, { force = true })
     end)
 
-    it("uses height 1 for short messages even when max_lines is larger", function()
+    it("uses max_lines height for short messages to prevent jumping", function()
       local header_buf = vim.api.nvim_create_buf(false, true)
       local header_win = vim.api.nvim_open_win(header_buf, false, {
         relative = "editor", row = 0, col = 0, width = 80, height = 1,
@@ -228,7 +228,7 @@ describe("raccoon.commit_ui", function()
       local commit = { message = "short" }
 
       commit_ui.update_header(s, commit, 1)
-      assert.equals(1, vim.api.nvim_win_get_height(header_win))
+      assert.equals(3, vim.api.nvim_win_get_height(header_win))
 
       commit_ui.COMMIT_MESSAGE_MAX_LINES = original
       pcall(vim.api.nvim_win_close, header_win, true)
