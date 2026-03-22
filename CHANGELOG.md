@@ -7,11 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.10.6] - 2026-03-22
 
 ### Fixed
+<<<<<<< HEAD
 - Commit mode now locks down only conflicting global shortcuts while preserving raccoon-specific ones (e.g. leader-pr, exit raccoon)
 - Commit mode passthrough keys now honor normalized mappings like `<leader>...`
 - Legacy top-level `passthrough_keymaps` config entries now work as commit-mode passthrough keys
 - Exiting local commit viewer now falls back to a normal buffer if the original buffer was wiped, avoiding a stuck locked-input state
 - Clamp grid column width to minimum 1 for narrow terminals
+=======
+- Commit viewer sidebars (commit list and file tree) now stay symmetric in both PR and local commit modes
+- `commit_viewer.sidebar_width` now works correctly for small values like `10` instead of being forced wider by the active split window
+>>>>>>> 246d730 (update)
 
 ## [0.10.5] - 2026-03-22
 
