@@ -101,13 +101,23 @@ end
 local function shadow_global_keymaps(buf, mode)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local shortcuts = config.load_shortcuts()
-  local passthrough = {}
-  for _, lhs in ipairs(config.load_commit_viewer().passthrough_keys or {}) do
-    passthrough[lhs] = true
+  local function normalize_lhs(lhs)
+    if type(lhs) ~= "string" or lhs == "" then return nil end
+    return vim.fn.keytrans(vim.api.nvim_replace_termcodes(lhs, true, true, true))
   end
 
-  local function is_raccoon_global_map(map)
-    if map.lhs == shortcuts.pr_list or map.lhs == shortcuts.show_shortcuts then
+  local pr_list_lhs = normalize_lhs(shortcuts.pr_list)
+  local show_shortcuts_lhs = normalize_lhs(shortcuts.show_shortcuts)
+  local passthrough = {}
+  for _, lhs in ipairs(config.load_commit_viewer().passthrough_keys or {}) do
+    local normalized_lhs = normalize_lhs(lhs)
+    if normalized_lhs then
+      passthrough[normalized_lhs] = true
+    end
+  end
+
+  local function is_raccoon_global_map(map, normalized_lhs)
+    if normalized_lhs == pr_list_lhs or normalized_lhs == show_shortcuts_lhs then
       return true
     end
 
@@ -122,10 +132,11 @@ local function shadow_global_keymaps(buf, mode)
   local nop = function() end
   for _, map in ipairs(vim.api.nvim_get_keymap(mode)) do
     local lhs = map.lhs
+    local normalized_lhs = normalize_lhs(lhs)
     if type(lhs) == "string"
         and lhs ~= ""
-        and not passthrough[lhs]
-        and not is_raccoon_global_map(map)
+        and not passthrough[normalized_lhs]
+        and not is_raccoon_global_map(map, normalized_lhs)
         and not lhs:match("^<Plug>")
     then
       pcall(vim.keymap.set, mode, lhs, nop, opts)
