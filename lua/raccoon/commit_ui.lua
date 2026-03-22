@@ -1146,13 +1146,49 @@ function M.setup_sidebar_nav(buf, callbacks)
   vim.keymap.set(NORMAL_MODE, "<CR>", callbacks.select_at_cursor, o)
 end
 
+--- Collect all known commit-mode window handles from the state table.
+---@param s table State table
+---@return table<number, true> Set of known window IDs
+local function collect_known_wins(s)
+  local known = {}
+  if s.sidebar_win then known[s.sidebar_win] = true end
+  if s.filetree_win then known[s.filetree_win] = true end
+  if s.header_win then known[s.header_win] = true end
+  for _, w in ipairs(s.grid_wins or {}) do
+    known[w] = true
+  end
+  return known
+end
+
 --- Setup the focus-lock autocmd that keeps cursor in the active panel (or maximize window).
+--- Also guards layout by closing unexpected split windows (e.g. file explorer sidebars).
 --- Respects s.focus_target: "sidebar" (default) or "filetree".
 ---@param s table State table (needs active, maximize_win, sidebar_win, filetree_win, focus_target)
 ---@param augroup_name string Name for the augroup
 ---@return number augroup_id
 function M.setup_focus_lock(s, augroup_name)
   local augroup = vim.api.nvim_create_augroup(augroup_name, { clear = true })
+
+  -- Guard layout: close unexpected split windows (floating windows are fine)
+  vim.api.nvim_create_autocmd("WinNew", {
+    group = augroup,
+    callback = function()
+      if not s.active then return end
+      vim.schedule(function()
+        local win = vim.api.nvim_get_current_win()
+        if not vim.api.nvim_win_is_valid(win) then return end
+        -- Floating windows don't disrupt layout — allow them
+        local cfg = vim.api.nvim_win_get_config(win)
+        if cfg.relative and cfg.relative ~= "" then return end
+        -- Check if this split is one of our known layout windows
+        local known = collect_known_wins(s)
+        if not known[win] then
+          pcall(vim.api.nvim_win_close, win, true)
+        end
+      end)
+    end,
+  })
+
   vim.api.nvim_create_autocmd("WinEnter", {
     group = augroup,
     callback = function()

@@ -18,6 +18,60 @@ describe("raccoon.commit_ui", function()
       assert.is_nil(state.popup_win)
       pcall(vim.api.nvim_del_augroup_by_id, augroup)
     end)
+
+    it("closes unexpected split windows", function()
+      local sidebar_win = vim.api.nvim_get_current_win()
+      local state = {
+        active = true,
+        maximize_win = nil,
+        sidebar_win = sidebar_win,
+        filetree_win = nil,
+        header_win = nil,
+        grid_wins = {},
+        focus_target = "sidebar",
+      }
+
+      local augroup = commit_ui.setup_focus_lock(state, "RaccoonTestWinGuard")
+
+      -- Create an unexpected split (simulates file explorer opening)
+      vim.cmd("vsplit")
+      local rogue_win = vim.api.nvim_get_current_win()
+      assert.not_equals(sidebar_win, rogue_win)
+
+      -- WinNew fires synchronously but the close is scheduled
+      vim.wait(100, function() return not vim.api.nvim_win_is_valid(rogue_win) end)
+      assert.is_false(vim.api.nvim_win_is_valid(rogue_win))
+
+      pcall(vim.api.nvim_del_augroup_by_id, augroup)
+    end)
+
+    it("allows floating windows through the guard", function()
+      local sidebar_win = vim.api.nvim_get_current_win()
+      local state = {
+        active = true,
+        maximize_win = nil,
+        sidebar_win = sidebar_win,
+        filetree_win = nil,
+        header_win = nil,
+        grid_wins = {},
+        focus_target = "sidebar",
+      }
+
+      local augroup = commit_ui.setup_focus_lock(state, "RaccoonTestFloatGuard")
+
+      -- Create a floating window (like maximize or popup)
+      local buf = vim.api.nvim_create_buf(false, true)
+      local float_win = vim.api.nvim_open_win(buf, true, {
+        relative = "editor", row = 1, col = 1, width = 10, height = 5,
+      })
+
+      vim.wait(100, function() return false end)
+      assert.is_true(vim.api.nvim_win_is_valid(float_win))
+
+      pcall(vim.api.nvim_win_close, float_win, true)
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      pcall(vim.api.nvim_del_augroup_by_id, augroup)
+    end)
   end)
 
   describe("update_header", function()
