@@ -416,6 +416,33 @@ function M.window_block_keymaps()
   }
 end
 
+--- Re-equalize sidebar widths, header height, and grid cell dimensions.
+--- Called after initial layout creation and after any layout disruption (rogue window, terminal resize).
+---@param s table State table (needs sidebar_win, filetree_win, header_win, grid_wins, grid_rows, grid_cols)
+function M.equalize_grid(s)
+  if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
+    vim.api.nvim_win_set_width(s.sidebar_win, M.SIDEBAR_WIDTH)
+  end
+  if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
+    vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
+  end
+  if s.header_win and vim.api.nvim_win_is_valid(s.header_win) then
+    pcall(vim.api.nvim_win_set_height, s.header_win, 1)
+  end
+  local rows = s.grid_rows or 1
+  local cols = s.grid_cols or 1
+  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
+  -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
+  local grid_width = vim.o.columns - 2 * M.SIDEBAR_WIDTH - (cols + 1)
+  local col_width = math.max(1, math.floor(grid_width / math.max(1, cols)))
+  for _, win in ipairs(s.grid_wins or {}) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_set_height(win, row_height)
+      vim.api.nvim_win_set_width(win, col_width)
+    end
+  end
+end
+
 --- Create the full grid layout: file tree (left), diff grid (center), commit sidebar (right), header (top).
 --- Writes window/buffer handles into the provided state table.
 ---@param s table State table to populate (must have grid_wins, grid_bufs, etc. fields)
@@ -529,24 +556,7 @@ function M.create_grid_layout(s, rows, cols)
 
   -- Fix dimensions
   vim.cmd("wincmd =")
-  if vim.api.nvim_win_is_valid(s.sidebar_win) then
-    vim.api.nvim_win_set_width(s.sidebar_win, M.SIDEBAR_WIDTH)
-  end
-  if vim.api.nvim_win_is_valid(s.filetree_win) then
-    vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
-  end
-  vim.api.nvim_win_set_height(s.header_win, 1)
-  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
-  -- Equalize grid column widths: sidebar resizes leave columns unbalanced
-  -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
-  local grid_width = vim.o.columns - 2 * M.SIDEBAR_WIDTH - (cols + 1)
-  local col_width = math.max(1, math.floor(grid_width / math.max(1, cols)))
-  for _, win in ipairs(grid_wins) do
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_set_height(win, row_height)
-      vim.api.nvim_win_set_width(win, col_width)
-    end
-  end
+  M.equalize_grid(s)
 
   -- Focus sidebar
   if vim.api.nvim_win_is_valid(s.sidebar_win) then
@@ -1184,8 +1194,19 @@ function M.setup_focus_lock(s, augroup_name)
         local known = collect_known_wins(s)
         if not known[win] then
           pcall(vim.api.nvim_win_close, win, true)
+          M.equalize_grid(s)
         end
       end)
+    end,
+  })
+
+  -- Re-equalize grid after terminal resize
+  vim.api.nvim_create_autocmd("VimResized", {
+    group = augroup,
+    callback = function()
+      if not s.active then return end
+      if s.maximize_win and vim.api.nvim_win_is_valid(s.maximize_win) then return end
+      vim.schedule(function() M.equalize_grid(s) end)
     end,
   })
 
