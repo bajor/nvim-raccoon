@@ -322,13 +322,39 @@ describe("raccoon.commits keybinding lockdown", function()
   end
 
   local function has_buf_keymap(buf, mode, lhs)
+    local expected_lhs = vim.fn.keytrans(vim.api.nvim_replace_termcodes(lhs, true, true, true))
     local maps = vim.api.nvim_buf_get_keymap(buf, mode)
     for _, map in ipairs(maps) do
-      if map.lhs == lhs then
+      local actual_lhs = vim.fn.keytrans(vim.api.nvim_replace_termcodes(map.lhs, true, true, true))
+      if actual_lhs == expected_lhs then
         return true
       end
     end
     return false
+  end
+
+  local function with_commit_viewer_passthrough_keys(keys, callback)
+    local original_config_path = config.config_path
+    local tmpdir = "/tmp/claude/raccoon-tests"
+    local tmpfile = tmpdir .. "/commit_mode_passthrough.json"
+    vim.fn.mkdir(tmpdir, "p")
+
+    local f = assert(io.open(tmpfile, "w"))
+    f:write(vim.json.encode({
+      commit_viewer = {
+        passthrough_keys = keys,
+      },
+    }))
+    f:close()
+
+    config.config_path = tmpfile
+    local ok, err = xpcall(callback, debug.traceback)
+    config.config_path = original_config_path
+    os.remove(tmpfile)
+
+    if not ok then
+      error(err)
+    end
   end
 
   describe("_lock_buf", function()
@@ -390,31 +416,31 @@ describe("raccoon.commits keybinding lockdown", function()
     end)
 
     it("keeps configured passthrough mappings active", function()
-      local original_config_path = config.config_path
-      local tmpdir = "/tmp/claude/raccoon-tests"
-      local tmpfile = tmpdir .. "/commit_mode_passthrough.json"
-      vim.fn.mkdir(tmpdir, "p")
+      with_commit_viewer_passthrough_keys({ "<F20>" }, function()
+        vim.keymap.set("n", "<F20>", function() end)
 
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "commit_viewer": {
-          "passthrough_keys": ["<F20>"]
-        }
-      }]])
-      f:close()
+        local buf = create_scratch_buf()
+        commits._lock_buf(buf)
 
-      config.config_path = tmpfile
-      vim.keymap.set("n", "<F20>", function() end)
+        assert.is_false(has_buf_keymap(buf, "n", "<F20>"))
 
-      local buf = create_scratch_buf()
-      commits._lock_buf(buf)
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.keymap.del("n", "<F20>")
+      end)
+    end)
 
-      assert.is_false(has_buf_keymap(buf, "n", "<F20>"))
+    it("keeps configured leader passthrough mappings active", function()
+      with_commit_viewer_passthrough_keys({ "<leader>tp" }, function()
+        vim.keymap.set("n", "<leader>tp", function() end)
 
-      vim.api.nvim_buf_delete(buf, { force = true })
-      vim.keymap.del("n", "<F20>")
-      config.config_path = original_config_path
-      os.remove(tmpfile)
+        local buf = create_scratch_buf()
+        commits._lock_buf(buf)
+
+        assert.is_false(has_buf_keymap(buf, "n", "<leader>tp"))
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.keymap.del("n", "<leader>tp")
+      end)
     end)
 
     it("keeps raccoon global mappings active", function()
