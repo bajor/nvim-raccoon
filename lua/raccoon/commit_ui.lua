@@ -95,25 +95,45 @@ function M.create_scratch_buf()
 end
 
 --- Shadow global keymaps buffer-locally so commit mode can own the input surface.
+--- Skips <Plug> mappings and any keys listed in passthrough_keys config.
 ---@param buf number Buffer ID
 ---@param mode string Vim mode passed to nvim_get_keymap / keymap.set
 local function shadow_global_keymaps(buf, mode)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local shortcuts = config.load_shortcuts()
   local passthrough = {}
   for _, lhs in ipairs(config.load_commit_viewer().passthrough_keys or {}) do
     passthrough[lhs] = true
+  end
+
+  local function is_raccoon_global_map(map)
+    if map.lhs == shortcuts.pr_list or map.lhs == shortcuts.show_shortcuts then
+      return true
+    end
+
+    if type(map.desc) == "string" and map.desc:match("^Raccoon:") then
+      return true
+    end
+
+    return type(map.rhs) == "string" and map.rhs:match("[<:]Raccoon%s")
   end
 
   local opts = { buffer = buf, noremap = true, silent = true }
   local nop = function() end
   for _, map in ipairs(vim.api.nvim_get_keymap(mode)) do
     local lhs = map.lhs
-    if type(lhs) == "string" and lhs ~= "" and not passthrough[lhs] and not lhs:match("^<Plug>") then
+    if type(lhs) == "string"
+        and lhs ~= ""
+        and not passthrough[lhs]
+        and not is_raccoon_global_map(map)
+        and not lhs:match("^<Plug>")
+    then
       pcall(vim.keymap.set, mode, lhs, nop, opts)
     end
   end
 end
 
---- Block editing keys on a buffer and shadow global normal-mode mappings.
+--- Disable most normal-mode keys on a buffer and shadow global mappings.
 ---@param buf number Buffer ID
 function M.lock_buf(buf)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end

@@ -417,6 +417,32 @@ describe("raccoon.commits keybinding lockdown", function()
       os.remove(tmpfile)
     end)
 
+    it("keeps raccoon global mappings active", function()
+      local lhs = "<F23>"
+      vim.keymap.set("n", lhs, function() end, { desc = "Raccoon: PR list" })
+
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+
+      assert.is_false(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
+    end)
+
+    it("keeps custom :Raccoon command mappings active", function()
+      local lhs = "<F24>"
+      vim.keymap.set("n", lhs, ":Raccoon close<CR>", { silent = true })
+
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+
+      assert.is_false(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
+    end)
+
     it("does not block j or k", function()
       local buf = create_scratch_buf()
       commits._lock_buf(buf)
@@ -494,6 +520,19 @@ describe("raccoon.commits keybinding lockdown", function()
       commits._lock_maximize_buf(buf)
 
       assert.is_true(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
+    end)
+
+    it("keeps raccoon global mappings in maximize view", function()
+      local lhs = "<F25>"
+      vim.keymap.set("n", lhs, function() end, { desc = "Raccoon: PR list" })
+
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+
+      assert.is_false(has_buf_keymap(buf, "n", lhs))
 
       vim.api.nvim_buf_delete(buf, { force = true })
       vim.keymap.del("n", lhs)
