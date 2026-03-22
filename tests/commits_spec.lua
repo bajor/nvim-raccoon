@@ -376,6 +376,47 @@ describe("raccoon.commits keybinding lockdown", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
+    it("shadows arbitrary global mappings buffer-locally", function()
+      local lhs = "<F19>"
+      vim.keymap.set("n", lhs, function() end)
+
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+
+      assert.is_true(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
+    end)
+
+    it("keeps configured passthrough mappings active", function()
+      local original_config_path = config.config_path
+      local tmpdir = "/tmp/claude/raccoon-tests"
+      local tmpfile = tmpdir .. "/commit_mode_passthrough.json"
+      vim.fn.mkdir(tmpdir, "p")
+
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "commit_viewer": {
+          "passthrough_keys": ["<F20>"]
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      vim.keymap.set("n", "<F20>", function() end)
+
+      local buf = create_scratch_buf()
+      commits._lock_buf(buf)
+
+      assert.is_false(has_buf_keymap(buf, "n", "<F20>"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", "<F20>")
+      config.config_path = original_config_path
+      os.remove(tmpfile)
+    end)
+
     it("does not block j or k", function()
       local buf = create_scratch_buf()
       commits._lock_buf(buf)
@@ -443,6 +484,19 @@ describe("raccoon.commits keybinding lockdown", function()
         assert.is_true(has_buf_keymap(buf, "n", " m" .. i), "expected <leader>m" .. i .. " to be blocked")
       end
       vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("shadows arbitrary global mappings in maximize view", function()
+      local lhs = "<F21>"
+      vim.keymap.set("n", lhs, function() end)
+
+      local buf = create_scratch_buf()
+      commits._lock_maximize_buf(buf)
+
+      assert.is_true(has_buf_keymap(buf, "n", lhs))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.keymap.del("n", lhs)
     end)
 
     it("handles invalid buffer gracefully", function()
