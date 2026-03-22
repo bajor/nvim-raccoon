@@ -313,9 +313,8 @@ end
 --- Set up the parallel agent dispatch keymap on a maximize buffer.
 ---@param buf number Buffer to bind the keymap on
 ---@param opts table {repo_path, sha, commit_message, filename, state}
----@param pa_cfg? table Pre-loaded parallel_agents config (avoids re-reading disk)
-local function setup_parallel_agent_keymap(buf, opts, pa_cfg)
-  pa_cfg = pa_cfg or config.load_parallel_agents()
+local function setup_parallel_agent_keymap(buf, opts)
+  local pa_cfg = config.load_parallel_agents()
   if not pa_cfg.enabled or not config.is_enabled(pa_cfg.shortcut) then return end
   local pa = require("raccoon.parallel_agents")
   local buf_opts = { buffer = buf, noremap = true, silent = true }
@@ -374,7 +373,7 @@ local function diff_line_to_file_line(hl_lines, cursor_line)
 end
 
 --- Run the configured post-edit shell command asynchronously.
----@param command string Command template with <FILE> and <TIMESTAMP> placeholders
+---@param command string|nil Command template with <FILE> and <TIMESTAMP> placeholders; nil or "" to skip
 ---@param filename string Relative file path
 ---@param repo_path string Repository root directory
 local function run_post_command(command, filename, repo_path)
@@ -499,19 +498,31 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
     -- Register as popup_win so the focus-lock system keeps this window focusable
     opts.state.popup_win = edit_win
 
+    -- Track whether the buffer was ever modified (survives intermediate saves)
+    local was_ever_modified = false
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+      buffer = edit_buf,
+      callback = function() was_ever_modified = true end,
+    })
+
     local edit_closed = false
     local function close_edit()
       if edit_closed then return end
       edit_closed = true
       -- Auto-save if modified
-      local save_ok = true
-      if vim.api.nvim_buf_is_valid(edit_buf) and vim.bo[edit_buf].modified then
-        local ok, err = pcall(function()
-          vim.api.nvim_buf_call(edit_buf, function() vim.cmd("write") end)
-        end)
-        if not ok then
-          vim.notify("Failed to save " .. opts.filename .. ": " .. tostring(err), vim.log.levels.ERROR)
-          save_ok = false
+      local save_ok = false
+      if vim.api.nvim_buf_is_valid(edit_buf) then
+        if vim.bo[edit_buf].modified then
+          local ok, err = pcall(function()
+            vim.api.nvim_buf_call(edit_buf, function() vim.cmd("write") end)
+          end)
+          if ok then
+            save_ok = true
+          else
+            vim.notify("Failed to save " .. opts.filename .. ": " .. tostring(err), vim.log.levels.ERROR)
+          end
+        else
+          save_ok = true -- not modified, no save needed
         end
       end
       opts.state.popup_win = nil
@@ -530,7 +541,7 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       if opts.state.maximize_workdir_opts then
         M.refresh_maximize(opts.state)
       end
-      if save_ok then
+      if was_ever_modified and save_ok then
         run_post_command(he_cfg.command, opts.filename, opts.repo_path)
       end
     end
@@ -1461,7 +1472,10 @@ function M.start_maximize_watcher(s)
 
   local filepath = vim.fs.joinpath(mopts.repo_path, mopts.filename)
   local handle = vim.uv.new_fs_event()
-  if not handle then return end
+  if not handle then
+    vim.notify("Raccoon: could not start file watcher (resource limit?)", vim.log.levels.WARN)
+    return
+  end
 
   s.maximize_fs_event = handle
   local start_ok, start_err = pcall(handle.start, handle, filepath, {}, vim.schedule_wrap(function(err)
@@ -1496,10 +1510,16 @@ function M.refresh_maximize(s)
     if not s.maximize_workdir_opts then return end
     if not vim.api.nvim_buf_is_valid(buf) then return end
 
-    if err or not patch or patch == "" then
+    if err then
+      vim.notify("Raccoon: diff refresh failed: " .. tostring(err), vim.log.levels.WARN)
+      return
+    end
+
+    if not patch or patch == "" then
       vim.bo[buf].modifiable = true
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
       vim.bo[buf].modifiable = false
+      s.maximize_hl_lines = nil
       return
     end
 
