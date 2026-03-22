@@ -7,11 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.11.0] - 2026-03-22
 
 ### Added
-- Human edit mode — press `<leader>ee` in a maximized diff view to open the actual file in an editable floating window with full Vim editing capabilities (insert mode, all editing keys)
+- Human edit mode (local mode only) — press `<leader>ee` in a maximized working-directory diff view to open the actual file in an editable floating window with full Vim editing capabilities (insert mode, all editing keys)
 - Cursor position maps from the diff view to the real file line
 - Auto-saves on close; working-directory diffs refresh automatically after edits
 - Configurable post-edit command — runs automatically after closing the edit window (default: stage file, commit with "human edit" timestamp, push)
-- `human_edit` config block: `shortcut` (default `<leader>ee`), `command` (template with `<FILE>` and `<TIMESTAMP>` placeholders, set to `""` to disable)
+- `human_edit` config block: `shortcut` (default `<leader>ee`, set to `false` to disable), `command` (template with `<FILE>` and `<TIMESTAMP>` placeholders, set to `""` to disable)
+
+### Changed
+- Parallel agents (`<leader>aa`) and human edit (`<leader>ee`) are now restricted to local mode (working-directory diffs) — these shortcuts no longer appear when viewing remote commit diffs
 
 ## [0.10.4] - 2026-03-13
 
