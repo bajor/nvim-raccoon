@@ -1057,5 +1057,27 @@ describe("raccoon.config", function()
 
       os.remove(tmpfile)
     end)
+
+    it("accepts legacy passthrough_keymaps entries", function()
+      local tmpfile = test_tmp_dir .. "/legacy_commit_viewer_passthrough.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "passthrough_keymaps": [
+          { "key": "<Space>n" },
+          { "key": "" },
+          { "key": "<Space>n" },
+          {},
+          "x",
+          42
+        ]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local viewer = config.load_commit_viewer()
+      assert.same({ "<Space>n", "x" }, viewer.passthrough_keys)
+
+      os.remove(tmpfile)
+    end)
   end)
 end)

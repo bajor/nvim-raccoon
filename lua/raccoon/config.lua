@@ -256,6 +256,25 @@ local function sanitize_string_list(val)
   return result
 end
 
+--- Return only valid key strings from the legacy top-level passthrough_keymaps list.
+--- Supports entries shaped like { key = "<leader>x" } for backward compatibility.
+---@param val any
+---@return string[]
+local function sanitize_legacy_passthrough_keymaps(val)
+  if type(val) ~= "table" then return {} end
+
+  local keys = {}
+  for _, item in ipairs(val) do
+    if type(item) == "string" then
+      table.insert(keys, item)
+    elseif type(item) == "table" then
+      table.insert(keys, item.key)
+    end
+  end
+
+  return sanitize_string_list(keys)
+end
+
 --- Sanitize merged shortcuts against the defaults structure.
 --- Each leaf must be a non-empty string (valid binding) or false (disabled).
 --- Anything else (vim.NIL, numbers, empty strings, tables at leaf positions) falls back to the default.
@@ -305,7 +324,11 @@ function M.load_commit_viewer()
 
   local user = type(parsed.commit_viewer) == "table" and parsed.commit_viewer or {}
   local viewer = vim.tbl_deep_extend("force", vim.deepcopy(defaults), user)
-  viewer.passthrough_keys = sanitize_string_list(user.passthrough_keys)
+  local passthrough_keys = sanitize_string_list(user.passthrough_keys)
+  for _, lhs in ipairs(sanitize_legacy_passthrough_keymaps(parsed.passthrough_keymaps)) do
+    table.insert(passthrough_keys, lhs)
+  end
+  viewer.passthrough_keys = sanitize_string_list(passthrough_keys)
   return viewer
 end
 

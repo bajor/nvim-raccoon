@@ -333,18 +333,14 @@ describe("raccoon.commits keybinding lockdown", function()
     return false
   end
 
-  local function with_commit_viewer_passthrough_keys(keys, callback)
+  local function with_raccoon_config(config_table, callback)
     local original_config_path = config.config_path
     local tmpdir = "/tmp/claude/raccoon-tests"
     local tmpfile = tmpdir .. "/commit_mode_passthrough.json"
     vim.fn.mkdir(tmpdir, "p")
 
     local f = assert(io.open(tmpfile, "w"))
-    f:write(vim.json.encode({
-      commit_viewer = {
-        passthrough_keys = keys,
-      },
-    }))
+    f:write(vim.json.encode(config_table))
     f:close()
 
     config.config_path = tmpfile
@@ -355,6 +351,14 @@ describe("raccoon.commits keybinding lockdown", function()
     if not ok then
       error(err)
     end
+  end
+
+  local function with_commit_viewer_passthrough_keys(keys, callback)
+    with_raccoon_config({
+      commit_viewer = {
+        passthrough_keys = keys,
+      },
+    }, callback)
   end
 
   describe("_lock_buf", function()
@@ -440,6 +444,24 @@ describe("raccoon.commits keybinding lockdown", function()
 
         vim.api.nvim_buf_delete(buf, { force = true })
         vim.keymap.del("n", "<leader>tp")
+      end)
+    end)
+
+    it("keeps legacy passthrough_keymaps mappings active", function()
+      with_raccoon_config({
+        passthrough_keymaps = {
+          { key = "<Space>n" },
+        },
+      }, function()
+        vim.keymap.set("n", "<Leader>n", ":nohl<CR>", { silent = true })
+
+        local buf = create_scratch_buf()
+        commits._lock_buf(buf)
+
+        assert.is_false(has_buf_keymap(buf, "n", "<leader>n"))
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.keymap.del("n", "<Leader>n")
       end)
     end)
 
