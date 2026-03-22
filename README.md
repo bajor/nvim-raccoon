@@ -328,13 +328,13 @@ Press `<leader>ee` in a maximized diff view to open the actual file in an editab
 
 Use `<leader>s` to save and `q` or `<leader>q` to close. Modified files are auto-saved on close. When viewing working-directory changes, the maximize diff refreshes automatically after edits to show your updated diff.
 
-After closing the edit window, a configurable post-edit command runs automatically. By default it stages the edited file, commits with a "human edit" timestamp message, and pushes:
+After closing the edit window, if any edits were made and saved successfully, a configurable post-edit command runs automatically. By default it stages the edited file, commits with a "human edit" timestamp message, and pushes:
 
 ```
 git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push
 ```
 
-The `<FILE>` placeholder is replaced with the relative file path and `<TIMESTAMP>` with the current timestamp (e.g. `2026-03-22_14:30:05`). Set `command` to `""` to disable post-edit execution.
+The `<FILE>` placeholder is replaced with the shell-escaped relative file path and `<TIMESTAMP>` with the current timestamp (e.g. `2026-03-22_14:30:05`). Set `command` to `""` to disable post-edit execution.
 
 ```json
 {

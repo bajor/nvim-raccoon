@@ -158,9 +158,26 @@ local function float_dimensions(scale)
   return width, height, row, col
 end
 
+--- Flatten parsed hunks into display lines and highlight metadata.
+---@param hunks table[] Parsed diff hunks from diff.parse_patch
+---@return string[] lines Display lines for the buffer
+---@return table[] hl_lines Highlight metadata ({type, line_num} per line)
+local function flatten_hunks(hunks)
+  local lines = {}
+  local hl_lines = {}
+  for _, hunk in ipairs(hunks) do
+    for _, line_data in ipairs(hunk.lines) do
+      table.insert(lines, line_data.content or "")
+      table.insert(hl_lines, { type = line_data.type, line_num = line_data.line_num })
+    end
+  end
+  return lines, hl_lines
+end
+
 --- Map a diff buffer line to the corresponding real file line number.
---- Walks hl_lines backward to find the nearest non-deletion entry with a line_num
---- at or before cursor_line.
+--- Walks hl_lines backward from cursor_line to find the nearest context or addition
+--- entry (skipping deletions), returning its line_num. Deletions are skipped because
+--- their line_num refers to the old file, not the new file.
 ---@param hl_lines table[] Array of {type, line_num} from parsed diff
 ---@param cursor_line number 1-based cursor line in the maximize buffer
 ---@return number file_line 1-based line in the real file (fallback: 1)
@@ -192,9 +209,17 @@ local function run_post_command(command, filename, repo_path)
   local timestamp = os.date("%Y-%m-%d_%H:%M:%S")
   cmd = cmd:gsub("<TIMESTAMP>", function() return timestamp end)
 
+  local stdout_lines = {}
   local stderr_lines = {}
   local job_id = vim.fn.jobstart({ "sh", "-c", cmd .. " </dev/null" }, {
     cwd = repo_path,
+    on_stdout = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then table.insert(stdout_lines, line) end
+        end
+      end
+    end,
     on_stderr = function(_, data)
       if data then
         for _, line in ipairs(data) do
@@ -208,8 +233,9 @@ local function run_post_command(command, filename, repo_path)
           vim.notify("Post-edit command finished: " .. filename, vim.log.levels.INFO)
         else
           local msg = string.format("Post-edit command failed (exit %d)", exit_code)
-          if #stderr_lines > 0 then
-            msg = msg .. "\n" .. table.concat(stderr_lines, "\n")
+          local output = vim.list_extend(vim.list_extend({}, stderr_lines), stdout_lines)
+          if #output > 0 then
+            msg = msg .. "\n" .. table.concat(output, "\n")
           end
           vim.notify(msg, vim.log.levels.ERROR)
         end
@@ -301,9 +327,12 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
     -- Register as popup_win so the focus-lock system keeps this window focusable
     opts.state.popup_win = edit_win
 
-    -- Track whether the buffer was ever modified (survives intermediate saves)
+    -- Track whether the buffer was ever modified (survives intermediate saves).
+    -- This gates the post-edit command -- if the user opens and closes without
+    -- editing, no command runs. We cannot rely on bo.modified alone because it
+    -- resets to false after each :write.
     local was_ever_modified = false
-    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    local text_changed_au = vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
       buffer = edit_buf,
       callback = function() was_ever_modified = true end,
     })
@@ -332,7 +361,8 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       if vim.api.nvim_win_is_valid(edit_win) then
         vim.api.nvim_win_close(edit_win, true)
       end
-      -- Clean up buffer-local keymaps to avoid corrupting the real file buffer
+      -- Clean up buffer-local keymaps and autocmds to avoid corrupting the real file buffer
+      pcall(vim.api.nvim_del_autocmd, text_changed_au)
       pcall(vim.keymap.del, NORMAL_MODE, "q", { buffer = edit_buf })
       if config.is_enabled(shortcuts.close) then
         pcall(vim.keymap.del, NORMAL_MODE, shortcuts.close, { buffer = edit_buf })
@@ -751,14 +781,7 @@ function M.open_maximize(opts)
     local hunks = diff.parse_patch(patch)
     if #hunks == 0 then return end
 
-    local lines = {}
-    local hl_lines = {}
-    for _, hunk in ipairs(hunks) do
-      for _, line_data in ipairs(hunk.lines) do
-        table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type, line_num = line_data.line_num })
-      end
-    end
+    local lines, hl_lines = flatten_hunks(hunks)
 
     -- Find the start of each change group (consecutive add/del lines)
     local change_starts = {}
@@ -782,7 +805,7 @@ function M.open_maximize(opts)
       vim.bo[buf].filetype = ft
     end
 
-    local win = vim.api.nvim_open_win(buf, true, {
+    local ok_win, win = pcall(vim.api.nvim_open_win, buf, true, {
       relative = "editor",
       width = width,
       height = height,
@@ -792,6 +815,10 @@ function M.open_maximize(opts)
       border = "rounded",
       zindex = 50,
     })
+    if not ok_win then
+      vim.notify("Failed to open maximize window: " .. tostring(win), vim.log.levels.ERROR)
+      return
+    end
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
@@ -870,12 +897,15 @@ end
 ---@param s table State table
 function M.stop_maximize_watcher(s)
   if s.maximize_fs_event then
-    pcall(function()
+    local ok, err = pcall(function()
       s.maximize_fs_event:stop()
       if not s.maximize_fs_event:is_closing() then
         s.maximize_fs_event:close()
       end
     end)
+    if not ok then
+      vim.notify("Raccoon: failed to clean up file watcher: " .. tostring(err), vim.log.levels.WARN)
+    end
     s.maximize_fs_event = nil
   end
 end
@@ -937,14 +967,7 @@ function M.refresh_maximize(s)
     local hunks = diff.parse_patch(patch)
     if #hunks == 0 then return end
 
-    local lines = {}
-    local hl_lines = {}
-    for _, hunk in ipairs(hunks) do
-      for _, line_data in ipairs(hunk.lines) do
-        table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type, line_num = line_data.line_num })
-      end
-    end
+    local lines, hl_lines = flatten_hunks(hunks)
     s.maximize_hl_lines = hl_lines
 
     local cursor = vim.api.nvim_win_get_cursor(win)
@@ -985,7 +1008,7 @@ function M.open_file_content(opts)
     local ft = vim.filetype.match({ filename = opts.filename })
     if ft then vim.bo[buf].filetype = ft end
 
-    local win = vim.api.nvim_open_win(buf, true, {
+    local ok_win, win = pcall(vim.api.nvim_open_win, buf, true, {
       relative = "editor",
       width = width,
       height = height,
@@ -995,6 +1018,10 @@ function M.open_file_content(opts)
       border = "rounded",
       zindex = 50,
     })
+    if not ok_win then
+      vim.notify("Failed to open file content window: " .. tostring(win), vim.log.levels.ERROR)
+      return
+    end
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
