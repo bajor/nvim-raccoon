@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.6] - 2026-03-22
+
+### Fixed
+- Commit mode now locks down only conflicting global shortcuts while preserving raccoon-specific ones (e.g. leader-pr, exit raccoon)
+- Clamp grid column width to minimum 1 for narrow terminals
+
 ## [0.10.5] - 2026-03-22
 
 ### Fixed
