@@ -372,6 +372,7 @@ describe("raccoon.commit_ui", function()
 
   describe("fetch_and_display_commit_message", function()
     local buf, win, git
+    local orig_get_commit_message, orig_notify
 
     before_each(function()
       buf = vim.api.nvim_create_buf(false, true)
@@ -381,9 +382,13 @@ describe("raccoon.commit_ui", function()
       })
       vim.wo[win].wrap = true
       git = require("raccoon.git")
+      orig_get_commit_message = git.get_commit_message
+      orig_notify = vim.notify
     end)
 
     after_each(function()
+      git.get_commit_message = orig_get_commit_message
+      vim.notify = orig_notify
       pcall(vim.api.nvim_win_close, win, true)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end)
@@ -403,7 +408,6 @@ describe("raccoon.commit_ui", function()
 
     it("skips fetch when full_message is already cached", function()
       local fetch_called = false
-      local orig = git.get_commit_message
       git.get_commit_message = function() fetch_called = true end
 
       local s = {
@@ -415,12 +419,10 @@ describe("raccoon.commit_ui", function()
       commit_ui.fetch_and_display_commit_message(s, commit, "/tmp", 1, function() return 1 end)
 
       assert.is_false(fetch_called)
-      git.get_commit_message = orig
     end)
 
     it("skips fetch when commit has no sha", function()
       local fetch_called = false
-      local orig = git.get_commit_message
       git.get_commit_message = function() fetch_called = true end
 
       local s = {
@@ -432,11 +434,42 @@ describe("raccoon.commit_ui", function()
       commit_ui.fetch_and_display_commit_message(s, commit, "/tmp", 1, function() return 1 end)
 
       assert.is_false(fetch_called)
-      git.get_commit_message = orig
+    end)
+
+    it("skips fetch when repo_path is nil", function()
+      local fetch_called = false
+      git.get_commit_message = function() fetch_called = true end
+
+      local s = {
+        header_buf = buf, header_win = win, current_page = 1,
+        select_generation = 1,
+      }
+      local commit = { sha = "abc123", message = "subject" }
+
+      commit_ui.fetch_and_display_commit_message(s, commit, nil, 1, function() return 1 end)
+
+      assert.is_false(fetch_called)
+      -- Header should still be updated with the subject
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      assert.truthy(lines[1]:match("subject"))
+    end)
+
+    it("skips fetch when repo_path is empty string", function()
+      local fetch_called = false
+      git.get_commit_message = function() fetch_called = true end
+
+      local s = {
+        header_buf = buf, header_win = win, current_page = 1,
+        select_generation = 1,
+      }
+      local commit = { sha = "abc123", message = "subject" }
+
+      commit_ui.fetch_and_display_commit_message(s, commit, "", 1, function() return 1 end)
+
+      assert.is_false(fetch_called)
     end)
 
     it("does not set full_message when callback returns empty string", function()
-      local orig = git.get_commit_message
       git.get_commit_message = function(_, _, cb) cb("", nil) end
 
       local s = {
@@ -448,12 +481,10 @@ describe("raccoon.commit_ui", function()
       commit_ui.fetch_and_display_commit_message(s, commit, "/tmp", 1, function() return 1 end)
 
       assert.is_nil(commit.full_message)
-      git.get_commit_message = orig
     end)
 
     it("ignores stale callback when select_generation has changed", function()
       local captured_cb
-      local orig = git.get_commit_message
       git.get_commit_message = function(_, _, cb) captured_cb = cb end
 
       local s = {
@@ -470,15 +501,12 @@ describe("raccoon.commit_ui", function()
       captured_cb("subject\nfull body text", nil)
 
       assert.is_nil(commit.full_message)
-      git.get_commit_message = orig
     end)
 
     it("notifies on error and does not set full_message", function()
-      local orig = git.get_commit_message
       git.get_commit_message = function(_, _, cb) cb(nil, "git error") end
 
       local notified = false
-      local orig_notify = vim.notify
       vim.notify = function(msg, level)
         if level == vim.log.levels.WARN and msg:match("git error") then
           notified = true
@@ -495,9 +523,44 @@ describe("raccoon.commit_ui", function()
 
       assert.is_nil(commit.full_message)
       assert.is_true(notified)
+    end)
+  end)
 
-      vim.notify = orig_notify
-      git.get_commit_message = orig
+  describe("truncate_sidebar_text", function()
+    it("returns text unchanged when shorter than sidebar width", function()
+      assert.equals("short", commit_ui.truncate_sidebar_text("short", 50))
+    end)
+
+    it("returns text unchanged at exact width boundary", function()
+      -- sidebar_width=50 → content_width=48; a 48-char ASCII string fits exactly
+      local text = string.rep("a", 48)
+      assert.equals(text, commit_ui.truncate_sidebar_text(text, 50))
+    end)
+
+    it("truncates text exceeding width with ellipsis", function()
+      local text = string.rep("a", 60)
+      local result = commit_ui.truncate_sidebar_text(text, 50)
+      assert.truthy(result:match("%.%.%.$"))
+      assert.is_true(vim.fn.strdisplaywidth(result) <= 48) -- content_width = 50 - 2
+    end)
+
+    it("returns empty string for nil input", function()
+      assert.equals("", commit_ui.truncate_sidebar_text(nil, 50))
+    end)
+
+    it("handles very small sidebar width", function()
+      local result = commit_ui.truncate_sidebar_text("hello world", 5)
+      -- content_width = max(1, 5-2) = 3, keep_width = max(1, 3-3) = 1
+      -- Result is "h..." (1 char + ellipsis); ellipsis alone fills the space
+      assert.truthy(result:match("%.%.%.$"))
+      assert.is_true(vim.fn.strdisplaywidth(result) < vim.fn.strdisplaywidth("hello world"))
+    end)
+
+    it("uses default SIDEBAR_WIDTH when not provided", function()
+      local text = string.rep("x", 200)
+      local result = commit_ui.truncate_sidebar_text(text)
+      assert.truthy(result:match("%.%.%.$"))
+      assert.is_true(vim.fn.strdisplaywidth(result) <= commit_ui.SIDEBAR_WIDTH - 2)
     end)
   end)
 end)

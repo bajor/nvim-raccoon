@@ -335,6 +335,28 @@ describe("raccoon.git command format", function()
     assert.equals(1, #recorded)
     assert.truthy(recorded[1].cmd:match("^git %-c core%.longpaths=true"))
   end)
+
+  it("get_commit_message calls callback with error for nil SHA", function()
+    local result_msg, result_err
+    git.get_commit_message("/tmp", nil, function(msg, err)
+      result_msg = msg
+      result_err = err
+    end)
+    assert.equals(0, #recorded)
+    assert.is_nil(result_msg)
+    assert.equals("Invalid commit SHA", result_err)
+  end)
+
+  it("get_commit_message calls callback with error for empty SHA", function()
+    local result_msg, result_err
+    git.get_commit_message("/tmp", "", function(msg, err)
+      result_msg = msg
+      result_err = err
+    end)
+    assert.equals(0, #recorded)
+    assert.is_nil(result_msg)
+    assert.equals("Invalid commit SHA", result_err)
+  end)
 end)
 
 -- Long-path error enhancement tests

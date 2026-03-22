@@ -225,7 +225,10 @@ function M.lock_buf(buf, passthrough_keys)
   shadow_global_keymaps(buf, NORMAL_MODE, passthrough_keys)
 
   local skip = {}
-  for _, key in ipairs(passthrough_keys or M.PASSTHROUGH_KEYS) do
+  for _, key in ipairs(M.PASSTHROUGH_KEYS or {}) do
+    skip[key] = true
+  end
+  for _, key in ipairs(passthrough_keys or {}) do
     skip[key] = true
   end
 
@@ -504,6 +507,8 @@ function M.window_block_keymaps()
 end
 
 --- Resize a split window while it is focused so Neovim applies the width to that side.
+--- Neovim distributes space based on the active window; focusing the target first ensures the
+--- requested width is honored rather than absorbed by resize of the previously active window.
 ---@param win number|nil
 ---@param width number
 ---@return number? applied_width
@@ -528,7 +533,7 @@ end
 
 --- Re-equalize sidebar widths, header height, and grid cell dimensions.
 --- Called after initial layout creation and after any layout disruption (rogue window, terminal resize).
----@param s table State table (needs sidebar_win, filetree_win, header_win, grid_wins, grid_rows, grid_cols)
+---@param s table State table (needs sidebar_win, filetree_win, header_win, grid_wins, grid_rows, grid_cols, requested_sidebar_width; writes sidebar_width)
 function M.equalize_grid(s)
   local rows = s.grid_rows or 1
   local cols = s.grid_cols or 1
@@ -542,7 +547,13 @@ function M.equalize_grid(s)
   if s.header_win and vim.api.nvim_win_is_valid(s.header_win) then
     local max_lines = math.max(1, M.COMMIT_MESSAGE_MAX_LINES)
     local max_safe = math.max(1, math.floor(vim.o.lines / 3))
-    pcall(vim.api.nvim_win_set_height, s.header_win, math.min(max_lines, max_safe))
+    local ok, err = pcall(vim.api.nvim_win_set_height, s.header_win, math.min(max_lines, max_safe))
+    if not ok then
+      if err and not tostring(err):match("Invalid window") then
+        vim.notify("Header height error: " .. tostring(err), vim.log.levels.DEBUG)
+      end
+      pcall(vim.api.nvim_win_set_height, s.header_win, 1)
+    end
   end
   local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
   -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
@@ -550,8 +561,8 @@ function M.equalize_grid(s)
   local col_width = math.max(1, math.floor(grid_width / math.max(1, cols)))
   for _, win in ipairs(s.grid_wins or {}) do
     if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_set_height(win, row_height)
-      vim.api.nvim_win_set_width(win, col_width)
+      pcall(vim.api.nvim_win_set_height, win, row_height)
+      pcall(vim.api.nvim_win_set_width, win, col_width)
     end
   end
 end
@@ -1109,6 +1120,11 @@ function M.fetch_and_display_commit_message(s, commit, repo_path, generation, to
     return
   end
 
+  if not repo_path or repo_path == "" then
+    M.update_header(s, commit, total_pages_fn())
+    return
+  end
+
   local git = require("raccoon.git")
 
   M.update_header(s, commit, total_pages_fn())
@@ -1263,7 +1279,6 @@ function M.setup_sidebar_nav(buf, callbacks)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   M.lock_buf(buf)
   local o = { buffer = buf, noremap = true, silent = true }
-  M.lock_buf(buf)
   vim.keymap.set(NORMAL_MODE, "j", callbacks.move_down, o)
   vim.keymap.set(NORMAL_MODE, "k", callbacks.move_up, o)
   vim.keymap.set(NORMAL_MODE, "<Down>", callbacks.move_down, o)
@@ -1310,7 +1325,15 @@ function M.setup_focus_lock(s, augroup_name)
         -- Check if this split is one of our known layout windows
         local known = collect_known_wins(s)
         if not known[win] then
+          local buf_name = ""
+          pcall(function()
+            buf_name = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)), ":t")
+          end)
           pcall(vim.api.nvim_win_close, win, true)
+          vim.notify(
+            "Commit viewer closed unexpected window" .. (buf_name ~= "" and ": " .. buf_name or ""),
+            vim.log.levels.DEBUG
+          )
           M.equalize_grid(s)
         end
       end)
@@ -1481,8 +1504,7 @@ end
 --- Render a two-section sidebar (section1 commits + separator + section2 commits dimmed).
 --- Works for both PR viewer ("PR Branch"/"Base Branch") and local viewer ("feat-xyz"/"main").
 ---@param buf number Buffer ID
----@param opts table {section1_header, section1_commits, section2_header, section2_commits, commit_hl_fn?, loading?}
----@return table highlights Array of {line, hl} used for highlight application
+---@param opts table {section1_header, section1_commits, section2_header, section2_commits, commit_hl_fn?, loading?, sidebar_width?}
 function M.render_split_sidebar(buf, opts)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
