@@ -1049,11 +1049,9 @@ function M.update_header(s, commit, pages)
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
   pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, -1)
 
-  -- Cap header height to at most 1/3 of the editor to preserve grid space
+  -- Always use configured max_lines to keep header height stable across commits
   local max_safe = math.max(1, math.floor(vim.o.lines / 3))
-  local content_width = vim.fn.strdisplaywidth(lines[1])
-  local visual_lines = math.max(1, math.ceil(content_width / win_width))
-  local height = math.min(visual_lines, max_lines, max_safe)
+  local height = math.min(max_lines, max_safe)
   local ok = pcall(vim.api.nvim_win_set_height, win, height)
   if not ok then
     pcall(vim.api.nvim_win_set_height, win, 1)
