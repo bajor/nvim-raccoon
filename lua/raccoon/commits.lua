@@ -197,7 +197,7 @@ local function select_commit(index)
     git.get_commit_message(clone_path, commit.sha, function(message, err)
       if generation ~= commit_state.select_generation then return end
       if err then
-        vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.DEBUG)
+        vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.WARN)
         return
       end
       if message and message ~= "" then
@@ -505,6 +505,7 @@ local function enter_commit_mode()
 
       git.log_base_commits(clone_path, base_branch, base_count, function(commits, err)
         if err then
+          vim.notify("Failed to load base commits: " .. tostring(err), vim.log.levels.WARN)
           commit_state.base_commits = {}
         else
           commit_state.base_commits = commits or {}

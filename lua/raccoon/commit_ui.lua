@@ -543,12 +543,12 @@ local function set_focused_split_width(win, width)
     vim.notify("Sidebar width error: " .. tostring(set_err), vim.log.levels.DEBUG)
   end
   local get_ok, applied_width = pcall(vim.api.nvim_win_get_width, win)
-  if not get_ok then return nil end
 
   if restore_win and vim.api.nvim_win_is_valid(restore_win) then
     vim.api.nvim_set_current_win(restore_win)
   end
 
+  if not get_ok then return nil end
   return applied_width
 end
 
@@ -839,25 +839,8 @@ function M.rebuild_grid(s, rows, cols, apply_keymaps)
     end
   end
 
-  -- Fix dimensions: set sidebar/filetree widths first, then equalize grid cells
-  if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
-    vim.api.nvim_win_set_width(s.sidebar_win, M.SIDEBAR_WIDTH)
-  end
-  if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
-    vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
-  end
-  if s.header_win and vim.api.nvim_win_is_valid(s.header_win) then
-    vim.api.nvim_win_set_height(s.header_win, math.max(1, #vim.api.nvim_buf_get_lines(s.header_buf, 0, -1, false)))
-  end
-  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
-  local grid_width = vim.o.columns - 2 * M.SIDEBAR_WIDTH - (cols + 1)
-  local col_width = math.max(1, math.floor(grid_width / math.max(1, cols)))
-  for _, win in ipairs(grid_wins) do
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_set_height(win, row_height)
-      vim.api.nvim_win_set_width(win, col_width)
-    end
-  end
+  -- Fix dimensions using the same symmetric sidebar logic as create_grid_layout
+  equalize_grid(s)
 
   -- Apply keymaps to the new buffers
   apply_keymaps(grid_bufs)
@@ -1110,6 +1093,69 @@ function M.open_maximize(opts)
   end)
 end
 
+--- Open a floating picker list. Items are displayed in a bordered window; pressing
+--- Enter calls on_select with the chosen item's value, q or the close shortcut closes.
+---@param opts { title: string, items: { display: string, value: any }[], state: table, on_select: fun(value: any) }
+function M.open_maximize_list(opts)
+  local items = opts.items or {}
+  if #items == 0 then return end
+
+  local lines = {}
+  for _, item in ipairs(items) do
+    table.insert(lines, item.display)
+  end
+
+  local width = math.floor(vim.o.columns * 0.6)
+  local height = math.min(#lines, math.floor(vim.o.lines * 0.7))
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local buf = M.create_scratch_buf()
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    zindex = 50,
+  })
+
+  opts.state.maximize_win = win
+  opts.state.maximize_buf = buf
+
+  local shortcuts = config.load_shortcuts()
+  local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+  vim.wo[win].winbar = " " .. opts.title .. "%=%#Comment# " .. close_hint .. " to exit %*"
+  vim.wo[win].cursorline = true
+
+  M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
+
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+  local function close_fn()
+    M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
+  end
+  local function select_fn()
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local idx = cursor[1]
+    if idx >= 1 and idx <= #items then
+      close_fn()
+      opts.on_select(items[idx].value)
+    end
+  end
+
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
+  end
+  vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+  vim.keymap.set(NORMAL_MODE, "<CR>", select_fn, buf_opts)
+end
+
 --- Stop the file watcher for the maximize window
 ---@param s table State table
 function M.stop_maximize_watcher(s)
@@ -1118,8 +1164,8 @@ function M.stop_maximize_watcher(s)
     if not stop_ok and stop_err then
       vim.notify("FS watcher stop error: " .. tostring(stop_err), vim.log.levels.DEBUG)
     end
-    local is_closing = pcall(s.maximize_fs_event.is_closing, s.maximize_fs_event)
-    if not is_closing then
+    local ok, is_closing = pcall(s.maximize_fs_event.is_closing, s.maximize_fs_event)
+    if not ok or not is_closing then
       local close_ok, close_err = pcall(s.maximize_fs_event.close, s.maximize_fs_event)
       if not close_ok and close_err then
         vim.notify("FS watcher close error: " .. tostring(close_err), vim.log.levels.DEBUG)
@@ -1142,7 +1188,7 @@ function M.start_maximize_watcher(s)
   s.maximize_fs_event = handle
   handle:start(filepath, {}, vim.schedule_wrap(function(err)
     if err then
-      vim.notify("File watch error (live refresh disabled): " .. tostring(err), vim.log.levels.DEBUG)
+      vim.notify("File watch error (live refresh disabled): " .. tostring(err), vim.log.levels.WARN)
       return
     end
     if not s.maximize_workdir_opts then return end
@@ -1276,7 +1322,7 @@ function M.build_filetree_cache(s, repo_path, sha)
 
   git.list_files(repo_path, sha, function(raw, err)
     if err then
-      vim.notify("Failed to list files: " .. tostring(err), vim.log.levels.DEBUG)
+      vim.notify("Failed to list files: " .. tostring(err), vim.log.levels.WARN)
     end
     if s.cached_sha ~= cache_key then return end
 
@@ -1287,7 +1333,7 @@ function M.build_filetree_cache(s, repo_path, sha)
     local stat_lines = {}
     M.render_tree_node(tree, "", lines, line_paths, s.file_stats, stat_lines)
     if #lines == 0 then
-      lines = { "  No files" }
+      lines = { err and "  Error loading files" or "  No files" }
     end
 
     s.cached_tree_lines = lines

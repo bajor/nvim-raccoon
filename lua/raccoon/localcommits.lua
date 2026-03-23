@@ -162,7 +162,7 @@ local function select_commit(index)
     git.get_commit_message(local_state.repo_path, commit.sha, function(message, err)
       if generation ~= local_state.select_generation then return end
       if err then
-        vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.DEBUG)
+        vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.WARN)
         return
       end
       if message and message ~= "" then
@@ -522,11 +522,22 @@ local function setup_keymaps()
   local_state.focus_augroup = ui.setup_focus_lock(local_state, "RaccoonLocalCommitFocus")
 end
 
+--- Safely stop and close a libuv timer handle
+local function safe_close_timer(timer)
+  local ok, err = pcall(timer.stop, timer)
+  if not ok and err then
+    vim.notify("Timer stop error: " .. tostring(err), vim.log.levels.DEBUG)
+  end
+  local closing_ok, is_closing = pcall(timer.is_closing, timer)
+  if not closing_ok or not is_closing then
+    pcall(timer.close, timer)
+  end
+end
+
 --- Stop the poll timer
 local function stop_poll_timer()
   if local_state.poll_timer then
-    local_state.poll_timer:stop()
-    local_state.poll_timer:close()
+    safe_close_timer(local_state.poll_timer)
     local_state.poll_timer = nil
   end
 end
@@ -534,8 +545,7 @@ end
 --- Stop the working directory poll timer
 local function stop_workdir_poll_timer()
   if local_state.workdir_poll_timer then
-    local_state.workdir_poll_timer:stop()
-    local_state.workdir_poll_timer:close()
+    safe_close_timer(local_state.workdir_poll_timer)
     local_state.workdir_poll_timer = nil
   end
 end
@@ -606,7 +616,10 @@ local function refresh_commits()
   if local_state.base_branch and local_state.merge_base_sha then
     -- Branch mode: refresh branch commits only (base stays static)
     git.log_branch_commits(local_state.repo_path, local_state.merge_base_sha, function(new_branch, err)
-      if err or not new_branch then return end
+      if err or not new_branch then
+        if err then vim.notify("Failed to refresh branch commits: " .. tostring(err), vim.log.levels.WARN) end
+        return
+      end
       table.insert(new_branch, 1, { sha = nil, message = "Current changes" })
       local_state.branch_commits = new_branch
       local_state.last_status_output = ""
@@ -617,7 +630,10 @@ local function refresh_commits()
     -- Flat mode: refresh all commits
     local count = math.max(total_commits() - 1, BATCH_SIZE)
     git.log_all_commits(local_state.repo_path, count, 0, function(new_commits, err)
-      if err or not new_commits then return end
+      if err or not new_commits then
+        if err then vim.notify("Failed to refresh commits: " .. tostring(err), vim.log.levels.WARN) end
+        return
+      end
       table.insert(new_commits, 1, { sha = nil, message = "Current changes" })
       local_state.branch_commits = new_commits
       local_state.last_status_output = ""
