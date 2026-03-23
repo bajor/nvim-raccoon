@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Log a DEBUG notification when commit viewer closes unexpected windows instead of doing so silently
 - Fix passthrough key merge in `lock_buf` to honor both module-level and argument-level keys consistently
 - Add pcall error handling to header height in `equalize_grid` matching the pattern in `update_header`
-- Guard `fetch_and_display_commit_message` against nil/empty `repo_path`
+- Inline full-message loading into `select_commit`, remove `fetch_and_display_commit_message` helper
 - Fix `render_split_sidebar` docstring: add missing `sidebar_width?` param, remove incorrect `@return`
 
 ## [0.10.6] - 2026-03-22

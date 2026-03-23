@@ -46,7 +46,6 @@ local function make_initial_state()
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
-    saved_winwidth = nil,
     grid_rows = 2,
     grid_cols = 2,
     maximize_win = nil,
@@ -68,9 +67,7 @@ local function make_initial_state()
     orig_grid_cols = nil,
     preview_generation = 0,
     pr_was_active = false,
-    saved_equalalways = nil,
     sidebar_width = nil,
-    requested_sidebar_width = nil,
   }
 end
 
@@ -160,7 +157,16 @@ local function select_commit(index)
   local commit = get_commit(index)
   if not local_state.repo_path then return end
 
-  ui.fetch_and_display_commit_message(local_state, commit, local_state.repo_path, generation, total_pages)
+  ui.update_header(local_state, commit, total_pages())
+  if commit.sha and not commit.full_message then
+    git.get_commit_message(local_state.repo_path, commit.sha, function(message, err)
+      if generation ~= local_state.select_generation then return end
+      if message and message ~= "" then
+        commit.full_message = message
+        ui.update_header(local_state, commit, total_pages())
+      end
+    end)
+  end
 
   local context = ui.compute_grid_context(local_state.grid_rows)
   local fetch_diff = commit.sha

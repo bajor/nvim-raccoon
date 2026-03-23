@@ -41,32 +41,6 @@ describe("raccoon.commit_ui", function()
     teardown_header(buf, win)
   end)
 
-  it("stale async callback is ignored when select_generation has changed", function()
-    local buf, win = make_header(80)
-    local git = require("raccoon.git")
-    local orig = git.get_commit_message
-
-    local captured_cb
-    git.get_commit_message = function(_, _, cb) captured_cb = cb end
-
-    local state = {
-      header_buf = buf, header_win = win, current_page = 1,
-      select_generation = 1,
-    }
-    local commit = { sha = "abc123", message = "subject" }
-
-    commit_ui.fetch_and_display_commit_message(state, commit, "/tmp", 1, function() return 1 end)
-
-    -- User navigated away before the callback fires
-    state.select_generation = 2
-    captured_cb("subject\nfull body text", nil)
-
-    assert.is_nil(commit.full_message)
-
-    git.get_commit_message = orig
-    teardown_header(buf, win)
-  end)
-
   it("sidebar widths stay symmetric when requested width is too large", function()
     local cols = 2
     local huge_width = 9999

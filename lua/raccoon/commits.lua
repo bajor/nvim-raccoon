@@ -30,7 +30,6 @@ local commit_state = {
   current_page = 1,
   saved_buf = nil,
   saved_laststatus = nil,
-  saved_winwidth = nil,
   grid_rows = 2,
   grid_cols = 2,
   maximize_win = nil,
@@ -51,9 +50,7 @@ local commit_state = {
   orig_grid_rows = nil,
   orig_grid_cols = nil,
   preview_generation = 0,
-  saved_equalalways = nil,
   sidebar_width = nil,
-  requested_sidebar_width = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -76,7 +73,6 @@ local function reset_state()
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
-    saved_winwidth = nil,
     grid_rows = 2,
     grid_cols = 2,
     maximize_win = nil,
@@ -97,9 +93,7 @@ local function reset_state()
     orig_grid_rows = nil,
     orig_grid_cols = nil,
     preview_generation = 0,
-    saved_equalalways = nil,
     sidebar_width = nil,
-    requested_sidebar_width = nil,
   }
 end
 
@@ -198,7 +192,16 @@ local function select_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
-  ui.fetch_and_display_commit_message(commit_state, commit, clone_path, generation, total_pages)
+  ui.update_header(commit_state, commit, total_pages())
+  if commit.sha and not commit.full_message then
+    git.get_commit_message(clone_path, commit.sha, function(message, err)
+      if generation ~= commit_state.select_generation then return end
+      if message and message ~= "" then
+        commit.full_message = message
+        ui.update_header(commit_state, commit, total_pages())
+      end
+    end)
+  end
 
   local context = ui.compute_grid_context(commit_state.grid_rows)
   git.show_commit(clone_path, commit.sha, context, function(files, err)

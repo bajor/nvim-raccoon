@@ -33,7 +33,6 @@ describe("raccoon.config", function()
 
     it("has commit_viewer defaults", function()
       assert.is_table(config.defaults.commit_viewer)
-      assert.equals(2, config.defaults.commit_viewer.commit_message_max_lines)
       assert.equals(50, config.defaults.commit_viewer.sidebar_width)
     end)
 
