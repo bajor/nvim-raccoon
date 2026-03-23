@@ -588,6 +588,7 @@ function M.rebuild_grid(s, rows, cols, apply_keymaps)
 
   if not anchor_win then
     -- Fallback: create a window to the left of sidebar
+    if not s.sidebar_win or not vim.api.nvim_win_is_valid(s.sidebar_win) then return end
     vim.api.nvim_set_current_win(s.sidebar_win)
     vim.cmd("aboveleft vsplit")
     anchor_win = vim.api.nvim_get_current_win()
@@ -644,10 +645,10 @@ function M.rebuild_grid(s, rows, cols, apply_keymaps)
   end
 
   -- Fix dimensions: set sidebar/filetree widths first, then equalize grid cells
-  if vim.api.nvim_win_is_valid(s.sidebar_win) then
+  if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
     vim.api.nvim_win_set_width(s.sidebar_win, M.SIDEBAR_WIDTH)
   end
-  if vim.api.nvim_win_is_valid(s.filetree_win) then
+  if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
     vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
   end
   if s.header_win and vim.api.nvim_win_is_valid(s.header_win) then
@@ -667,6 +668,23 @@ function M.rebuild_grid(s, rows, cols, apply_keymaps)
   apply_keymaps(grid_bufs)
 end
 
+--- Write lines to a preview buffer, set filetype, and update winbar.
+---@param buf number Buffer ID
+---@param win number|nil Window ID
+---@param filename string File name for filetype detection and winbar
+---@param lines string[] Lines to write
+local function finalize_preview(buf, win, filename, lines)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  local ft = vim.filetype.match({ filename = filename })
+  if ft then vim.bo[buf].filetype = ft end
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].winbar = " " .. filename
+    pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
+  end
+end
+
 --- Render a file preview into the first grid buffer.
 --- Shows diff if file is changed in the current commit, otherwise shows raw content.
 ---@param s table State table (needs grid_bufs[1])
@@ -679,7 +697,7 @@ function M.render_file_preview(s, opts)
   local git = require("raccoon.git")
   local is_changed = s.commit_files and s.commit_files[opts.filename]
 
-  s.preview_generation = (s.preview_generation or 0) + 1
+  s.preview_generation = s.preview_generation + 1
   local gen = s.preview_generation
 
   if is_changed then
@@ -689,6 +707,7 @@ function M.render_file_preview(s, opts)
 
     fetch_patch(function(patch, err)
       if s.preview_generation ~= gen then return end
+      if not vim.api.nvim_buf_is_valid(buf) then return end
       if err or not patch or patch == "" then
         M._set_preview_empty(buf, win, opts.filename, "  No diff available")
         return
@@ -706,36 +725,46 @@ function M.render_file_preview(s, opts)
           table.insert(hl_lines, { type = line_data.type })
         end
       end
-      vim.bo[buf].modifiable = true
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-      vim.bo[buf].modifiable = false
-      local ft = vim.filetype.match({ filename = opts.filename })
-      if ft then vim.bo[buf].filetype = ft end
+      finalize_preview(buf, win, opts.filename, lines)
       M.apply_diff_highlights(opts.ns_id, buf, hl_lines)
-      if win and vim.api.nvim_win_is_valid(win) then
-        vim.wo[win].winbar = " " .. opts.filename
-        pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
-      end
     end)
   else
     git.show_file_content(opts.repo_path, opts.sha, opts.filename, function(lines, err)
       if s.preview_generation ~= gen then return end
+      if not vim.api.nvim_buf_is_valid(buf) then return end
       if err or not lines then
         M._set_preview_empty(buf, win, opts.filename, "  Cannot read file")
         return
       end
-      vim.bo[buf].modifiable = true
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-      vim.bo[buf].modifiable = false
-      local ft = vim.filetype.match({ filename = opts.filename })
-      if ft then vim.bo[buf].filetype = ft end
+      finalize_preview(buf, win, opts.filename, lines)
       vim.api.nvim_buf_clear_namespace(buf, opts.ns_id, 0, -1)
-      if win and vim.api.nvim_win_is_valid(win) then
-        vim.wo[win].winbar = " " .. opts.filename
-        pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
-      end
     end)
   end
+end
+
+--- Apply a list of keymaps to a set of buffers.
+---@param keymaps table[] Array of {mode, lhs, rhs, desc}
+---@param bufs number[] Buffer IDs
+function M.apply_keymaps_to_bufs(keymaps, bufs)
+  for _, buf in ipairs(bufs) do
+    for _, km in ipairs(keymaps) do
+      vim.keymap.set(km.mode, km.lhs, km.rhs,
+        { buffer = buf, noremap = true, silent = true, desc = km.desc })
+    end
+  end
+end
+
+--- Return sorted line indices that map to file paths in cached_line_paths.
+---@param s table State table (needs cached_line_paths)
+---@return number[]
+function M._sorted_file_lines(s)
+  local result = {}
+  if not s.cached_line_paths then return result end
+  for line_idx, _ in pairs(s.cached_line_paths) do
+    table.insert(result, line_idx)
+  end
+  table.sort(result)
+  return result
 end
 
 --- Helper to set empty preview content
@@ -744,6 +773,7 @@ end
 ---@param filename string File name for winbar
 ---@param msg string Message to display
 function M._set_preview_empty(buf, win, filename, msg)
+  if not vim.api.nvim_buf_is_valid(buf) then return end
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", msg })
   vim.bo[buf].modifiable = false
@@ -1313,13 +1343,7 @@ function M.setup_filetree_nav(s, opts)
   if not s.filetree_buf or not vim.api.nvim_buf_is_valid(s.filetree_buf) then return end
 
   local function all_file_lines()
-    local result = {}
-    if not s.cached_line_paths then return result end
-    for line_idx, _ in pairs(s.cached_line_paths) do
-      table.insert(result, line_idx)
-    end
-    table.sort(result)
-    return result
+    return M._sorted_file_lines(s)
   end
 
   local function go_to_line(line_idx)
@@ -1413,14 +1437,15 @@ end
 ---@param s table State table
 ---@param opts table {apply_keymaps, render_page, ns_id, get_repo_path, get_sha, get_is_working_dir}
 function M.toggle_filetree_focus(s, opts)
-  opts = opts or {}
+  if not opts or not opts.apply_keymaps then return end
   if s.focus_target == "filetree" then
     -- Switching back to sidebar: restore original grid
     s.focus_target = "sidebar"
     if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
       vim.wo[s.filetree_win].cursorline = false
     end
-    if s.orig_grid_rows and opts.apply_keymaps then
+    if s.orig_grid_rows then
+      s.preview_generation = s.preview_generation + 1
       M.rebuild_grid(s, s.orig_grid_rows, s.orig_grid_cols, opts.apply_keymaps)
       s.orig_grid_rows = nil
       s.orig_grid_cols = nil
@@ -1432,12 +1457,10 @@ function M.toggle_filetree_focus(s, opts)
   else
     -- Switching to filetree: collapse grid to 1x1 with file preview
     s.focus_target = "filetree"
-    if opts.apply_keymaps then
-      s.orig_grid_rows = s.grid_rows
-      s.orig_grid_cols = s.grid_cols
-      M.rebuild_grid(s, 1, 1, opts.apply_keymaps)
-      M._preview_file_at_cursor(s, opts)
-    end
+    s.orig_grid_rows = s.grid_rows
+    s.orig_grid_cols = s.grid_cols
+    M.rebuild_grid(s, 1, 1, opts.apply_keymaps)
+    M._preview_file_at_cursor(s, opts)
     if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
       vim.wo[s.filetree_win].cursorline = true
       vim.api.nvim_set_current_win(s.filetree_win)
@@ -1458,11 +1481,7 @@ function M._preview_file_at_cursor(s, opts)
 
   -- If cursor is not on a file line, find the nearest one
   if not path then
-    local file_lines = {}
-    for line_idx, _ in pairs(s.cached_line_paths) do
-      table.insert(file_lines, line_idx)
-    end
-    table.sort(file_lines)
+    local file_lines = M._sorted_file_lines(s)
     -- Find first file line at or after cursor
     for _, idx in ipairs(file_lines) do
       if idx >= cur then
@@ -1478,7 +1497,14 @@ function M._preview_file_at_cursor(s, opts)
     end
   end
 
-  if not path then return end
+  -- Clear stale preview content when no file is found
+  if not path then
+    local buf = s.grid_bufs and s.grid_bufs[1]
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      M._set_preview_empty(buf, s.grid_wins and s.grid_wins[1], "(no file)", "  No file at cursor")
+    end
+    return
+  end
   local repo_path = opts.get_repo_path and opts.get_repo_path()
   if not repo_path then return end
   local sha = opts.get_sha and opts.get_sha()

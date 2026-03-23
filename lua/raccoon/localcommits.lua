@@ -458,56 +458,7 @@ local function setup_keymaps()
     })
   end
 
-  -- Helper to apply mode keymaps to a set of buffers
-  local function apply_keymaps_to_bufs(bufs)
-    for _, buf in ipairs(bufs) do
-      for _, km in ipairs(local_mode_keymaps) do
-        vim.keymap.set(km.mode, km.lhs, km.rhs,
-          { buffer = buf, noremap = true, silent = true, desc = km.desc })
-      end
-    end
-  end
-
-  local toggle_opts = {
-    ns_id = ns_id,
-    get_repo_path = function() return local_state.repo_path end,
-    get_sha = function()
-      local c = get_commit(local_state.selected_index)
-      return c and c.sha
-    end,
-    get_is_working_dir = function()
-      local c = get_commit(local_state.selected_index)
-      return c and c.sha == nil
-    end,
-    apply_keymaps = apply_keymaps_to_bufs,
-    render_page = render_grid_page,
-  }
-
-  -- Browse files toggle
-  if config.is_enabled(shortcuts.commit_mode.browse_files) then
-    table.insert(local_mode_keymaps, {
-      mode = NORMAL_MODE,
-      lhs = shortcuts.commit_mode.browse_files,
-      rhs = function() ui.toggle_filetree_focus(local_state, toggle_opts) end,
-      desc = "Toggle file tree browsing",
-    })
-  end
-
-  -- Apply keymaps buffer-locally
-  local commit_bufs = ui.collect_bufs(local_state)
-  apply_keymaps_to_bufs(commit_bufs)
-
-  -- Sidebar-local keymaps
-  ui.setup_sidebar_nav(local_state.sidebar_buf, {
-    move_down = move_down,
-    move_up = move_up,
-    move_to_top = move_to_top,
-    move_to_bottom = move_to_bottom,
-    select_at_cursor = select_at_cursor,
-  })
-
-  -- Filetree navigation keymaps
-  ui.setup_filetree_nav(local_state, {
+  local filetree_opts = {
     ns_id = ns_id,
     get_repo_path = function() return local_state.repo_path end,
     get_sha = function()
@@ -522,7 +473,35 @@ local function setup_keymaps()
       local c = get_commit(local_state.selected_index)
       return c and c.sha == nil
     end,
+    apply_keymaps = function(bufs) ui.apply_keymaps_to_bufs(local_mode_keymaps, bufs) end,
+    render_page = render_grid_page,
+  }
+
+  -- Browse files toggle
+  if config.is_enabled(shortcuts.commit_mode.browse_files) then
+    table.insert(local_mode_keymaps, {
+      mode = NORMAL_MODE,
+      lhs = shortcuts.commit_mode.browse_files,
+      rhs = function() ui.toggle_filetree_focus(local_state, filetree_opts) end,
+      desc = "Toggle file tree browsing",
+    })
+  end
+
+  -- Apply keymaps buffer-locally
+  local commit_bufs = ui.collect_bufs(local_state)
+  ui.apply_keymaps_to_bufs(local_mode_keymaps, commit_bufs)
+
+  -- Sidebar-local keymaps
+  ui.setup_sidebar_nav(local_state.sidebar_buf, {
+    move_down = move_down,
+    move_up = move_up,
+    move_to_top = move_to_top,
+    move_to_bottom = move_to_bottom,
+    select_at_cursor = select_at_cursor,
   })
+
+  -- Filetree navigation keymaps
+  ui.setup_filetree_nav(local_state, filetree_opts)
 
   -- Focus lock autocmd
   local_state.focus_augroup = ui.setup_focus_lock(local_state, "RaccoonLocalCommitFocus")
