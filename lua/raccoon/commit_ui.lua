@@ -8,9 +8,9 @@ local diff = require("raccoon.diff")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
-local COMMIT_MESSAGE_MAX_LINES = 2 -- max visual lines for the header commit message (controls truncation and window height)
-M.MIN_SIDEBAR_WIDTH = 10
-M.MAX_SIDEBAR_WIDTH = 120
+local COMMIT_MESSAGE_MAX_LINES = 50
+M.MIN_SIDEBAR_WIDTH = 1
+M.MAX_SIDEBAR_WIDTH = 500
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
@@ -28,7 +28,10 @@ local function set_header_height(win)
     if err and not tostring(err):match("Invalid window") then
       vim.notify("Header height error: " .. tostring(err), vim.log.levels.DEBUG)
     end
-    pcall(vim.api.nvim_win_set_height, win, 1)
+    local fb_ok, fb_err = pcall(vim.api.nvim_win_set_height, win, 1)
+    if not fb_ok and fb_err and not tostring(fb_err):match("Invalid window") then
+      vim.notify("Header fallback height error: " .. tostring(fb_err), vim.log.levels.DEBUG)
+    end
   end
 end
 
@@ -542,7 +545,10 @@ local function set_focused_split_width(win, width)
     vim.api.nvim_set_current_win(win)
   end
 
-  pcall(vim.api.nvim_win_set_width, win, width)
+  local set_ok, set_err = pcall(vim.api.nvim_win_set_width, win, width)
+  if not set_ok and set_err and not tostring(set_err):match("Invalid window") then
+    vim.notify("Sidebar width error: " .. tostring(set_err), vim.log.levels.DEBUG)
+  end
   local get_ok, applied_width = pcall(vim.api.nvim_win_get_width, win)
   if not get_ok then return nil end
 
@@ -575,10 +581,16 @@ local function equalize_grid(s)
       local col_idx = ((idx - 1) % cols) + 1
       local h_ok, h_err = pcall(vim.api.nvim_win_set_height, win, row_height)
       local w_ok, w_err = pcall(vim.api.nvim_win_set_width, win, col_widths[col_idx])
-      if (not h_ok or not w_ok) then
-        local msg = not h_ok and tostring(h_err) or tostring(w_err)
-        if not msg:match("Invalid window") then
-          vim.notify("Grid cell resize error: " .. msg, vim.log.levels.DEBUG)
+      if not h_ok or not w_ok then
+        local msgs = {}
+        if not h_ok and h_err and not tostring(h_err):match("Invalid window") then
+          table.insert(msgs, "height: " .. tostring(h_err))
+        end
+        if not w_ok and w_err and not tostring(w_err):match("Invalid window") then
+          table.insert(msgs, "width: " .. tostring(w_err))
+        end
+        if #msgs > 0 then
+          vim.notify("Grid cell resize error: " .. table.concat(msgs, "; "), vim.log.levels.DEBUG)
         end
       end
     end
@@ -1093,12 +1105,17 @@ end
 ---@param s table State table
 function M.stop_maximize_watcher(s)
   if s.maximize_fs_event then
-    pcall(function()
-      s.maximize_fs_event:stop()
-      if not s.maximize_fs_event:is_closing() then
-        s.maximize_fs_event:close()
+    local stop_ok, stop_err = pcall(s.maximize_fs_event.stop, s.maximize_fs_event)
+    if not stop_ok and stop_err then
+      vim.notify("FS watcher stop error: " .. tostring(stop_err), vim.log.levels.DEBUG)
+    end
+    local is_closing = pcall(s.maximize_fs_event.is_closing, s.maximize_fs_event)
+    if not is_closing then
+      local close_ok, close_err = pcall(s.maximize_fs_event.close, s.maximize_fs_event)
+      if not close_ok and close_err then
+        vim.notify("FS watcher close error: " .. tostring(close_err), vim.log.levels.DEBUG)
       end
-    end)
+    end
     s.maximize_fs_event = nil
   end
 end
@@ -1115,7 +1132,10 @@ function M.start_maximize_watcher(s)
 
   s.maximize_fs_event = handle
   handle:start(filepath, {}, vim.schedule_wrap(function(err)
-    if err then return end
+    if err then
+      vim.notify("File watch error (live refresh disabled): " .. tostring(err), vim.log.levels.DEBUG)
+      return
+    end
     if not s.maximize_workdir_opts then return end
     M.refresh_maximize(s)
   end))
@@ -1245,7 +1265,10 @@ function M.build_filetree_cache(s, repo_path, sha)
 
   s.cached_sha = cache_key
 
-  git.list_files(repo_path, sha, function(raw, _)
+  git.list_files(repo_path, sha, function(raw, err)
+    if err then
+      vim.notify("Failed to list files: " .. tostring(err), vim.log.levels.DEBUG)
+    end
     if s.cached_sha ~= cache_key then return end
 
     table.sort(raw)

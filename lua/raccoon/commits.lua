@@ -196,6 +196,10 @@ local function select_commit(index)
   if commit.sha and not commit.full_message then
     git.get_commit_message(clone_path, commit.sha, function(message, err)
       if generation ~= commit_state.select_generation then return end
+      if err then
+        vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.DEBUG)
+        return
+      end
       if message and message ~= "" then
         commit.full_message = message
         ui.update_header(commit_state, commit, total_pages())
