@@ -47,6 +47,9 @@ local commit_state = {
   cached_stat_lines = nil,
   cached_file_count = nil,
   focus_target = "sidebar",
+  orig_grid_rows = nil,
+  orig_grid_cols = nil,
+  preview_generation = 0,
 }
 
 --- Commit mode keymaps (global)
@@ -86,6 +89,9 @@ local function reset_state()
     cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
+    orig_grid_rows = nil,
+    orig_grid_cols = nil,
+    preview_generation = 0,
   }
 end
 
@@ -354,24 +360,35 @@ local function setup_keymaps()
     end
   end
 
+  local filetree_opts = {
+    ns_id = ns_id,
+    get_repo_path = function() return state.get_clone_path() end,
+    get_sha = function()
+      local c = get_commit(commit_state.selected_index)
+      return c and c.sha
+    end,
+    get_commit_message = function()
+      local c = get_commit(commit_state.selected_index)
+      return c and c.message or ""
+    end,
+    get_is_working_dir = function() return false end,
+    apply_keymaps = function(bufs) ui.apply_keymaps_to_bufs(commit_mode_keymaps, bufs) end,
+    render_page = render_grid_page,
+  }
+
   -- Browse files toggle
   if config.is_enabled(shortcuts.commit_mode.browse_files) then
     table.insert(commit_mode_keymaps, {
       mode = NORMAL_MODE,
       lhs = shortcuts.commit_mode.browse_files,
-      rhs = function() ui.toggle_filetree_focus(commit_state) end,
+      rhs = function() ui.toggle_filetree_focus(commit_state, filetree_opts) end,
       desc = "Toggle file tree browsing",
     })
   end
 
   -- Apply keymaps buffer-locally
   local commit_bufs = ui.collect_bufs(commit_state)
-  for _, buf in ipairs(commit_bufs) do
-    for _, km in ipairs(commit_mode_keymaps) do
-      vim.keymap.set(km.mode, km.lhs, km.rhs,
-        { buffer = buf, noremap = true, silent = true, desc = km.desc })
-    end
-  end
+  ui.apply_keymaps_to_bufs(commit_mode_keymaps, commit_bufs)
 
   -- Sidebar-local keymaps
   ui.setup_sidebar_nav(commit_state.sidebar_buf, {
@@ -383,18 +400,7 @@ local function setup_keymaps()
   })
 
   -- Filetree navigation keymaps
-  ui.setup_filetree_nav(commit_state, {
-    ns_id = ns_id,
-    get_repo_path = function() return state.get_clone_path() end,
-    get_sha = function()
-      local c = get_commit(commit_state.selected_index)
-      return c and c.sha
-    end,
-    get_commit_message = function()
-      local c = get_commit(commit_state.selected_index)
-      return c and c.message or ""
-    end,
-  })
+  ui.setup_filetree_nav(commit_state, filetree_opts)
 
   -- Focus lock autocmd
   commit_state.focus_augroup = ui.setup_focus_lock(commit_state, "RaccoonCommitFocus")
