@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11] - 2026-03-23
+
+### Added
+- Grid-to-preview collapse — pressing `browse_files` in commit mode now collapses the NxM diff grid into a 1×1 preview pane showing the currently selected file's diff or content
+- Live file preview updates as you navigate files with j/k in the file tree
+- Toggling back to commit mode restores the original grid layout with diff hunks
+- `rebuild_grid()` helper to resize the grid in-place using the anchor window
+- `render_file_preview()` helper to display diff or file content in the preview cell
+- Works in both PR commit mode and local commit mode
+
 ## [0.10.6] - 2026-03-22
 
 ### Fixed
