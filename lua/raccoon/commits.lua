@@ -449,27 +449,7 @@ local function enter_commit_mode()
   state.set_commit_mode(true)
   commit_state.active = true
 
-  local cfg = config.load()
-  local rows = 2
-  local cols = 2
-  local base_count = 20
-  if cfg and cfg.commit_viewer then
-    if cfg.commit_viewer.grid then
-      rows = ui.clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
-      cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
-    end
-    base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
-    ui.SIDEBAR_WIDTH = ui.clamp_int(
-      cfg.commit_viewer.sidebar_width,
-      50,
-      ui.MIN_SIDEBAR_WIDTH,
-      ui.MAX_SIDEBAR_WIDTH
-    )
-    ui.COMMIT_MESSAGE_MAX_LINES = ui.clamp_int(cfg.commit_viewer.commit_message_max_lines, 2, 1, 20)
-    if type(cfg.commit_viewer.passthrough_keys) == "table" then
-      ui.PASSTHROUGH_KEYS = cfg.commit_viewer.passthrough_keys
-    end
-  end
+  local rows, cols, base_count = ui.load_viewer_config()
 
   local base_branch = pr.base.ref
 
