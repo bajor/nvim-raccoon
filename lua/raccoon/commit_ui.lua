@@ -8,7 +8,7 @@ local diff = require("raccoon.diff")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
-local COMMIT_MESSAGE_MAX_LINES = 50
+local COMMIT_MESSAGE_MAX_LINES = 3
 M.MIN_SIDEBAR_WIDTH = 1
 M.MAX_SIDEBAR_WIDTH = 500
 
@@ -132,6 +132,7 @@ function M.load_viewer_config()
       M.MIN_SIDEBAR_WIDTH,
       M.MAX_SIDEBAR_WIDTH
     )
+    COMMIT_MESSAGE_MAX_LINES = M.clamp_int(cfg.commit_viewer.commit_message_max_lines, 3, 1, 50)
   end
   return rows, cols, base_count
 end

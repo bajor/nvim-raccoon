@@ -24,6 +24,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add pcall error handling to header height in `equalize_grid` matching the pattern in `update_header`
 - Inline full-message loading into `select_commit`, remove `fetch_and_display_commit_message` helper
 - Fix `render_split_sidebar` docstring: add missing `sidebar_width?` param, remove incorrect `@return`
+- Extract shared `lock_buf` and `create_scratch_buf` into `commit_ui` module, removing duplicate implementations across `commits` and `localcommits`
+- Log silent pcall errors at DEBUG level in `update_header` and `equalize_grid` instead of swallowing them
+- Truncate commit message header text with ellipsis when it exceeds the window's max display width
+
+### Changed
+- Remove ~130 redundant `assert.is_function` inventory tests and overlapping tests across 13 test files — zero behavioral coverage lost
 
 ## [0.10.6] - 2026-03-22
 
