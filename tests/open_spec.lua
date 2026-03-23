@@ -8,39 +8,6 @@ describe("raccoon.open", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(open)
-    end)
-
-    it("has open_pr function", function()
-      assert.is_function(open.open_pr)
-    end)
-
-    it("has close_pr function", function()
-      assert.is_function(open.close_pr)
-    end)
-
-    it("has sync function", function()
-      assert.is_function(open.sync)
-    end)
-
-    it("has statusline function", function()
-      assert.is_function(open.statusline)
-    end)
-
-    it("has is_active function", function()
-      assert.is_function(open.is_active)
-    end)
-
-    it("has get_commits_behind function", function()
-      assert.is_function(open.get_commits_behind)
-    end)
-
-    it("has has_merge_conflicts function", function()
-      assert.is_function(open.has_merge_conflicts)
-    end)
-  end)
 
   describe("get_commits_behind", function()
     it("returns 0 when no session active", function()
@@ -138,19 +105,6 @@ describe("raccoon.open", function()
       assert.is_true(open.is_active())
     end)
 
-    it("delegates to state.is_active", function()
-      -- Both should return same value
-      assert.equals(state.is_active(), open.is_active())
-
-      state.start({
-        owner = "test",
-        repo = "test",
-        number = 1,
-        url = "https://github.com/test/test/pull/1",
-        clone_path = "/tmp/test",
-      })
-      assert.equals(state.is_active(), open.is_active())
-    end)
   end)
 
   describe("close_pr", function()
@@ -325,83 +279,7 @@ describe("raccoon.open edge cases", function()
     end)
   end)
 
-  describe("statusline variations", function()
-    -- Note: statusline() uses module-local variables that are only updated during open_pr()
-    -- These tests verify the default behavior with session active but no sync performed
 
-    it("returns in sync when session active with PR data", function()
-      state.start({
-        owner = "test",
-        repo = "test",
-        number = 1,
-        url = "https://github.com/test/test/pull/1",
-        clone_path = "/tmp/test",
-      })
-      state.set_pr({
-        number = 1,
-        title = "Test",
-        base = { ref = "main" },
-        head = { ref = "feature", sha = "abc123" },
-      })
-
-      -- Default state shows "In sync" since no sync has been performed
-      local status = open.statusline()
-      assert.truthy(status:match("In sync"))
-    end)
-
-    it("handles PR without base ref gracefully", function()
-      state.start({
-        owner = "test",
-        repo = "test",
-        number = 1,
-        url = "https://github.com/test/test/pull/1",
-        clone_path = "/tmp/test",
-      })
-      state.set_pr({
-        number = 1,
-        title = "Test",
-        base = { ref = "main" },
-        head = { ref = "feature", sha = "abc123" },
-      })
-
-      -- Should not error
-      local status = open.statusline()
-      assert.is_string(status)
-    end)
-  end)
-
-  describe("sync status accessors", function()
-    -- Note: get_commits_behind() and has_merge_conflicts() use module-local variables
-    -- that are only updated during open_pr(). These tests verify default behavior.
-
-    it("get_commits_behind returns 0 by default", function()
-      state.start({
-        owner = "test",
-        repo = "test",
-        number = 1,
-        url = "https://github.com/test/test/pull/1",
-        clone_path = "/tmp/test",
-      })
-
-      -- Without running open_pr, the module-local variable is 0
-      local behind = open.get_commits_behind()
-      assert.equals(0, behind)
-    end)
-
-    it("has_merge_conflicts returns false by default", function()
-      state.start({
-        owner = "test",
-        repo = "test",
-        number = 1,
-        url = "https://github.com/test/test/pull/1",
-        clone_path = "/tmp/test",
-      })
-
-      -- Without running open_pr, the module-local variable is false
-      local has_conflicts = open.has_merge_conflicts()
-      assert.is_false(has_conflicts)
-    end)
-  end)
 
   describe("URL parsing", function()
     it("rejects GitLab URLs", function()

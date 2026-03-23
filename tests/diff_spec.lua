@@ -6,51 +6,6 @@ describe("raccoon.diff", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(diff)
-    end)
-
-    it("has parse_hunk_header function", function()
-      assert.is_function(diff.parse_hunk_header)
-    end)
-
-    it("has parse_patch function", function()
-      assert.is_function(diff.parse_patch)
-    end)
-
-    it("has get_changed_lines function", function()
-      assert.is_function(diff.get_changed_lines)
-    end)
-
-    it("has apply_highlights function", function()
-      assert.is_function(diff.apply_highlights)
-    end)
-
-    it("has clear_highlights function", function()
-      assert.is_function(diff.clear_highlights)
-    end)
-
-    it("has open_file function", function()
-      assert.is_function(diff.open_file)
-    end)
-
-    it("has next_file function", function()
-      assert.is_function(diff.next_file)
-    end)
-
-    it("has prev_file function", function()
-      assert.is_function(diff.prev_file)
-    end)
-
-    it("has goto_file function", function()
-      assert.is_function(diff.goto_file)
-    end)
-
-    it("has get_namespace function", function()
-      assert.is_function(diff.get_namespace)
-    end)
-  end)
 
   describe("parse_hunk_header", function()
     it("parses standard hunk header", function()

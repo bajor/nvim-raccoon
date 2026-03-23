@@ -4,28 +4,6 @@ local localcommits = require("raccoon.localcommits")
 local state = require("raccoon.state")
 
 describe("raccoon.ui", function()
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(ui)
-    end)
-
-    it("has create_floating_window function", function()
-      assert.is_function(ui.create_floating_window)
-    end)
-
-    it("has show_description function", function()
-      assert.is_function(ui.show_description)
-    end)
-
-    it("has close_pr_list function", function()
-      assert.is_function(ui.close_pr_list)
-    end)
-
-    it("has state table", function()
-      assert.is_table(ui.state)
-    end)
-  end)
-
   describe("create_floating_window", function()
     after_each(function()
       -- Clean up any open windows

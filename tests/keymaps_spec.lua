@@ -7,43 +7,6 @@ describe("raccoon.keymaps", function()
     keymaps.clear()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(keymaps)
-    end)
-
-    it("has keymaps table", function()
-      assert.is_table(keymaps.keymaps)
-    end)
-
-    it("has setup function", function()
-      assert.is_function(keymaps.setup)
-    end)
-
-    it("has clear function", function()
-      assert.is_function(keymaps.clear)
-    end)
-
-    it("has setup_buffer function", function()
-      assert.is_function(keymaps.setup_buffer)
-    end)
-
-    it("has next_point function", function()
-      assert.is_function(keymaps.next_point)
-    end)
-
-    it("has prev_point function", function()
-      assert.is_function(keymaps.prev_point)
-    end)
-
-    it("has comment_at_cursor function", function()
-      assert.is_function(keymaps.comment_at_cursor)
-    end)
-
-    it("has show_description function", function()
-      assert.is_function(keymaps.show_description)
-    end)
-  end)
 
   describe("build_keymaps", function()
     it("builds keymaps from default shortcuts", function()

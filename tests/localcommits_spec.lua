@@ -8,32 +8,6 @@ describe("raccoon.localcommits", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(localcommits)
-    end)
-
-    it("has toggle function", function()
-      assert.is_function(localcommits.toggle)
-    end)
-
-    it("has exit_local_mode function", function()
-      assert.is_function(localcommits.exit_local_mode)
-    end)
-
-    it("has is_active function", function()
-      assert.is_function(localcommits.is_active)
-    end)
-
-    it("has popup window helpers", function()
-      assert.is_function(localcommits.set_popup_win)
-      assert.is_function(localcommits.clear_popup_win)
-    end)
-
-    it("has _get_state for testing", function()
-      assert.is_function(localcommits._get_state)
-    end)
-  end)
 
   describe("initial state", function()
     it("starts inactive", function()

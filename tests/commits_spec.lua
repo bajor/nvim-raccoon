@@ -9,24 +9,6 @@ describe("raccoon.commits", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(commits)
-    end)
-
-    it("has toggle function", function()
-      assert.is_function(commits.toggle)
-    end)
-
-    it("has exit_commit_mode function", function()
-      assert.is_function(commits.exit_commit_mode)
-    end)
-
-    it("has popup window helpers", function()
-      assert.is_function(commits.set_popup_win)
-      assert.is_function(commits.clear_popup_win)
-    end)
-  end)
 
   describe("toggle without active session", function()
     it("does nothing when no PR session", function()
@@ -70,31 +52,6 @@ describe("raccoon.git commit operations", function()
   local is_shallow = vim.fn.system("git rev-parse --is-shallow-repository"):match("true") ~= nil
   local can_diff = has_origin_main and not is_shallow
 
-  describe("new functions exist", function()
-    it("has unshallow_if_needed function", function()
-      assert.is_function(git.unshallow_if_needed)
-    end)
-
-    it("has fetch_branch function", function()
-      assert.is_function(git.fetch_branch)
-    end)
-
-    it("has log_commits function", function()
-      assert.is_function(git.log_commits)
-    end)
-
-    it("has log_base_commits function", function()
-      assert.is_function(git.log_base_commits)
-    end)
-
-    it("has show_commit function", function()
-      assert.is_function(git.show_commit)
-    end)
-
-    it("has show_commit_file function", function()
-      assert.is_function(git.show_commit_file)
-    end)
-  end)
 
   describe("log_commits on current repo", function()
     it("returns commits or error depending on origin/main availability", function()

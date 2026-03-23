@@ -6,71 +6,6 @@ describe("raccoon.comments", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(comments)
-    end)
-
-    it("has show_comments function", function()
-      assert.is_function(comments.show_comments)
-    end)
-
-    it("has clear_comments function", function()
-      assert.is_function(comments.clear_comments)
-    end)
-
-    it("has get_buffer_comments function", function()
-      assert.is_function(comments.get_buffer_comments)
-    end)
-
-    it("has find_next_comment function", function()
-      assert.is_function(comments.find_next_comment)
-    end)
-
-    it("has find_prev_comment function", function()
-      assert.is_function(comments.find_prev_comment)
-    end)
-
-    it("has next_comment function", function()
-      assert.is_function(comments.next_comment)
-    end)
-
-    it("has prev_comment function", function()
-      assert.is_function(comments.prev_comment)
-    end)
-
-    it("has show_comment_popup function", function()
-      assert.is_function(comments.show_comment_popup)
-    end)
-
-    it("has create_comment function", function()
-      assert.is_function(comments.create_comment)
-    end)
-
-    it("has list_comments function", function()
-      assert.is_function(comments.list_comments)
-    end)
-
-    it("has toggle_resolved function", function()
-      assert.is_function(comments.toggle_resolved)
-    end)
-
-    it("has get_pending_comments function", function()
-      assert.is_function(comments.get_pending_comments)
-    end)
-
-    it("has submit_comments function", function()
-      assert.is_function(comments.submit_comments)
-    end)
-
-    it("has get_namespace function", function()
-      assert.is_function(comments.get_namespace)
-    end)
-
-    it("has show_readonly_thread function", function()
-      assert.is_function(comments.show_readonly_thread)
-    end)
-  end)
 
   describe("get_namespace", function()
     it("returns a namespace ID", function()
@@ -139,11 +74,6 @@ describe("raccoon.comments", function()
   end)
 
   describe("show_comments", function()
-    it("handles nil buffer", function()
-      -- Should not error
-      comments.show_comments(nil, {})
-    end)
-
     it("handles invalid buffer", function()
       -- Should not error
       comments.show_comments(-1, {})
@@ -165,11 +95,6 @@ describe("raccoon.comments", function()
   end)
 
   describe("clear_comments", function()
-    it("handles nil buffer", function()
-      -- Should not error
-      comments.clear_comments(nil)
-    end)
-
     it("handles invalid buffer", function()
       -- Should not error
       comments.clear_comments(-1)

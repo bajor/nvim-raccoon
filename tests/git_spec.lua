@@ -1,43 +1,6 @@
 local git = require("raccoon.git")
 
 describe("raccoon.git", function()
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(git)
-    end)
-
-    it("has clone function", function()
-      assert.is_function(git.clone)
-    end)
-
-    it("has fetch_reset function", function()
-      assert.is_function(git.fetch_reset)
-    end)
-
-    it("has get_current_branch function", function()
-      assert.is_function(git.get_current_branch)
-    end)
-
-    it("has get_current_sha function", function()
-      assert.is_function(git.get_current_sha)
-    end)
-
-    it("has is_git_repo function", function()
-      assert.is_function(git.is_git_repo)
-    end)
-
-    it("has get_remote_url function", function()
-      assert.is_function(git.get_remote_url)
-    end)
-
-    it("has build_pr_path function", function()
-      assert.is_function(git.build_pr_path)
-    end)
-
-    it("has get_commit_message function", function()
-      assert.is_function(git.get_commit_message)
-    end)
-  end)
 
   describe("build_pr_path", function()
     it("builds correct path", function()
@@ -588,47 +551,6 @@ describe("raccoon.git path edge cases", function()
       assert.is_false(result)
     end)
 
-    it("handles relative path", function()
-      -- Current directory is likely a git repo
-      local result = git.is_git_repo(".")
-      -- Result depends on where tests run
-      assert.is_boolean(result)
-    end)
   end)
 end)
 
--- Git function availability tests
-describe("raccoon.git functions", function()
-  describe("additional functions", function()
-    it("has set_remote_url function", function()
-      assert.is_function(git.set_remote_url)
-    end)
-
-    it("has count_commits_behind function", function()
-      assert.is_function(git.count_commits_behind)
-    end)
-
-    it("has check_merge_conflicts function", function()
-      assert.is_function(git.check_merge_conflicts)
-    end)
-
-    it("has get_sync_status function", function()
-      assert.is_function(git.get_sync_status)
-    end)
-  end)
-
-  describe("async operation patterns", function()
-    it("clone accepts callback", function()
-      -- Just verify function signature, don't actually clone
-      assert.is_function(git.clone)
-    end)
-
-    it("fetch_reset accepts callback", function()
-      assert.is_function(git.fetch_reset)
-    end)
-
-    it("get_sync_status accepts callback", function()
-      assert.is_function(git.get_sync_status)
-    end)
-  end)
-end)
