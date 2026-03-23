@@ -116,24 +116,16 @@ end
 --- Single source of truth for config parsing shared by PR and local commit modes.
 ---@return number rows, number cols, number base_count
 function M.load_viewer_config()
-  local cfg = config.load()
+  local cv = config.load_commit_viewer()
   local rows = 2
   local cols = 2
-  local base_count = 20
-  if cfg and cfg.commit_viewer then
-    if cfg.commit_viewer.grid then
-      rows = M.clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
-      cols = M.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
-    end
-    base_count = M.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
-    M.SIDEBAR_WIDTH = M.clamp_int(
-      cfg.commit_viewer.sidebar_width,
-      50,
-      M.MIN_SIDEBAR_WIDTH,
-      M.MAX_SIDEBAR_WIDTH
-    )
-    COMMIT_MESSAGE_MAX_LINES = M.clamp_int(cfg.commit_viewer.commit_message_max_lines, 3, 1, 50)
+  if cv.grid then
+    rows = M.clamp_int(cv.grid.rows, 2, 1, 10)
+    cols = M.clamp_int(cv.grid.cols, 2, 1, 10)
   end
+  local base_count = M.clamp_int(cv.base_commits_count, 20, 1, 200)
+  M.SIDEBAR_WIDTH = M.clamp_int(cv.sidebar_width, 50, M.MIN_SIDEBAR_WIDTH, M.MAX_SIDEBAR_WIDTH)
+  COMMIT_MESSAGE_MAX_LINES = M.clamp_int(cv.commit_message_max_lines, 3, 1, 50)
   return rows, cols, base_count
 end
 
