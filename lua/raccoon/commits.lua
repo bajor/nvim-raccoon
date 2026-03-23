@@ -437,12 +437,7 @@ local function enter_commit_mode()
   end
 
   commit_state.saved_buf = vim.api.nvim_get_current_buf()
-  commit_state.saved_laststatus = vim.o.laststatus
-  commit_state.saved_equalalways = vim.o.equalalways
-  commit_state.saved_winwidth = vim.o.winwidth
-  vim.o.laststatus = 3
-  vim.o.equalalways = false
-  vim.o.winwidth = 1
+  ui.save_vim_options(commit_state)
 
   keymaps.clear()
   open.pause_sync()
@@ -539,15 +534,7 @@ local function exit_commit_mode(opts)
 
   state.set_commit_mode(false)
 
-  if commit_state.saved_laststatus then
-    vim.o.laststatus = commit_state.saved_laststatus
-  end
-  if commit_state.saved_equalalways ~= nil then
-    vim.o.equalalways = commit_state.saved_equalalways
-  end
-  if commit_state.saved_winwidth ~= nil then
-    vim.o.winwidth = commit_state.saved_winwidth
-  end
+  ui.restore_vim_options(commit_state)
 
   vim.cmd("only")
   if commit_state.saved_buf and vim.api.nvim_buf_is_valid(commit_state.saved_buf) then

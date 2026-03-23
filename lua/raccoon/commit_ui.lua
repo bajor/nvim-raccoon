@@ -9,13 +9,46 @@ local diff = require("raccoon.diff")
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 M.COMMIT_MESSAGE_MAX_LINES = 2 -- max visual lines for the header commit message (controls truncation and window height)
-M.PASSTHROUGH_KEYS = {} -- keys that bypass lock_buf blocking (loaded from config)
 M.MIN_SIDEBAR_WIDTH = 10
 M.MAX_SIDEBAR_WIDTH = 120
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 local MIN_GRID_COL_WIDTH = 1
+
+-- Static list of all keys blocked by lock_buf (built once, reused per call)
+local BLOCKED_KEYS = (function()
+  local keys = {}
+  for c = string.byte("a"), string.byte("z") do
+    table.insert(keys, string.char(c))
+    table.insert(keys, string.char(c - 32))
+  end
+  for c = string.byte("0"), string.byte("9") do
+    table.insert(keys, string.char(c))
+  end
+  for _, key in ipairs({
+    "`", "~", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")",
+    "-", "_", "=", "+", "[", "]", "{", "}", "\\", "|",
+    ";", ":", "'", '"', ",", ".", "<", ">", "/", "?", " ",
+  }) do
+    table.insert(keys, key)
+  end
+  for c = string.byte("a"), string.byte("z") do
+    table.insert(keys, "<C-" .. string.char(c) .. ">")
+  end
+  for _, key in ipairs({
+    "<Tab>", "<S-Tab>", "<Insert>", "<Del>", "<Home>", "<End>",
+    "<PageUp>", "<PageDown>", "<Up>", "<Down>", "<Left>", "<Right>",
+    "<F1>", "<F2>", "<F3>", "<F4>", "<F5>", "<F6>",
+    "<F7>", "<F8>", "<F9>", "<F10>", "<F11>", "<F12>",
+  }) do
+    table.insert(keys, key)
+  end
+  for _, key in ipairs({ "ZZ", "ZQ", "gQ", "gg", "gq" }) do
+    table.insert(keys, key)
+  end
+  return keys
+end)()
 
 --- Set header window height, clamped to COMMIT_MESSAGE_MAX_LINES and 1/3 of terminal height.
 --- Falls back to height 1 on non-trivial errors.
@@ -34,22 +67,24 @@ local function set_header_height(win)
 end
 
 --- Truncate a string to fit within a given number of display columns.
---- Walks codepoints accumulating strdisplaywidth so wide characters (CJK, emoji) are measured correctly.
+--- Uses binary search over codepoints so wide characters (CJK, emoji) are measured correctly
+--- in O(log n) vim.fn calls instead of O(n).
 ---@param text string
 ---@param max_width number Maximum display columns
 ---@return string
 function M.truncate_to_display_width(text, max_width)
-  local width = 0
-  local chars = 0
+  if vim.fn.strdisplaywidth(text) <= max_width then return text end
   local len = vim.fn.strchars(text)
-  while chars < len do
-    local ch = vim.fn.strcharpart(text, chars, 1)
-    local ch_width = vim.fn.strdisplaywidth(ch)
-    if width + ch_width > max_width then break end
-    width = width + ch_width
-    chars = chars + 1
+  local lo, hi = 0, len
+  while lo < hi do
+    local mid = math.floor((lo + hi + 1) / 2)
+    if vim.fn.strdisplaywidth(vim.fn.strcharpart(text, 0, mid)) <= max_width then
+      lo = mid
+    else
+      hi = mid - 1
+    end
   end
-  return vim.fn.strcharpart(text, 0, chars)
+  return vim.fn.strcharpart(text, 0, lo)
 end
 
 --- Split the available grid width across columns, distributing remainder columns deterministically.
@@ -129,11 +164,33 @@ function M.load_viewer_config()
       M.MAX_SIDEBAR_WIDTH
     )
     M.COMMIT_MESSAGE_MAX_LINES = M.clamp_int(cfg.commit_viewer.commit_message_max_lines, 2, 1, 20)
-    if type(cfg.commit_viewer.passthrough_keys) == "table" then
-      M.PASSTHROUGH_KEYS = cfg.commit_viewer.passthrough_keys
-    end
   end
   return rows, cols, base_count
+end
+
+--- Save Vim options that commit mode overrides (laststatus, equalalways, winwidth).
+---@param s table State table (writes saved_laststatus, saved_equalalways, saved_winwidth)
+function M.save_vim_options(s)
+  s.saved_laststatus = vim.o.laststatus
+  s.saved_equalalways = vim.o.equalalways
+  s.saved_winwidth = vim.o.winwidth
+  vim.o.laststatus = 3
+  vim.o.equalalways = false
+  vim.o.winwidth = 1
+end
+
+--- Restore Vim options saved by save_vim_options.
+---@param s table State table (reads saved_laststatus, saved_equalalways, saved_winwidth)
+function M.restore_vim_options(s)
+  if s.saved_laststatus then
+    vim.o.laststatus = s.saved_laststatus
+  end
+  if s.saved_equalalways ~= nil then
+    vim.o.equalalways = s.saved_equalalways
+  end
+  if s.saved_winwidth ~= nil then
+    vim.o.winwidth = s.saved_winwidth
+  end
 end
 
 --- Clamp sidebar width so both side panels fit symmetrically in the current editor width.
@@ -230,18 +287,7 @@ local function shadow_global_keymaps(buf, mode, passthrough_keys)
   local pr_list_lhs = normalize_lhs(shortcuts.pr_list)
   local show_shortcuts_lhs = normalize_lhs(shortcuts.show_shortcuts)
   local passthrough = {}
-  local viewer_cfg = config.load_commit_viewer()
-  local merged_passthrough = {}
-  for _, lhs in ipairs(viewer_cfg.passthrough_keys or {}) do
-    table.insert(merged_passthrough, lhs)
-  end
-  for _, lhs in ipairs(M.PASSTHROUGH_KEYS or {}) do
-    table.insert(merged_passthrough, lhs)
-  end
   for _, lhs in ipairs(passthrough_keys or {}) do
-    table.insert(merged_passthrough, lhs)
-  end
-  for _, lhs in ipairs(merged_passthrough) do
     local normalized_lhs = normalize_lhs(lhs)
     if normalized_lhs then
       passthrough[normalized_lhs] = true
@@ -283,53 +329,25 @@ function M.lock_buf(buf, passthrough_keys)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local opts = { buffer = buf, noremap = true, silent = true }
   local nop = function() end
-  shadow_global_keymaps(buf, NORMAL_MODE, passthrough_keys)
 
-  local skip = {}
-  for _, key in ipairs(M.PASSTHROUGH_KEYS or {}) do
-    skip[key] = true
+  -- Merge config passthrough keys + module-level keys + caller keys into one list
+  local viewer_cfg = config.load_commit_viewer()
+  local merged = {}
+  for _, key in ipairs(viewer_cfg.passthrough_keys or {}) do
+    table.insert(merged, key)
   end
   for _, key in ipairs(passthrough_keys or {}) do
+    table.insert(merged, key)
+  end
+
+  shadow_global_keymaps(buf, NORMAL_MODE, merged)
+
+  local skip = {}
+  for _, key in ipairs(merged) do
     skip[key] = true
   end
 
-  local blocked = {}
-
-  -- All lowercase and uppercase letters
-  for c = string.byte("a"), string.byte("z") do
-    table.insert(blocked, string.char(c))
-    table.insert(blocked, string.char(c - 32))
-  end
-  -- Digits
-  for c = string.byte("0"), string.byte("9") do
-    table.insert(blocked, string.char(c))
-  end
-  -- Punctuation and symbols
-  for _, key in ipairs({
-    "`", "~", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")",
-    "-", "_", "=", "+", "[", "]", "{", "}", "\\", "|",
-    ";", ":", "'", '"', ",", ".", "<", ">", "/", "?", " ",
-  }) do
-    table.insert(blocked, key)
-  end
-  -- Ctrl combos
-  for c = string.byte("a"), string.byte("z") do
-    table.insert(blocked, "<C-" .. string.char(c) .. ">")
-  end
-  -- Special keys
-  for _, key in ipairs({
-    "<Tab>", "<S-Tab>", "<Insert>", "<Del>", "<Home>", "<End>",
-    "<PageUp>", "<PageDown>", "<Up>", "<Down>", "<Left>", "<Right>",
-    "<F1>", "<F2>", "<F3>", "<F4>", "<F5>", "<F6>",
-    "<F7>", "<F8>", "<F9>", "<F10>", "<F11>", "<F12>",
-  }) do
-    table.insert(blocked, key)
-  end
-  -- Multi-key sequences
-  for _, key in ipairs({ "ZZ", "ZQ", "gQ", "gg", "gq" }) do
-    table.insert(blocked, key)
-  end
-  for _, key in ipairs(blocked) do
+  for _, key in ipairs(BLOCKED_KEYS) do
     if not skip[key] then
       vim.keymap.set(NORMAL_MODE, key, nop, opts)
     end

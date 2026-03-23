@@ -677,17 +677,12 @@ end
 --- Activate local mode with the given state
 local function activate_mode(repo_root, rows, cols, notify_msg)
   local_state.saved_buf = vim.api.nvim_get_current_buf()
-  local_state.saved_laststatus = vim.o.laststatus
-  local_state.saved_equalalways = vim.o.equalalways
-  local_state.saved_winwidth = vim.o.winwidth
+  ui.save_vim_options(local_state)
   local_state.pr_was_active = state.is_active()
   if local_state.pr_was_active then
     keymaps.clear()
     open.pause_sync()
   end
-  vim.o.laststatus = 3
-  vim.o.equalalways = false
-  vim.o.winwidth = 1
   local_state.active = true
   local_state.repo_path = repo_root
   local_state.last_change_time = vim.uv.now()
@@ -835,15 +830,7 @@ local function exit_local_mode(opts)
   ui.close_win_pair(local_state, "sidebar_win", "sidebar_buf")
   ui.close_win_pair(local_state, "filetree_win", "filetree_buf")
 
-  if local_state.saved_laststatus then
-    vim.o.laststatus = local_state.saved_laststatus
-  end
-  if local_state.saved_equalalways ~= nil then
-    vim.o.equalalways = local_state.saved_equalalways
-  end
-  if local_state.saved_winwidth ~= nil then
-    vim.o.winwidth = local_state.saved_winwidth
-  end
+  ui.restore_vim_options(local_state)
 
   vim.cmd("only")
   restore_saved_buffer(local_state.saved_buf)
