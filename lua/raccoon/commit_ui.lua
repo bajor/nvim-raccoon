@@ -680,7 +680,7 @@ local function finalize_preview(buf, win, filename, lines)
   local ft = vim.filetype.match({ filename = filename })
   if ft then vim.bo[buf].filetype = ft end
   if win and vim.api.nvim_win_is_valid(win) then
-    vim.wo[win].winbar = " " .. filename
+    vim.wo[win].winbar = " " .. filename .. "%=[Enter]"
     pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
   end
 end
@@ -778,7 +778,7 @@ function M._set_preview_empty(buf, win, filename, msg)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", msg })
   vim.bo[buf].modifiable = false
   if win and vim.api.nvim_win_is_valid(win) then
-    vim.wo[win].winbar = " " .. filename
+    vim.wo[win].winbar = " " .. filename .. "%=[Enter]"
   end
 end
 
