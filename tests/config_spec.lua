@@ -31,6 +31,12 @@ describe("raccoon.config", function()
       assert.same({}, config.defaults.repos)
     end)
 
+    it("has commit_viewer defaults", function()
+      assert.is_table(config.defaults.commit_viewer)
+      assert.equals(2, config.defaults.commit_viewer.commit_message_max_lines)
+      assert.equals(50, config.defaults.commit_viewer.sidebar_width)
+    end)
+
     it("does not contain dead config fields", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
