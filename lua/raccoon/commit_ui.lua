@@ -560,8 +560,24 @@ local function equalize_grid(s)
   local cols = s.grid_cols or 1
   local effective_sidebar_width = M.compute_effective_sidebar_width(cols)
 
+  -- Unlock sidebars so we can resize them (they may be locked from a previous call)
+  for _, win in ipairs({ s.filetree_win, s.sidebar_win }) do
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.wo[win].winfixwidth = false
+    end
+  end
+
+  -- Set filetree width, then lock it so the sidebar resize won't steal its space
   local filetree_width = set_focused_split_width(s.filetree_win, effective_sidebar_width) or effective_sidebar_width
+  if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
+    vim.wo[s.filetree_win].winfixwidth = true
+  end
+
+  -- Set sidebar width (filetree is locked), then lock it so grid cell resizing won't steal its space
   local sidebar_width = set_focused_split_width(s.sidebar_win, effective_sidebar_width) or effective_sidebar_width
+  if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
+    vim.wo[s.sidebar_win].winfixwidth = true
+  end
   s.sidebar_width = sidebar_width
 
   set_header_height(s.header_win)
