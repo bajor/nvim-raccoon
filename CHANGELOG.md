@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.7] - 2026-03-22
+
+### Fixed
+- Remove duplicate `lock_buf` call in sidebar navigation setup
+- Wrap grid window resize in pcall to prevent crashes during terminal resize
+- Log a DEBUG notification when commit viewer closes unexpected windows instead of doing so silently
+- Fix passthrough key merge in `lock_buf` to honor both module-level and argument-level keys consistently
+- Add pcall error handling to header height in `equalize_grid` matching the pattern in `update_header`
+- Guard `fetch_and_display_commit_message` against nil/empty `repo_path`
+- Fix `render_split_sidebar` docstring: add missing `sidebar_width?` param, remove incorrect `@return`
+
 ## [0.10.6] - 2026-03-22
 
 ### Fixed

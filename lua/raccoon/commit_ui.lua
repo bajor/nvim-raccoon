@@ -51,6 +51,23 @@ function M.compute_effective_sidebar_width(cols, requested_width)
   return math.max(1, math.min(requested_width, max_sidebar_width))
 end
 
+--- Split the available grid width across columns, distributing remainder columns deterministically.
+---@param total_width number
+---@param cols number
+---@return number[]
+local function compute_grid_column_widths(total_width, cols)
+  cols = math.max(1, cols or 1)
+  total_width = math.max(cols * MIN_GRID_COL_WIDTH, total_width or cols * MIN_GRID_COL_WIDTH)
+
+  local base_width = math.floor(total_width / cols)
+  local remainder = total_width - (base_width * cols)
+  local widths = {}
+  for col = 1, cols do
+    widths[col] = math.max(MIN_GRID_COL_WIDTH, base_width + (col <= remainder and 1 or 0))
+  end
+  return widths
+end
+
 --- Truncate sidebar text to fit inside the rendered sidebar width.
 ---@param text string|nil
 ---@param sidebar_width? number
@@ -558,11 +575,12 @@ function M.equalize_grid(s)
   local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
   -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
   local grid_width = vim.o.columns - filetree_width - sidebar_width - (cols + 1)
-  local col_width = math.max(1, math.floor(grid_width / math.max(1, cols)))
-  for _, win in ipairs(s.grid_wins or {}) do
+  local col_widths = compute_grid_column_widths(grid_width, cols)
+  for idx, win in ipairs(s.grid_wins or {}) do
     if vim.api.nvim_win_is_valid(win) then
+      local col_idx = ((idx - 1) % cols) + 1
       pcall(vim.api.nvim_win_set_height, win, row_height)
-      pcall(vim.api.nvim_win_set_width, win, col_width)
+      pcall(vim.api.nvim_win_set_width, win, col_widths[col_idx])
     end
   end
 end

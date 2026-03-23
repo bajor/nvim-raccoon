@@ -53,6 +53,22 @@ describe("raccoon.commit_ui", function()
       assert.equals(10, vim.api.nvim_win_get_width(state.filetree_win))
       assert.equals(10, vim.api.nvim_win_get_width(state.sidebar_win))
     end)
+
+    it("keeps both sidebars symmetric when grid width has remainder columns", function()
+      commit_ui.SIDEBAR_WIDTH = 10
+
+      commit_ui.create_grid_layout(state, 1, 2)
+
+      assert.equals(10, vim.api.nvim_win_get_width(state.filetree_win))
+      assert.equals(10, vim.api.nvim_win_get_width(state.sidebar_win))
+
+      local total_grid_width = 0
+      for _, win in ipairs(state.grid_wins) do
+        total_grid_width = total_grid_width + vim.api.nvim_win_get_width(win)
+      end
+
+      assert.equals(vim.o.columns - 10 - 10 - 3, total_grid_width)
+    end)
   end)
 
   describe("setup_focus_lock", function()
