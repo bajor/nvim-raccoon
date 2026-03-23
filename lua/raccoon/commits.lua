@@ -30,7 +30,6 @@ local commit_state = {
   current_page = 1,
   saved_buf = nil,
   saved_laststatus = nil,
-  saved_winwidth = nil,
   grid_rows = 2,
   grid_cols = 2,
   maximize_win = nil,
@@ -48,9 +47,6 @@ local commit_state = {
   cached_stat_lines = nil,
   cached_file_count = nil,
   focus_target = "sidebar",
-  saved_equalalways = nil,
-  sidebar_width = nil,
-  requested_sidebar_width = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -73,7 +69,6 @@ local function reset_state()
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
-    saved_winwidth = nil,
     grid_rows = 2,
     grid_cols = 2,
     maximize_win = nil,
@@ -91,9 +86,6 @@ local function reset_state()
     cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
-    saved_equalalways = nil,
-    sidebar_width = nil,
-    requested_sidebar_width = nil,
   }
 end
 
@@ -192,8 +184,6 @@ local function select_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
-  ui.fetch_and_display_commit_message(commit_state, commit, clone_path, generation, total_pages)
-
   local context = ui.compute_grid_context(commit_state.grid_rows)
   git.show_commit(clone_path, commit.sha, context, function(files, err)
     if generation ~= commit_state.select_generation then return end
@@ -266,7 +256,6 @@ local function render_sidebar()
     section1_commits = commit_state.pr_commits,
     section2_header = "── Base Branch ──",
     section2_commits = commit_state.base_commits,
-    sidebar_width = commit_state.sidebar_width,
   })
   ui.update_sidebar_winbar(commit_state, total_commits())
   update_sidebar_selection()
@@ -432,11 +421,7 @@ local function enter_commit_mode()
 
   commit_state.saved_buf = vim.api.nvim_get_current_buf()
   commit_state.saved_laststatus = vim.o.laststatus
-  commit_state.saved_equalalways = vim.o.equalalways
-  commit_state.saved_winwidth = vim.o.winwidth
   vim.o.laststatus = 3
-  vim.o.equalalways = false
-  vim.o.winwidth = 1
 
   keymaps.clear()
   open.pause_sync()
@@ -453,16 +438,7 @@ local function enter_commit_mode()
       cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
     end
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
-    ui.SIDEBAR_WIDTH = ui.clamp_int(
-      cfg.commit_viewer.sidebar_width,
-      50,
-      ui.MIN_SIDEBAR_WIDTH,
-      ui.MAX_SIDEBAR_WIDTH
-    )
-    ui.COMMIT_MESSAGE_MAX_LINES = ui.clamp_int(cfg.commit_viewer.commit_message_max_lines, 2, 1, 20)
-    if type(cfg.commit_viewer.passthrough_keys) == "table" then
-      ui.PASSTHROUGH_KEYS = cfg.commit_viewer.passthrough_keys
-    end
+    ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
   end
 
   local base_branch = pr.base.ref
@@ -555,12 +531,6 @@ local function exit_commit_mode(opts)
 
   if commit_state.saved_laststatus then
     vim.o.laststatus = commit_state.saved_laststatus
-  end
-  if commit_state.saved_equalalways ~= nil then
-    vim.o.equalalways = commit_state.saved_equalalways
-  end
-  if commit_state.saved_winwidth ~= nil then
-    vim.o.winwidth = commit_state.saved_winwidth
   end
 
   vim.cmd("only")

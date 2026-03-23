@@ -46,7 +46,6 @@ local function make_initial_state()
     current_page = 1,
     saved_buf = nil,
     saved_laststatus = nil,
-    saved_winwidth = nil,
     grid_rows = 2,
     grid_cols = 2,
     maximize_win = nil,
@@ -65,9 +64,6 @@ local function make_initial_state()
     cached_file_count = nil,
     focus_target = "sidebar",
     pr_was_active = false,
-    saved_equalalways = nil,
-    sidebar_width = nil,
-    requested_sidebar_width = nil,
   }
 end
 
@@ -156,8 +152,6 @@ local function select_commit(index)
 
   local commit = get_commit(index)
   if not local_state.repo_path then return end
-
-  ui.fetch_and_display_commit_message(local_state, commit, local_state.repo_path, generation, total_pages)
 
   local context = ui.compute_grid_context(local_state.grid_rows)
   local fetch_diff = commit.sha
@@ -262,20 +256,21 @@ local function render_sidebar()
         if commit.sha == nil then return "DiagnosticInfo" end
       end,
       loading = local_state.loading_more,
-      sidebar_width = local_state.sidebar_width,
     })
   else
     -- Flat mode: single section
     local lines = {}
     local highlights = {}
-    local sidebar_width = local_state.sidebar_width or ui.SIDEBAR_WIDTH
 
     local commit_count = math.max(0, total_commits() - 1)
     table.insert(lines, "── Commits (" .. commit_count .. ") ──")
     table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
     for i, commit in ipairs(local_state.branch_commits) do
-      local msg = ui.truncate_sidebar_text(commit.message, sidebar_width)
+      local msg = commit.message
+      if #msg > ui.SIDEBAR_WIDTH - 2 then
+        msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
+      end
       table.insert(lines, "  " .. msg)
       if commit.sha == nil then
         table.insert(highlights, { line = i, hl = "DiagnosticInfo" })
@@ -672,16 +667,12 @@ end
 local function activate_mode(repo_root, rows, cols, notify_msg)
   local_state.saved_buf = vim.api.nvim_get_current_buf()
   local_state.saved_laststatus = vim.o.laststatus
-  local_state.saved_equalalways = vim.o.equalalways
-  local_state.saved_winwidth = vim.o.winwidth
   local_state.pr_was_active = state.is_active()
   if local_state.pr_was_active then
     keymaps.clear()
     open.pause_sync()
   end
   vim.o.laststatus = 3
-  vim.o.equalalways = false
-  vim.o.winwidth = 1
   local_state.active = true
   local_state.repo_path = repo_root
   local_state.last_change_time = vim.uv.now()
@@ -709,16 +700,7 @@ local function enter_local_mode()
       cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
     end
     base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
-    ui.SIDEBAR_WIDTH = ui.clamp_int(
-      cfg.commit_viewer.sidebar_width,
-      50,
-      ui.MIN_SIDEBAR_WIDTH,
-      ui.MAX_SIDEBAR_WIDTH
-    )
-    ui.COMMIT_MESSAGE_MAX_LINES = ui.clamp_int(cfg.commit_viewer.commit_message_max_lines, 2, 1, 20)
-    if type(cfg.commit_viewer.passthrough_keys) == "table" then
-      ui.PASSTHROUGH_KEYS = cfg.commit_viewer.passthrough_keys
-    end
+    ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
   end
 
   vim.notify("Loading commits...", vim.log.levels.INFO)
@@ -851,12 +833,6 @@ local function exit_local_mode(opts)
 
   if local_state.saved_laststatus then
     vim.o.laststatus = local_state.saved_laststatus
-  end
-  if local_state.saved_equalalways ~= nil then
-    vim.o.equalalways = local_state.saved_equalalways
-  end
-  if local_state.saved_winwidth ~= nil then
-    vim.o.winwidth = local_state.saved_winwidth
   end
 
   vim.cmd("only")

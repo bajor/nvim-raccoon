@@ -33,10 +33,6 @@ describe("raccoon.git", function()
     it("has build_pr_path function", function()
       assert.is_function(git.build_pr_path)
     end)
-
-    it("has get_commit_message function", function()
-      assert.is_function(git.get_commit_message)
-    end)
   end)
 
   describe("build_pr_path", function()
@@ -322,40 +318,6 @@ describe("raccoon.git command format", function()
     assert.equals(1, #recorded)
     assert.truthy(recorded[1].cmd:match("%-U7"))
     assert.is_nil(recorded[1].cmd:match("%-U7%."))
-  end)
-
-  it("get_commit_message uses --format=%B with the SHA", function()
-    git.get_commit_message("/tmp", "abc123def", function() end)
-    assert.equals(1, #recorded)
-    assert.truthy(recorded[1].cmd:match("log %-1 %-%-format=%%B abc123def"))
-  end)
-
-  it("get_commit_message includes core.longpaths flag", function()
-    git.get_commit_message("/tmp", "abc123", function() end)
-    assert.equals(1, #recorded)
-    assert.truthy(recorded[1].cmd:match("^git %-c core%.longpaths=true"))
-  end)
-
-  it("get_commit_message calls callback with error for nil SHA", function()
-    local result_msg, result_err
-    git.get_commit_message("/tmp", nil, function(msg, err)
-      result_msg = msg
-      result_err = err
-    end)
-    assert.equals(0, #recorded)
-    assert.is_nil(result_msg)
-    assert.equals("Invalid commit SHA", result_err)
-  end)
-
-  it("get_commit_message calls callback with error for empty SHA", function()
-    local result_msg, result_err
-    git.get_commit_message("/tmp", "", function(msg, err)
-      result_msg = msg
-      result_err = err
-    end)
-    assert.equals(0, #recorded)
-    assert.is_nil(result_msg)
-    assert.equals("Invalid commit SHA", result_err)
   end)
 end)
 
