@@ -37,7 +37,7 @@ local function setup_highlights()
 
   -- File tree highlights (commit viewer)
   vim.api.nvim_set_hl(0, "RaccoonFileNormal", {
-    link = "Comment",
+    fg = "#444444",
     default = true,
   })
 
