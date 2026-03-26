@@ -14,6 +14,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - `run_git()` now reports a meaningful error when `jobstart` returns a non-positive ID (e.g. git not installed or invalid arguments) instead of silently hanging
+- Remove duplicate `lock_buf` call in sidebar navigation setup
+- Wrap grid window resize in pcall to prevent crashes during terminal resize
+- Fix passthrough key merge in `lock_buf` to honor both module-level and argument-level keys consistently
+- Add pcall error handling to header height in `equalize_grid` matching the pattern in `update_header`
+- Inline full-message loading into `select_commit`, remove `fetch_and_display_commit_message` helper
+- Fix `render_split_sidebar` docstring: add missing `sidebar_width?` param, remove incorrect `@return`
+- Extract shared `lock_buf` and `create_scratch_buf` into `commit_ui` module, removing duplicate implementations across `commits` and `localcommits`
+- Log silent pcall errors at DEBUG level in `update_header` and `equalize_grid` instead of swallowing them
+- Truncate commit message header text with ellipsis when it exceeds the window's max display width
+- Commit viewer sidebars now use the same computed width in both PR and local commit modes instead of diverging
+- Commit viewer sidebars now stay symmetric in both PR and local commit modes
+- `commit_viewer.sidebar_width` now works correctly for small values like `10` instead of being forced wider by the active split window
+- `commit_viewer.sidebar_width` range widened from 20–120 to 1–500
+
+### Changed
+- Remove ~130 redundant `assert.is_function` inventory tests and overlapping tests across 13 test files — zero behavioral coverage lost
+- Log a DEBUG notification when commit viewer closes unexpected windows instead of doing so silently
 
 ## [0.11] - 2026-03-23
 
@@ -25,34 +42,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `render_file_preview()` helper to display diff or file content in the preview cell
 - Works in both PR commit mode and local commit mode
 
-## [0.10.7] - 2026-03-22
-
-### Fixed
-- Remove duplicate `lock_buf` call in sidebar navigation setup
-- Wrap grid window resize in pcall to prevent crashes during terminal resize
-- Log a DEBUG notification when commit viewer closes unexpected windows instead of doing so silently
-- Fix passthrough key merge in `lock_buf` to honor both module-level and argument-level keys consistently
-- Add pcall error handling to header height in `equalize_grid` matching the pattern in `update_header`
-- Inline full-message loading into `select_commit`, remove `fetch_and_display_commit_message` helper
-- Fix `render_split_sidebar` docstring: add missing `sidebar_width?` param, remove incorrect `@return`
-- Extract shared `lock_buf` and `create_scratch_buf` into `commit_ui` module, removing duplicate implementations across `commits` and `localcommits`
-- Log silent pcall errors at DEBUG level in `update_header` and `equalize_grid` instead of swallowing them
-- Truncate commit message header text with ellipsis when it exceeds the window's max display width
-
-### Changed
-- Remove ~130 redundant `assert.is_function` inventory tests and overlapping tests across 13 test files — zero behavioral coverage lost
-
 ## [0.10.6] - 2026-03-22
 
 ### Fixed
-- Commit viewer sidebars (commit list and file tree) now use the same computed width in both PR and local commit modes instead of diverging
 - Commit mode now locks down only conflicting global shortcuts while preserving raccoon-specific ones (e.g. leader-pr, exit raccoon)
 - Commit mode passthrough keys now honor normalized mappings like `<leader>...`
 - Legacy top-level `passthrough_keymaps` config entries now work as commit-mode passthrough keys
 - Exiting local commit viewer now falls back to a normal buffer if the original buffer was wiped, avoiding a stuck locked-input state
 - Clamp grid column width to minimum 1 for narrow terminals
-- Commit viewer sidebars (commit list and file tree) now stay symmetric in both PR and local commit modes
-- `commit_viewer.sidebar_width` now works correctly for small values like `10` instead of being forced wider by the active split window
 
 ## [0.10.5] - 2026-03-22
 
@@ -94,7 +91,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Agent prompt assembly with task description, visual selection, commit context (SHA, message, filename), and configurable suffix prompt
 - Statusline indicator showing `[N agent(s)]` count while agents are running
 - `parallel_agents` config block: `enabled`, `command`, `suffix_prompt`, `shortcut`, `popup_width`
-- `commit_viewer.sidebar_width` config option to control the width of commit list and file tree panels (default 50, range 1–500)
+- `commit_viewer.sidebar_width` config option to control the width of commit list and file tree panels (default 50, range 20–120)
 - `read_config_json()` helper extracted for config file reading reuse
 - `bool_field()` helper for boolean config validation
 
