@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.1] - 2026-03-26
+
+### Added
+- Full multiline commit message display in the header — selecting a commit now fetches and renders the complete message (subject + body) instead of only the first line
+- `commit_viewer.commit_message_max_lines` config option to control header height (default 3, range 1–50)
+- `git.get_commit_message()` for fetching the full commit message body of a single commit
+- `keep_empty_lines` option in `run_git()` to preserve blank lines in command output (needed for multiline messages)
+
+### Fixed
+- `run_git()` now reports a meaningful error when `jobstart` returns a non-positive ID (e.g. git not installed or invalid arguments) instead of silently hanging
+
 ## [0.11] - 2026-03-23
 
 ### Added
