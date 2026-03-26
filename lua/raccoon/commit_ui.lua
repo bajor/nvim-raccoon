@@ -584,6 +584,9 @@ local function equalize_grid(s)
   local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
   -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
   local grid_width = vim.o.columns - filetree_width - sidebar_width - (cols + 1)
+  if grid_width < cols then
+    vim.notify("Terminal too narrow for commit viewer layout", vim.log.levels.WARN)
+  end
   local col_widths = compute_grid_column_widths(grid_width, cols)
   for idx, win in ipairs(s.grid_wins or {}) do
     if vim.api.nvim_win_is_valid(win) then
@@ -1186,7 +1189,7 @@ function M.start_maximize_watcher(s)
   if not handle then return end
 
   s.maximize_fs_event = handle
-  handle:start(filepath, {}, vim.schedule_wrap(function(err)
+  local start_ok, start_err = pcall(handle.start, handle, filepath, {}, vim.schedule_wrap(function(err)
     if err then
       vim.notify("File watch error (live refresh disabled): " .. tostring(err), vim.log.levels.WARN)
       return
@@ -1194,6 +1197,11 @@ function M.start_maximize_watcher(s)
     if not s.maximize_workdir_opts then return end
     M.refresh_maximize(s)
   end))
+  if not start_ok then
+    vim.notify("File watcher unavailable: " .. tostring(start_err), vim.log.levels.DEBUG)
+    pcall(handle.close, handle)
+    s.maximize_fs_event = nil
+  end
 end
 
 --- Refresh the maximize window in-place for working directory changes
@@ -1325,6 +1333,15 @@ function M.build_filetree_cache(s, repo_path, sha)
       vim.notify("Failed to list files: " .. tostring(err), vim.log.levels.WARN)
     end
     if s.cached_sha ~= cache_key then return end
+
+    if not raw or #raw == 0 then
+      s.cached_tree_lines = { err and "  Error loading files" or "  No files" }
+      s.cached_line_paths = {}
+      s.cached_stat_lines = {}
+      s.cached_file_count = 0
+      M.render_filetree(s)
+      return
+    end
 
     table.sort(raw)
     local tree = M.build_file_tree(raw)

@@ -530,7 +530,10 @@ local function safe_close_timer(timer)
   end
   local closing_ok, is_closing = pcall(timer.is_closing, timer)
   if not closing_ok or not is_closing then
-    pcall(timer.close, timer)
+    local close_ok, close_err = pcall(timer.close, timer)
+    if not close_ok and close_err then
+      vim.notify("Timer close error: " .. tostring(close_err), vim.log.levels.DEBUG)
+    end
   end
 end
 
@@ -847,7 +850,10 @@ local function exit_local_mode(opts)
   stop_workdir_poll_timer()
 
   if local_state.focus_augroup then
-    pcall(vim.api.nvim_del_augroup_by_id, local_state.focus_augroup)
+    local ok, err = pcall(vim.api.nvim_del_augroup_by_id, local_state.focus_augroup)
+    if not ok then
+      vim.notify("Failed to delete focus lock augroup: " .. tostring(err), vim.log.levels.DEBUG)
+    end
   end
 
   ui.close_win_pair(local_state, "maximize_win", "maximize_buf")

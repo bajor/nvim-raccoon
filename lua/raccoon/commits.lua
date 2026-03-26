@@ -531,7 +531,10 @@ local function exit_commit_mode(opts)
   end
 
   if commit_state.focus_augroup then
-    pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
+    local ok, err = pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
+    if not ok then
+      vim.notify("Failed to delete focus lock augroup: " .. tostring(err), vim.log.levels.DEBUG)
+    end
   end
 
   ui.close_win_pair(commit_state, "maximize_win", "maximize_buf")
