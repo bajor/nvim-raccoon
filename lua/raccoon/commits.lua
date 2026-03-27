@@ -189,6 +189,7 @@ local function select_commit(index)
   local generation = commit_state.select_generation
 
   local commit = get_commit(index)
+  if not commit then return end
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 

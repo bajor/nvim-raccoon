@@ -93,7 +93,8 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.grid.rows` | number | `2` | Rows in the commit viewer diff grid |
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
-| `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (10–120) |
+| `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (1–500) |
+| `commit_viewer.commit_message_max_lines` | number | `3` | Max lines shown in the commit message header (1–50) |
 | `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:

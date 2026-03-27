@@ -155,6 +155,7 @@ local function select_commit(index)
   local generation = local_state.select_generation
 
   local commit = get_commit(index)
+  if not commit then return end
   if not local_state.repo_path then return end
 
   ui.fetch_full_message(local_state, commit, local_state.repo_path, generation, total_pages)
@@ -668,7 +669,11 @@ load_more_commits = function()
       BATCH_SIZE, local_state.total_base_loaded,
       function(new_commits, err)
         local_state.loading_more = false
-        if err or not new_commits or #new_commits == 0 then return end
+        if err then
+          vim.notify("Failed to load more commits: " .. tostring(err), vim.log.levels.WARN)
+          return
+        end
+        if not new_commits or #new_commits == 0 then return end
         for _, commit in ipairs(new_commits) do
           table.insert(local_state.base_commits, commit)
         end
@@ -681,7 +686,11 @@ load_more_commits = function()
     local skip = #local_state.branch_commits - 1 -- -1 for "Current changes"
     git.log_all_commits(local_state.repo_path, BATCH_SIZE, skip, function(new_commits, err)
       local_state.loading_more = false
-      if err or not new_commits or #new_commits == 0 then return end
+      if err then
+        vim.notify("Failed to load more commits: " .. tostring(err), vim.log.levels.WARN)
+        return
+      end
+      if not new_commits or #new_commits == 0 then return end
       for _, commit in ipairs(new_commits) do
         table.insert(local_state.branch_commits, commit)
       end

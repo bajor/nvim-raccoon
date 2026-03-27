@@ -524,8 +524,9 @@ function M.window_block_keymaps()
 end
 
 --- Resize a split window while it is focused so Neovim applies the width to that side.
---- Works best when equalalways is disabled (caller's responsibility). Focusing the target first
---- ensures the requested width is honored rather than absorbed by resize of the previously active window.
+--- Works alongside winfixwidth locks set in equalize_grid to prevent resize spillover.
+--- Focusing the target first ensures the requested width is honored rather than absorbed by
+--- resize of the previously active window.
 ---@param win number|nil
 ---@param width number
 ---@return number? applied_width
@@ -1030,6 +1031,7 @@ function M.open_maximize(opts)
       zindex = 50,
     })
     if not win_ok then
+      vim.notify("Failed to open maximize window: " .. tostring(win), vim.log.levels.WARN)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return
     end
@@ -1135,6 +1137,7 @@ function M.open_maximize_list(opts)
     zindex = 50,
   })
   if not ok then
+    vim.notify("Failed to open maximize window: " .. tostring(win), vim.log.levels.WARN)
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
     return
   end
@@ -1303,6 +1306,7 @@ function M.open_file_content(opts)
       zindex = 50,
     })
     if not win_ok then
+      vim.notify("Failed to open file content window: " .. tostring(win), vim.log.levels.WARN)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return
     end
@@ -1470,6 +1474,7 @@ end
 ---@param generation number Generation counter at call time (stale callbacks are discarded)
 ---@param pages_fn fun(): number Returns current total page count
 function M.fetch_full_message(s, commit, repo_path, generation, pages_fn)
+  if not commit then return end
   local git = require("raccoon.git")
   M.update_header(s, commit, pages_fn())
   if not commit.sha or commit.full_message then return end
