@@ -157,20 +157,7 @@ local function select_commit(index)
   local commit = get_commit(index)
   if not local_state.repo_path then return end
 
-  ui.update_header(local_state, commit, total_pages())
-  if commit.sha and not commit.full_message then
-    git.get_commit_message(local_state.repo_path, commit.sha, function(message, err)
-      if generation ~= local_state.select_generation then return end
-      if err then
-        vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.WARN)
-        return
-      end
-      if message and message ~= "" then
-        commit.full_message = message
-        ui.update_header(local_state, commit, total_pages())
-      end
-    end)
-  end
+  ui.fetch_full_message(local_state, commit, local_state.repo_path, generation, total_pages)
 
   local context = ui.compute_grid_context(local_state.grid_rows)
   local fetch_diff = commit.sha

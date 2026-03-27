@@ -192,20 +192,7 @@ local function select_commit(index)
   local clone_path = state.get_clone_path()
   if not clone_path then return end
 
-  ui.update_header(commit_state, commit, total_pages())
-  if commit.sha and not commit.full_message then
-    git.get_commit_message(clone_path, commit.sha, function(message, err)
-      if generation ~= commit_state.select_generation then return end
-      if err then
-        vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.WARN)
-        return
-      end
-      if message and message ~= "" then
-        commit.full_message = message
-        ui.update_header(commit_state, commit, total_pages())
-      end
-    end)
-  end
+  ui.fetch_full_message(commit_state, commit, clone_path, generation, total_pages)
 
   local context = ui.compute_grid_context(commit_state.grid_rows)
   git.show_commit(clone_path, commit.sha, context, function(files, err)

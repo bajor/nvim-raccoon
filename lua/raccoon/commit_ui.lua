@@ -16,7 +16,7 @@ local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separat
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 local MIN_GRID_COL_WIDTH = 1
 
---- Set header window height, clamped to COMMIT_MESSAGE_MAX_LINES and 1/3 of terminal height.
+--- Set header window height, clamped to the lesser of COMMIT_MESSAGE_MAX_LINES and 1/3 of terminal height.
 --- Falls back to height 1 on non-trivial errors.
 ---@param win number Window handle
 local function set_header_height(win)
@@ -26,11 +26,10 @@ local function set_header_height(win)
   local ok, err = pcall(vim.api.nvim_win_set_height, win, math.min(max_lines, max_safe))
   if not ok then
     if err and not tostring(err):match("Invalid window") then
-      vim.notify("Header height error: " .. tostring(err), vim.log.levels.DEBUG)
+      vim.notify("Header height error: " .. tostring(err), vim.log.levels.WARN)
     end
-    local fb_ok, fb_err = pcall(vim.api.nvim_win_set_height, win, 1)
-    if not fb_ok and fb_err and not tostring(fb_err):match("Invalid window") then
-      vim.notify("Header fallback height error: " .. tostring(fb_err), vim.log.levels.DEBUG)
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_set_height, win, 1)
     end
   end
 end
@@ -42,6 +41,7 @@ end
 ---@param max_width number Maximum display columns
 ---@return string
 local function truncate_to_display_width(text, max_width)
+  if max_width <= 0 then return "" end
   if vim.fn.strdisplaywidth(text) <= max_width then return text end
   local len = vim.fn.strchars(text)
   local lo, hi = 0, len
@@ -56,7 +56,7 @@ local function truncate_to_display_width(text, max_width)
   return vim.fn.strcharpart(text, 0, lo)
 end
 
---- Split the available grid width across columns, distributing remainder columns deterministically.
+--- Split the available grid width across columns, distributing remainder left-to-right (leftmost columns get +1 first).
 ---@param total_width number
 ---@param cols number
 ---@return number[]
@@ -587,6 +587,7 @@ local function equalize_grid(s)
   local grid_width = vim.o.columns - filetree_width - sidebar_width - (cols + 1)
   if grid_width < cols then
     vim.notify("Terminal too narrow for commit viewer layout", vim.log.levels.WARN)
+    return
   end
   local col_widths = compute_grid_column_widths(grid_width, cols)
   for idx, win in ipairs(s.grid_wins or {}) do
@@ -1003,8 +1004,8 @@ function M.open_maximize(opts)
       end
     end
 
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
+    local width = math.max(1, math.floor(vim.o.columns * 0.85))
+    local height = math.max(1, math.floor(vim.o.lines * 0.85))
     local row = math.floor((vim.o.lines - height) / 2)
     local col = math.floor((vim.o.columns - width) / 2)
 
@@ -1018,7 +1019,7 @@ function M.open_maximize(opts)
       vim.bo[buf].filetype = ft
     end
 
-    local win = vim.api.nvim_open_win(buf, true, {
+    local win_ok, win = pcall(vim.api.nvim_open_win, buf, true, {
       relative = "editor",
       width = width,
       height = height,
@@ -1028,6 +1029,10 @@ function M.open_maximize(opts)
       border = "rounded",
       zindex = 50,
     })
+    if not win_ok then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      return
+    end
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
@@ -1109,8 +1114,8 @@ function M.open_maximize_list(opts)
     table.insert(lines, item.display)
   end
 
-  local width = math.floor(vim.o.columns * 0.6)
-  local height = math.min(#lines, math.floor(vim.o.lines * 0.7))
+  local width = math.max(1, math.floor(vim.o.columns * 0.6))
+  local height = math.max(1, math.min(#lines, math.floor(vim.o.lines * 0.7)))
   local row = math.floor((vim.o.lines - height) / 2)
   local col = math.floor((vim.o.columns - width) / 2)
 
@@ -1119,7 +1124,7 @@ function M.open_maximize_list(opts)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  local win = vim.api.nvim_open_win(buf, true, {
+  local ok, win = pcall(vim.api.nvim_open_win, buf, true, {
     relative = "editor",
     width = width,
     height = height,
@@ -1129,6 +1134,10 @@ function M.open_maximize_list(opts)
     border = "rounded",
     zindex = 50,
   })
+  if not ok then
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    return
+  end
 
   opts.state.maximize_win = win
   opts.state.maximize_buf = buf
@@ -1145,6 +1154,7 @@ function M.open_maximize_list(opts)
     M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
   end
   local function select_fn()
+    if not vim.api.nvim_win_is_valid(win) then return end
     local cursor = vim.api.nvim_win_get_cursor(win)
     local idx = cursor[1]
     if idx >= 1 and idx <= #items then
@@ -1269,8 +1279,8 @@ function M.open_file_content(opts)
       return
     end
 
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
+    local width = math.max(1, math.floor(vim.o.columns * 0.85))
+    local height = math.max(1, math.floor(vim.o.lines * 0.85))
     local row = math.floor((vim.o.lines - height) / 2)
     local col = math.floor((vim.o.columns - width) / 2)
 
@@ -1282,7 +1292,7 @@ function M.open_file_content(opts)
     local ft = vim.filetype.match({ filename = opts.filename })
     if ft then vim.bo[buf].filetype = ft end
 
-    local win = vim.api.nvim_open_win(buf, true, {
+    local win_ok, win = pcall(vim.api.nvim_open_win, buf, true, {
       relative = "editor",
       width = width,
       height = height,
@@ -1292,6 +1302,10 @@ function M.open_file_content(opts)
       border = "rounded",
       zindex = 50,
     })
+    if not win_ok then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      return
+    end
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
@@ -1330,13 +1344,20 @@ function M.build_filetree_cache(s, repo_path, sha)
   s.cached_sha = cache_key
 
   git.list_files(repo_path, sha, function(raw, err)
-    if err then
-      vim.notify("Failed to list files: " .. tostring(err), vim.log.levels.WARN)
-    end
     if s.cached_sha ~= cache_key then return end
 
+    if err then
+      vim.notify("Failed to list files: " .. tostring(err), vim.log.levels.WARN)
+      s.cached_tree_lines = { "  Error loading files" }
+      s.cached_line_paths = {}
+      s.cached_stat_lines = {}
+      s.cached_file_count = 0
+      M.render_filetree(s)
+      return
+    end
+
     if not raw or #raw == 0 then
-      s.cached_tree_lines = { err and "  Error loading files" or "  No files" }
+      s.cached_tree_lines = { "  No files" }
       s.cached_line_paths = {}
       s.cached_stat_lines = {}
       s.cached_file_count = 0
@@ -1351,7 +1372,7 @@ function M.build_filetree_cache(s, repo_path, sha)
     local stat_lines = {}
     M.render_tree_node(tree, "", lines, line_paths, s.file_stats, stat_lines)
     if #lines == 0 then
-      lines = { err and "  Error loading files" or "  No files" }
+      lines = { "  No files" }
     end
 
     s.cached_tree_lines = lines
@@ -1439,6 +1460,30 @@ function M.update_sidebar_winbar(s, count)
         and (label .. "%=%#Comment# " .. key .. " %*")
       or label
   end
+end
+
+--- Fetch full commit message asynchronously, cache it on the commit, and refresh the header.
+--- Immediately shows the subject line; replaces it with the full body when the async fetch completes.
+---@param s table State table (needs select_generation)
+---@param commit table Commit object (must have .sha; .full_message is written on success)
+---@param repo_path string Repository path
+---@param generation number Generation counter at call time (stale callbacks are discarded)
+---@param pages_fn fun(): number Returns current total page count
+function M.fetch_full_message(s, commit, repo_path, generation, pages_fn)
+  local git = require("raccoon.git")
+  M.update_header(s, commit, pages_fn())
+  if not commit.sha or commit.full_message then return end
+  git.get_commit_message(repo_path, commit.sha, function(message, err)
+    if generation ~= s.select_generation then return end
+    if err then
+      vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.WARN)
+      return
+    end
+    if message and message ~= "" then
+      commit.full_message = message
+      M.update_header(s, commit, pages_fn())
+    end
+  end)
 end
 
 --- Update the header bar with commit message and page indicator

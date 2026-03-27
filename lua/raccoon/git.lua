@@ -700,6 +700,10 @@ end
 ---@param sha string Commit SHA
 ---@param callback fun(message: string|nil, err: string|nil)
 function M.get_commit_message(path, sha, callback)
+  if not path or path == "" then
+    callback(nil, "Invalid repository path")
+    return
+  end
   if not sha or sha == "" then
     callback(nil, "Invalid commit SHA")
     return
