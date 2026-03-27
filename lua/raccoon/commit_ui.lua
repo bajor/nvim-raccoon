@@ -554,7 +554,8 @@ end
 
 --- Re-equalize sidebar widths, header height, and grid cell dimensions.
 --- Called after initial layout creation and after any layout disruption (rogue window, terminal resize).
----@param s table State table (needs sidebar_win, filetree_win, header_win, grid_wins, grid_rows, grid_cols; writes sidebar_width)
+---@param s table State table (needs sidebar_win, filetree_win, header_win,
+--- grid_wins, grid_rows, grid_cols; writes sidebar_width)
 local function equalize_grid(s)
   local rows = s.grid_rows or 1
   local cols = s.grid_cols or 1
@@ -1804,7 +1805,8 @@ end
 --- Render a two-section sidebar (section1 commits + separator + section2 commits dimmed).
 --- Works for both PR viewer ("PR Branch"/"Base Branch") and local viewer ("feat-xyz"/"main").
 ---@param buf number Buffer ID
----@param opts table {section1_header, section1_commits, section2_header, section2_commits, commit_hl_fn?, loading?, sidebar_width?}
+---@param opts table {section1_header, section1_commits, section2_header,
+--- section2_commits, commit_hl_fn?, loading?, sidebar_width?}
 function M.render_split_sidebar(buf, opts)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
