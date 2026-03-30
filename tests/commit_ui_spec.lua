@@ -117,8 +117,7 @@ describe("raccoon.commit_ui", function()
       -- Use a narrow window to force truncation
       local buf, win = make_header(20)
       local state = { header_buf = buf, header_win = win, current_page = 1 }
-      -- COMMIT_MESSAGE_MAX_LINES=2, win_width=20 → max_display_width=40
-      -- Create a message much longer than 40 display columns
+      -- Create a message much longer than the configured wrapping budget.
       local long_msg = string.rep("abcdefghij ", 10) -- 110 chars
       local commit = { message = "subject", full_message = long_msg }
 
@@ -129,6 +128,26 @@ describe("raccoon.commit_ui", function()
       assert.truthy(lines[1]:find("%.%.%.$"))
 
       teardown_header(buf, win)
+    end)
+
+    it("truncates with the effective header line cap when terminal height is constrained", function()
+      local buf, win = make_header(20)
+      local saved_lines = vim.o.lines
+      local ok, err = pcall(function()
+        local state = { header_buf = buf, header_win = win, current_page = 1 }
+        vim.o.lines = 5 -- floor(5/3) = 1 visible header line
+        local commit = { full_message = string.rep("abcdefghij ", 3) } -- 33 cols: >20 but <60
+
+        commit_ui.update_header(state, commit, 1)
+        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        assert.equals(1, #lines)
+        assert.truthy(lines[1]:find("%.%.%.$"))
+        assert.truthy(vim.fn.strdisplaywidth(lines[1]) <= 20)
+      end)
+
+      vim.o.lines = saved_lines
+      teardown_header(buf, win)
+      if not ok then error(err) end
     end)
 
     it("shows page prefix with commit message", function()

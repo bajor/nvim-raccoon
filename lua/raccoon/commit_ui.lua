@@ -16,14 +16,21 @@ local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separat
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 local MIN_GRID_COL_WIDTH = 1
 
+--- Effective header line cap used by both window height and truncation logic.
+---@return number
+local function effective_header_line_cap()
+  local configured_max_lines = math.max(1, COMMIT_MESSAGE_MAX_LINES)
+  local max_safe_lines = math.max(1, math.floor(vim.o.lines / 3))
+  return math.min(configured_max_lines, max_safe_lines)
+end
+
 --- Set header window height, clamped to the lesser of COMMIT_MESSAGE_MAX_LINES and 1/3 of terminal height.
 --- Falls back to height 1 on non-trivial errors.
 ---@param win number Window handle
 local function set_header_height(win)
   if not win or not vim.api.nvim_win_is_valid(win) then return end
-  local max_lines = math.max(1, COMMIT_MESSAGE_MAX_LINES)
-  local max_safe = math.max(1, math.floor(vim.o.lines / 3))
-  local ok, err = pcall(vim.api.nvim_win_set_height, win, math.min(max_lines, max_safe))
+  local header_line_cap = effective_header_line_cap()
+  local ok, err = pcall(vim.api.nvim_win_set_height, win, header_line_cap)
   if not ok then
     if err and not tostring(err):match("Invalid window") then
       vim.notify("Header height error: " .. tostring(err), vim.log.levels.WARN)
@@ -1533,14 +1540,14 @@ function M.update_header(s, commit, pages)
   local msg_lines = vim.split(msg, "\n", { trimempty = true })
   local joined = table.concat(msg_lines, " ")
 
-  local max_lines = math.max(1, COMMIT_MESSAGE_MAX_LINES)
+  local header_line_cap = effective_header_line_cap()
   local win_width = math.max(1, vim.api.nvim_win_get_width(win))
 
   -- Truncate text to fit within max_lines of visual wrapping
   local prefix = show_pages and page_str or ""
   local ellipsis = "..."
   local ellipsis_width = vim.fn.strdisplaywidth(ellipsis)
-  local max_display_width = max_lines * win_width - vim.fn.strdisplaywidth(prefix)
+  local max_display_width = header_line_cap * win_width - vim.fn.strdisplaywidth(prefix)
   if max_display_width <= ellipsis_width then
     joined = ""
   elseif vim.fn.strdisplaywidth(joined) > max_display_width then
@@ -1559,7 +1566,7 @@ function M.update_header(s, commit, pages)
     pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #prefix)
   end
 
-  -- Always use max_lines so the header stays a fixed size (no jumping between commits)
+  -- Use the effective cap so the header stays a fixed size (no jumping between commits)
   set_header_height(win)
 end
 
