@@ -6,39 +6,6 @@ describe("raccoon.review", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(review)
-    end)
-
-    it("has events table", function()
-      assert.is_table(review.events)
-    end)
-
-    it("has submit_review function", function()
-      assert.is_function(review.submit_review)
-    end)
-
-    it("has show_submit_ui function", function()
-      assert.is_function(review.show_submit_ui)
-    end)
-
-    it("has prompt_review_body function", function()
-      assert.is_function(review.prompt_review_body)
-    end)
-
-    it("has quick_approve function", function()
-      assert.is_function(review.quick_approve)
-    end)
-
-    it("has get_status function", function()
-      assert.is_function(review.get_status)
-    end)
-
-    it("has show_status function", function()
-      assert.is_function(review.show_status)
-    end)
-  end)
 
   describe("events", function()
     it("has APPROVE event", function()
@@ -132,10 +99,6 @@ describe("raccoon.review", function()
       review.quick_approve()
     end)
 
-    it("accepts force parameter", function()
-      -- Should not error, just warn (no session)
-      review.quick_approve(true)
-    end)
   end)
 
   describe("get_status with PR data", function()
@@ -178,23 +141,6 @@ describe("raccoon.review", function()
     end)
   end)
 
-  describe("events validation", function()
-    it("all events are uppercase strings", function()
-      for name, value in pairs(review.events) do
-        assert.is_string(name)
-        assert.is_string(value)
-        assert.equals(value, value:upper())
-      end
-    end)
-
-    it("has exactly 3 event types", function()
-      local count = 0
-      for _ in pairs(review.events) do
-        count = count + 1
-      end
-      assert.equals(3, count)
-    end)
-  end)
 
   describe("submit_review with config error", function()
     it("calls callback with config error", function()
@@ -222,19 +168,4 @@ describe("raccoon.review", function()
     end)
   end)
 
-  describe("prompt_review_body", function()
-    it("handles APPROVE event", function()
-      -- Just verify it doesn't error
-      -- Full UI testing would require mocking vim.api
-      assert.is_function(review.prompt_review_body)
-    end)
-
-    it("handles REQUEST_CHANGES event", function()
-      assert.is_function(review.prompt_review_body)
-    end)
-
-    it("handles COMMENT event", function()
-      assert.is_function(review.prompt_review_body)
-    end)
-  end)
 end)

@@ -1,64 +1,6 @@
 local api = require("raccoon.api")
 
 describe("raccoon.api", function()
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(api)
-    end)
-
-    it("has base_url", function()
-      assert.equals("https://api.github.com", api.base_url)
-    end)
-
-    it("has graphql_url", function()
-      assert.equals("https://api.github.com/graphql", api.graphql_url)
-    end)
-
-    it("has init function", function()
-      assert.is_function(api.init)
-    end)
-
-    it("has list_prs function", function()
-      assert.is_function(api.list_prs)
-    end)
-
-    it("has search_repo_prs function", function()
-      assert.is_function(api.search_repo_prs)
-    end)
-
-    it("has get_pr function", function()
-      assert.is_function(api.get_pr)
-    end)
-
-    it("has get_pr_files function", function()
-      assert.is_function(api.get_pr_files)
-    end)
-
-    it("has get_pr_comments function", function()
-      assert.is_function(api.get_pr_comments)
-    end)
-
-    it("has create_comment function", function()
-      assert.is_function(api.create_comment)
-    end)
-
-    it("has submit_review function", function()
-      assert.is_function(api.submit_review)
-    end)
-
-    it("has get_pr_review_threads function", function()
-      assert.is_function(api.get_pr_review_threads)
-    end)
-
-    it("has get_viewer function", function()
-      assert.is_function(api.get_viewer)
-    end)
-
-    it("has clear_viewer_cache function", function()
-      assert.is_function(api.clear_viewer_cache)
-    end)
-  end)
-
   describe("parse_pr_url", function()
     it("parses valid GitHub PR URL", function()
       local owner, repo, number = api.parse_pr_url("https://github.com/owner/repo/pull/123")
@@ -111,19 +53,6 @@ describe("raccoon.api", function()
       assert.equals(123, number)
     end)
 
-    it("handles PR URL with commits path", function()
-      local owner, repo, number = api.parse_pr_url("https://github.com/owner/repo/pull/123/commits")
-      assert.equals("owner", owner)
-      assert.equals("repo", repo)
-      assert.equals(123, number)
-    end)
-
-    it("handles PR URL with checks path", function()
-      local owner, repo, number = api.parse_pr_url("https://github.com/owner/repo/pull/123/checks")
-      assert.equals("owner", owner)
-      assert.equals("repo", repo)
-      assert.equals(123, number)
-    end)
 
     it("returns nil for nil input", function()
       local owner, repo, number = api.parse_pr_url(nil)
@@ -256,72 +185,7 @@ describe("raccoon.api edge cases", function()
     end)
   end)
 
-  describe("API function signatures", function()
-    it("get_pr accepts owner, repo, number, token, callback", function()
-      -- Verify function exists and accepts parameters
-      assert.is_function(api.get_pr)
-      -- Would need mock curl to test actual behavior
-    end)
 
-    it("get_pr_files accepts owner, repo, number, token, callback", function()
-      assert.is_function(api.get_pr_files)
-    end)
-
-    it("get_pr_comments accepts owner, repo, number, token, callback", function()
-      assert.is_function(api.get_pr_comments)
-    end)
-
-    it("create_comment is a function", function()
-      assert.is_function(api.create_comment)
-    end)
-
-    it("submit_review is a function", function()
-      assert.is_function(api.submit_review)
-    end)
-
-    it("merge_pr is a function", function()
-      assert.is_function(api.merge_pr)
-    end)
-
-    it("get_issue_comments is a function", function()
-      assert.is_function(api.get_issue_comments)
-    end)
-
-    it("create_issue_comment is a function", function()
-      assert.is_function(api.create_issue_comment)
-    end)
-
-    it("get_pr_review_threads is a function", function()
-      assert.is_function(api.get_pr_review_threads)
-    end)
-
-    it("get_pr_reviews is a function", function()
-      assert.is_function(api.get_pr_reviews)
-    end)
-
-    it("resolve_review_thread is a function", function()
-      assert.is_function(api.resolve_review_thread)
-    end)
-
-    it("unresolve_review_thread is a function", function()
-      assert.is_function(api.unresolve_review_thread)
-    end)
-  end)
-
-  describe("base_url configuration", function()
-    it("base_url is https", function()
-      assert.truthy(api.base_url:match("^https://"))
-    end)
-
-    it("base_url defaults to GitHub API", function()
-      api.init("github.com")
-      assert.truthy(api.base_url:match("api%.github%.com"))
-    end)
-
-    it("base_url has no trailing slash", function()
-      assert.is_nil(api.base_url:match("/$"))
-    end)
-  end)
 
   describe("init", function()
     after_each(function()

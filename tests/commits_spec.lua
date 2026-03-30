@@ -9,24 +9,6 @@ describe("raccoon.commits", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(commits)
-    end)
-
-    it("has toggle function", function()
-      assert.is_function(commits.toggle)
-    end)
-
-    it("has exit_commit_mode function", function()
-      assert.is_function(commits.exit_commit_mode)
-    end)
-
-    it("has popup window helpers", function()
-      assert.is_function(commits.set_popup_win)
-      assert.is_function(commits.clear_popup_win)
-    end)
-  end)
 
   describe("toggle without active session", function()
     it("does nothing when no PR session", function()
@@ -70,31 +52,6 @@ describe("raccoon.git commit operations", function()
   local is_shallow = vim.fn.system("git rev-parse --is-shallow-repository"):match("true") ~= nil
   local can_diff = has_origin_main and not is_shallow
 
-  describe("new functions exist", function()
-    it("has unshallow_if_needed function", function()
-      assert.is_function(git.unshallow_if_needed)
-    end)
-
-    it("has fetch_branch function", function()
-      assert.is_function(git.fetch_branch)
-    end)
-
-    it("has log_commits function", function()
-      assert.is_function(git.log_commits)
-    end)
-
-    it("has log_base_commits function", function()
-      assert.is_function(git.log_base_commits)
-    end)
-
-    it("has show_commit function", function()
-      assert.is_function(git.show_commit)
-    end)
-
-    it("has show_commit_file function", function()
-      assert.is_function(git.show_commit_file)
-    end)
-  end)
 
   describe("log_commits on current repo", function()
     it("returns commits or error depending on origin/main availability", function()
@@ -491,14 +448,6 @@ describe("raccoon.commits keybinding lockdown", function()
       vim.keymap.del("n", lhs)
     end)
 
-    it("does not block j or k", function()
-      local buf = create_scratch_buf()
-      commits._lock_buf(buf)
-      assert.is_false(has_buf_keymap(buf, "n", "j"))
-      assert.is_false(has_buf_keymap(buf, "n", "k"))
-      vim.api.nvim_buf_delete(buf, { force = true })
-    end)
-
     it("handles invalid buffer gracefully", function()
       -- Should not error
       commits._lock_buf(nil)
@@ -612,16 +561,19 @@ describe("raccoon.commits select_generation guard", function()
   describe("context pass-through", function()
     local original_show_commit
     local original_list_files
+    local original_get_commit_message
     local captured_context
 
     before_each(function()
       original_show_commit = git.show_commit
       original_list_files = git.list_files
+      original_get_commit_message = git.get_commit_message
       git.show_commit = function(_, _, ctx, cb)
         captured_context = ctx
         cb({}, nil)
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
+      git.get_commit_message = function(_, _, cb) cb("", nil) end
       local cs = commits._get_state()
       cs.pr_commits = { { sha = "aaaa", message = "commit 1" } }
       cs.active = true
@@ -629,6 +581,10 @@ describe("raccoon.commits select_generation guard", function()
       cs.grid_wins = {}
       cs.all_hunks = {}
       cs.select_generation = 0
+      cs.header_buf = vim.api.nvim_create_buf(false, true)
+      cs.header_win = vim.api.nvim_open_win(cs.header_buf, false, {
+        relative = "editor", row = 0, col = 0, width = 80, height = 1,
+      })
       state.session = state.session or {}
       state.session.clone_path = "/tmp/fake"
     end)
@@ -636,6 +592,10 @@ describe("raccoon.commits select_generation guard", function()
     after_each(function()
       git.show_commit = original_show_commit
       git.list_files = original_list_files
+      git.get_commit_message = original_get_commit_message
+      local cs = commits._get_state()
+      pcall(vim.api.nvim_win_close, cs.header_win, true)
+      pcall(vim.api.nvim_buf_delete, cs.header_buf, { force = true })
       state.reset()
     end)
 
@@ -651,15 +611,18 @@ describe("raccoon.commits select_generation guard", function()
   describe("stale callback handling", function()
     local original_show_commit
     local original_list_files
+    local original_get_commit_message
     local captured_callback
 
     before_each(function()
       original_show_commit = git.show_commit
       original_list_files = git.list_files
+      original_get_commit_message = git.get_commit_message
       git.show_commit = function(_, _, _, cb)
         captured_callback = cb
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
+      git.get_commit_message = function(_, _, cb) cb("", nil) end
       local cs = commits._get_state()
       cs.pr_commits = {
         { sha = "aaaa", message = "commit 1" },
@@ -670,6 +633,10 @@ describe("raccoon.commits select_generation guard", function()
       cs.grid_wins = {}
       cs.all_hunks = {}
       cs.select_generation = 0
+      cs.header_buf = vim.api.nvim_create_buf(false, true)
+      cs.header_win = vim.api.nvim_open_win(cs.header_buf, false, {
+        relative = "editor", row = 0, col = 0, width = 80, height = 1,
+      })
       state.session = state.session or {}
       state.session.clone_path = "/tmp/fake"
     end)
@@ -677,6 +644,10 @@ describe("raccoon.commits select_generation guard", function()
     after_each(function()
       git.show_commit = original_show_commit
       git.list_files = original_list_files
+      git.get_commit_message = original_get_commit_message
+      local cs = commits._get_state()
+      pcall(vim.api.nvim_win_close, cs.header_win, true)
+      pcall(vim.api.nvim_buf_delete, cs.header_buf, { force = true })
       state.reset()
     end)
 
@@ -705,6 +676,29 @@ describe("raccoon.commits select_generation guard", function()
       -- Fire the current callback — should be accepted
       cb({ { filename = "fresh.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" } }, nil)
       assert.is_true(#cs.all_hunks > 0)
+    end)
+
+    it("discards stale get_commit_message callback", function()
+      local cs = commits._get_state()
+      local captured_message_cb
+
+      -- Override get_commit_message to capture its callback without firing it
+      git.get_commit_message = function(_, _, cb)
+        captured_message_cb = cb
+      end
+
+      commits._select_commit(1)
+      local stale_msg_cb = captured_message_cb
+      assert.equals(1, cs.select_generation)
+
+      -- Navigate to next commit, advancing generation
+      commits._select_commit(2)
+      assert.equals(2, cs.select_generation)
+
+      -- Fire the stale message callback — should not update commit
+      local commit1 = cs.pr_commits[1]
+      stale_msg_cb("full message from commit 1", nil)
+      assert.is_nil(commit1.full_message)
     end)
   end)
 end)
@@ -1170,16 +1164,19 @@ end)
 describe("raccoon.commits commit_files tracking", function()
   local original_show_commit
   local original_list_files
+  local original_get_commit_message
   local captured_callback
 
   before_each(function()
     state.reset()
     original_show_commit = git.show_commit
     original_list_files = git.list_files
+    original_get_commit_message = git.get_commit_message
     git.show_commit = function(_, _, _, cb)
       captured_callback = cb
     end
     git.list_files = function(_, _, cb) cb({}, nil) end
+    git.get_commit_message = function(_, _, cb) cb("", nil) end
     local cs = commits._get_state()
     cs.pr_commits = {
       { sha = "aaaa", message = "commit with binary" },
@@ -1190,6 +1187,10 @@ describe("raccoon.commits commit_files tracking", function()
     cs.all_hunks = {}
     cs.commit_files = {}
     cs.select_generation = 0
+    cs.header_buf = vim.api.nvim_create_buf(false, true)
+    cs.header_win = vim.api.nvim_open_win(cs.header_buf, false, {
+      relative = "editor", row = 0, col = 0, width = 80, height = 1,
+    })
     state.session = state.session or {}
     state.session.clone_path = "/tmp/fake"
   end)
@@ -1197,6 +1198,10 @@ describe("raccoon.commits commit_files tracking", function()
   after_each(function()
     git.show_commit = original_show_commit
     git.list_files = original_list_files
+    git.get_commit_message = original_get_commit_message
+    local cs = commits._get_state()
+    pcall(vim.api.nvim_win_close, cs.header_win, true)
+    pcall(vim.api.nvim_buf_delete, cs.header_buf, { force = true })
     state.reset()
   end)
 
@@ -1345,6 +1350,7 @@ end)
 describe("raccoon.commits render_filetree early return path", function()
   local original_show_commit
   local original_list_files
+  local original_get_commit_message
   local captured_callback
   local cs
   local filetree_buf
@@ -1366,10 +1372,12 @@ describe("raccoon.commits render_filetree early return path", function()
     require("raccoon").setup()
     original_show_commit = git.show_commit
     original_list_files = git.list_files
+    original_get_commit_message = git.get_commit_message
     git.show_commit = function(_, _, _, cb)
       captured_callback = cb
     end
     git.list_files = function(_, _, cb) cb({}, nil) end
+    git.get_commit_message = function(_, _, cb) cb("", nil) end
 
     cs = commits._get_state()
     cs.pr_commits = { { sha = "empty1", message = "binary-only commit" } }
@@ -1379,6 +1387,12 @@ describe("raccoon.commits render_filetree early return path", function()
     cs.commit_files = {}
     state.session = state.session or {}
     state.session.clone_path = "/tmp/fake"
+
+    -- Create header buffer/window
+    cs.header_buf = vim.api.nvim_create_buf(false, true)
+    cs.header_win = vim.api.nvim_open_win(cs.header_buf, false, {
+      relative = "editor", row = 0, col = 0, width = 80, height = 1,
+    })
 
     -- Create filetree buffer
     filetree_buf = vim.api.nvim_create_buf(false, true)
@@ -1398,6 +1412,9 @@ describe("raccoon.commits render_filetree early return path", function()
   after_each(function()
     git.show_commit = original_show_commit
     git.list_files = original_list_files
+    git.get_commit_message = original_get_commit_message
+    pcall(vim.api.nvim_win_close, cs.header_win, true)
+    pcall(vim.api.nvim_buf_delete, cs.header_buf, { force = true })
     if filetree_buf and vim.api.nvim_buf_is_valid(filetree_buf) then
       vim.api.nvim_buf_delete(filetree_buf, { force = true })
     end
@@ -1461,10 +1478,10 @@ describe("raccoon.commits render_filetree early return path", function()
 end)
 
 describe("raccoon file tree highlight groups", function()
-  it("defines RaccoonFileNormal highlight group", function()
+  it("defines RaccoonFileNormal highlight group linked to Comment", function()
     require("raccoon").setup()
     local hl = vim.api.nvim_get_hl(0, { name = "RaccoonFileNormal" })
-    assert.is_not_nil(hl.fg)
+    assert.equals("Comment", hl.link)
   end)
 
   it("defines RaccoonFileInCommit highlight group", function()

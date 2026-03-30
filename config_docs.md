@@ -201,12 +201,28 @@ Number of recent base branch commits shown in the commit viewer sidebar. These a
 |------|---------|
 | number | `50` |
 
-Width in columns of the commit list sidebar (right) and file tree panel (left). Clamped to 20–120.
+Width in columns of the commit list sidebar (right) and file tree panel (left). Clamped to 1–500.
 
 ```json
 {
   "commit_viewer": {
     "sidebar_width": 40
+  }
+}
+```
+
+#### `commit_viewer.commit_message_max_lines`
+
+| Type | Default |
+|------|---------|
+| number | `3` |
+
+Maximum number of lines displayed in the commit message header bar. The header shows the full commit message (subject + body) wrapped to the available width, truncated to this many lines. Clamped to 1–50.
+
+```json
+{
+  "commit_viewer": {
+    "commit_message_max_lines": 5
   }
 }
 ```

@@ -8,16 +8,116 @@ local diff = require("raccoon.diff")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
+local COMMIT_MESSAGE_MAX_LINES = 3
+M.MIN_SIDEBAR_WIDTH = 1
+M.MAX_SIDEBAR_WIDTH = 500
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
+local MIN_GRID_COL_WIDTH = 1
+
+--- Effective header line cap used by both window height and truncation logic.
+---@return number
+local function effective_header_line_cap()
+  local configured_max_lines = math.max(1, COMMIT_MESSAGE_MAX_LINES)
+  local max_safe_lines = math.max(1, math.floor(vim.o.lines / 3))
+  return math.min(configured_max_lines, max_safe_lines)
+end
+
+--- Set header window height, clamped to the lesser of COMMIT_MESSAGE_MAX_LINES and 1/3 of terminal height.
+--- Falls back to height 1 on non-trivial errors.
+---@param win number Window handle
+local function set_header_height(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then return end
+  local header_line_cap = effective_header_line_cap()
+  local ok, err = pcall(vim.api.nvim_win_set_height, win, header_line_cap)
+  if not ok then
+    if err and not tostring(err):match("Invalid window") then
+      vim.notify("Header height error: " .. tostring(err), vim.log.levels.WARN)
+    end
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_set_height, win, 1)
+    end
+  end
+end
+
+--- Truncate a string to fit within a given number of display columns.
+--- Uses binary search over codepoints so wide characters (CJK, emoji) are measured correctly
+--- in O(log n) vim.fn calls instead of O(n).
+---@param text string
+---@param max_width number Maximum display columns
+---@return string
+local function truncate_to_display_width(text, max_width)
+  if max_width <= 0 then return "" end
+  if vim.fn.strdisplaywidth(text) <= max_width then return text end
+  local len = vim.fn.strchars(text)
+  local lo, hi = 0, len
+  while lo < hi do
+    local mid = math.floor((lo + hi + 1) / 2)
+    if vim.fn.strdisplaywidth(vim.fn.strcharpart(text, 0, mid)) <= max_width then
+      lo = mid
+    else
+      hi = mid - 1
+    end
+  end
+  return vim.fn.strcharpart(text, 0, lo)
+end
+
+--- Split the available grid width across columns, distributing remainder left-to-right (leftmost columns get +1 first).
+---@param total_width number
+---@param cols number
+---@return number[]
+local function compute_grid_column_widths(total_width, cols)
+  cols = math.max(1, cols or 1)
+  total_width = math.max(cols * MIN_GRID_COL_WIDTH, total_width or cols * MIN_GRID_COL_WIDTH)
+
+  local base_width = math.floor(total_width / cols)
+  local remainder = total_width - (base_width * cols)
+  local widths = {}
+  for col = 1, cols do
+    widths[col] = math.max(MIN_GRID_COL_WIDTH, base_width + (col <= remainder and 1 or 0))
+  end
+  return widths
+end
+
+--- Truncate sidebar text to fit inside the rendered sidebar width.
+---@param text string|nil
+---@param sidebar_width? number
+---@return string
+function M.truncate_sidebar_text(text, sidebar_width)
+  text = text or ""
+  sidebar_width = math.max(1, sidebar_width or M.SIDEBAR_WIDTH)
+
+  local content_width = math.max(1, sidebar_width - 2)
+  local ellipsis = "..."
+  local ellipsis_width = vim.fn.strdisplaywidth(ellipsis)
+  if vim.fn.strdisplaywidth(text) <= content_width then
+    return text
+  end
+
+  local keep_width = math.max(1, content_width - ellipsis_width)
+  return truncate_to_display_width(text, keep_width) .. ellipsis
+end
 
 --- Approximate usable editor height for grid layout.
 --- Subtracts cmdheight and global chrome (statusline + header separator); intentionally omits
---- header content height and inter-row separators since this feeds a heuristic, not exact layout.
+--- header content height (up to COMMIT_MESSAGE_MAX_LINES) and inter-row separators since this
+--- feeds a heuristic, not exact layout.
 ---@return number
 function M.grid_total_height()
   return math.max(1, vim.o.lines - vim.o.cmdheight - GRID_CHROME_LINES)
+end
+
+--- Compute per-row height using the same budget equalize_grid applies.
+---@param rows number
+---@return number
+local function compute_grid_row_height(rows)
+  local row_count = math.max(1, rows or 1)
+  local header_line_cap = effective_header_line_cap()
+  local row_separators = math.max(0, row_count - 1)
+  local available_grid_height = M.grid_total_height() - header_line_cap - row_separators
+  local clamped_grid_height = math.max(row_count, available_grid_height)
+  return math.max(1, math.floor(clamped_grid_height / row_count))
 end
 
 --- Compute the diff context line count for grid cells based on available row height.
@@ -26,9 +126,55 @@ end
 ---@param rows number Number of grid rows
 ---@return number context Lines of context to pass to git diff (-U<N>, always >= 3)
 function M.compute_grid_context(rows)
-  rows = rows or 1
-  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
+  local row_height = compute_grid_row_height(rows)
   return math.max(MIN_DIFF_CONTEXT, math.floor(row_height / 2))
+end
+
+--- Load commit viewer config values into module globals and return grid/count settings.
+--- Single source of truth for config parsing shared by PR and local commit modes.
+---@return number rows, number cols, number base_count
+function M.load_viewer_config()
+  local cv = config.load_commit_viewer()
+  local rows = 2
+  local cols = 2
+  if cv.grid then
+    rows = M.clamp_int(cv.grid.rows, 2, 1, 10)
+    cols = M.clamp_int(cv.grid.cols, 2, 1, 10)
+  end
+  local base_count = M.clamp_int(cv.base_commits_count, 20, 1, 200)
+  M.SIDEBAR_WIDTH = M.clamp_int(cv.sidebar_width, 50, M.MIN_SIDEBAR_WIDTH, M.MAX_SIDEBAR_WIDTH)
+  COMMIT_MESSAGE_MAX_LINES = M.clamp_int(cv.commit_message_max_lines, 3, 1, 50)
+  return rows, cols, base_count
+end
+
+--- Save Vim options that commit mode overrides (laststatus).
+---@param s table State table (writes saved_laststatus)
+function M.save_vim_options(s)
+  s.saved_laststatus = vim.o.laststatus
+  vim.o.laststatus = 3
+end
+
+--- Restore Vim options saved by save_vim_options.
+---@param s table State table (reads saved_laststatus)
+function M.restore_vim_options(s)
+  if s.saved_laststatus then
+    vim.o.laststatus = s.saved_laststatus
+  end
+end
+
+--- Clamp sidebar width so both side panels fit symmetrically in the current editor width.
+--- Leaves at least one column for each grid column plus the vertical separators.
+---@param cols number Number of grid columns
+---@param requested_width? number Preferred sidebar width
+---@return number
+function M.compute_effective_sidebar_width(cols, requested_width)
+  cols = math.max(1, cols or 1)
+  requested_width = requested_width or M.SIDEBAR_WIDTH
+
+  local separators = cols + 1
+  local remaining = vim.o.columns - cols * MIN_GRID_COL_WIDTH - separators
+  local max_width = math.floor(remaining / 2)
+  return math.max(1, math.min(requested_width, max_width))
 end
 
 --- Compute per-file addition/deletion counts from diff patches
@@ -95,7 +241,7 @@ function M.create_scratch_buf()
 end
 
 --- Shadow global keymaps buffer-locally so commit mode can own the input surface.
---- Skips <Plug> mappings and any keys listed in passthrough_keys config.
+--- Skips <Plug> mappings, raccoon global mappings, and configured passthrough keys.
 ---@param buf number Buffer ID
 ---@param mode string Vim mode passed to nvim_get_keymap / keymap.set
 local function shadow_global_keymaps(buf, mode)
@@ -395,6 +541,113 @@ function M.window_block_keymaps()
   }
 end
 
+--- Resize a split window while it is focused so Neovim applies the width to that side.
+--- Works alongside winfixwidth locks set in equalize_grid to prevent resize spillover.
+--- Focusing the target first ensures the requested width is honored rather than absorbed by
+--- resize of the previously active window.
+---@param win number|nil
+---@param width number
+---@return number? applied_width
+local function set_focused_split_width(win, width)
+  if not win or not vim.api.nvim_win_is_valid(win) then return nil end
+
+  local current_win = vim.api.nvim_get_current_win()
+  local restore_win = current_win ~= win and current_win or nil
+  if restore_win then
+    vim.api.nvim_set_current_win(win)
+  end
+
+  local set_ok, set_err = pcall(vim.api.nvim_win_set_width, win, width)
+  if not set_ok and set_err and not tostring(set_err):match("Invalid window") then
+    vim.notify("Sidebar width error: " .. tostring(set_err), vim.log.levels.DEBUG)
+  end
+  local get_ok, applied_width = pcall(vim.api.nvim_win_get_width, win)
+
+  if restore_win and vim.api.nvim_win_is_valid(restore_win) then
+    vim.api.nvim_set_current_win(restore_win)
+  end
+
+  if not get_ok then return nil end
+  return applied_width
+end
+
+--- Toggle winfixwidth safely for a window if it is still valid.
+---@param win number|nil
+---@param enabled boolean
+local function set_winfixwidth(win, enabled)
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].winfixwidth = enabled
+  end
+end
+
+--- Re-equalize sidebar widths, header height, and grid cell dimensions.
+--- Called after initial layout creation and after any layout disruption (rogue window, terminal resize).
+---@param s table State table (needs sidebar_win, filetree_win, header_win,
+--- grid_wins, grid_rows, grid_cols; writes sidebar_width)
+local function equalize_grid(s)
+  local rows = s.grid_rows or 1
+  local cols = s.grid_cols or 1
+  local effective_sidebar_width = M.compute_effective_sidebar_width(cols)
+
+  -- Unlock sidebars so we can resize them (they may be locked from a previous call)
+  set_winfixwidth(s.filetree_win, false)
+  set_winfixwidth(s.sidebar_win, false)
+
+  -- First pass: ask both sidebars for the same width.
+  local filetree_width = set_focused_split_width(s.filetree_win, effective_sidebar_width) or effective_sidebar_width
+  local sidebar_width = set_focused_split_width(s.sidebar_win, effective_sidebar_width) or effective_sidebar_width
+
+  -- If one side was clamped smaller by Neovim, converge both to the shared feasible width.
+  local symmetric_sidebar_width = math.max(1, math.min(effective_sidebar_width, filetree_width, sidebar_width))
+  if filetree_width ~= symmetric_sidebar_width then
+    filetree_width = set_focused_split_width(s.filetree_win, symmetric_sidebar_width) or symmetric_sidebar_width
+  end
+  if sidebar_width ~= symmetric_sidebar_width then
+    sidebar_width = set_focused_split_width(s.sidebar_win, symmetric_sidebar_width) or symmetric_sidebar_width
+  end
+
+  -- Finalize using the actual applied values and lock both sidebars.
+  symmetric_sidebar_width = math.max(1, math.min(filetree_width, sidebar_width))
+  set_winfixwidth(s.filetree_win, true)
+  set_winfixwidth(s.sidebar_win, true)
+  s.sidebar_width = symmetric_sidebar_width
+
+  -- Reserve fixed header space so collapsing to a 1x1 grid does not shrink the header to one line.
+  local row_height = compute_grid_row_height(rows)
+  set_header_height(s.header_win)
+  -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
+  local grid_width = vim.o.columns - symmetric_sidebar_width - symmetric_sidebar_width - (cols + 1)
+  if grid_width < cols then
+    set_winfixwidth(s.filetree_win, false)
+    set_winfixwidth(s.sidebar_win, false)
+    vim.notify("Terminal too narrow for commit viewer layout", vim.log.levels.WARN)
+    return
+  end
+  local col_widths = compute_grid_column_widths(grid_width, cols)
+  for idx, win in ipairs(s.grid_wins or {}) do
+    if vim.api.nvim_win_is_valid(win) then
+      local col_idx = ((idx - 1) % cols) + 1
+      local h_ok, h_err = pcall(vim.api.nvim_win_set_height, win, row_height)
+      local w_ok, w_err = pcall(vim.api.nvim_win_set_width, win, col_widths[col_idx])
+      if not h_ok or not w_ok then
+        local msgs = {}
+        if not h_ok and h_err and not tostring(h_err):match("Invalid window") then
+          table.insert(msgs, "height: " .. tostring(h_err))
+        end
+        if not w_ok and w_err and not tostring(w_err):match("Invalid window") then
+          table.insert(msgs, "width: " .. tostring(w_err))
+        end
+        if #msgs > 0 then
+          vim.notify("Grid cell resize error: " .. table.concat(msgs, "; "), vim.log.levels.DEBUG)
+        end
+      end
+    end
+  end
+
+  -- Keep header height stable after grid row resizing.
+  set_header_height(s.header_win)
+end
+
 --- Create the full grid layout: file tree (left), diff grid (center), commit sidebar (right), header (top).
 --- Writes window/buffer handles into the provided state table.
 ---@param s table State table to populate (must have grid_wins, grid_bufs, etc. fields)
@@ -403,6 +656,7 @@ end
 function M.create_grid_layout(s, rows, cols)
   s.grid_rows = rows
   s.grid_cols = cols
+  s.sidebar_width = M.compute_effective_sidebar_width(cols)
 
   vim.cmd("only")
 
@@ -412,7 +666,7 @@ function M.create_grid_layout(s, rows, cols)
   s.filetree_win = vim.api.nvim_get_current_win()
   s.filetree_buf = M.create_scratch_buf()
   vim.api.nvim_win_set_buf(s.filetree_win, s.filetree_buf)
-  vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
+  vim.api.nvim_win_set_width(s.filetree_win, s.sidebar_width)
   vim.wo[s.filetree_win].wrap = false
   vim.wo[s.filetree_win].number = false
   vim.wo[s.filetree_win].relativenumber = false
@@ -428,7 +682,7 @@ function M.create_grid_layout(s, rows, cols)
   s.sidebar_win = vim.api.nvim_get_current_win()
   s.sidebar_buf = M.create_scratch_buf()
   vim.api.nvim_win_set_buf(s.sidebar_win, s.sidebar_buf)
-  vim.api.nvim_win_set_width(s.sidebar_win, M.SIDEBAR_WIDTH)
+  vim.api.nvim_win_set_width(s.sidebar_win, s.sidebar_width)
   vim.wo[s.sidebar_win].cursorline = true
   vim.wo[s.sidebar_win].wrap = false
   vim.wo[s.sidebar_win].number = false
@@ -502,34 +756,20 @@ function M.create_grid_layout(s, rows, cols)
   vim.wo[s.header_win].number = false
   vim.wo[s.header_win].relativenumber = false
   vim.wo[s.header_win].signcolumn = "no"
-  vim.wo[s.header_win].wrap = false
+  vim.wo[s.header_win].wrap = true
   vim.wo[s.header_win].winhl = "Normal:Normal"
   M.lock_buf(s.header_buf)
 
   -- Fix dimensions
   vim.cmd("wincmd =")
-  if vim.api.nvim_win_is_valid(s.sidebar_win) then
-    vim.api.nvim_win_set_width(s.sidebar_win, M.SIDEBAR_WIDTH)
-  end
-  if vim.api.nvim_win_is_valid(s.filetree_win) then
-    vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
-  end
-  vim.api.nvim_win_set_height(s.header_win, 1)
-  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
-  -- After wincmd = equalizes all windows, re-forcing sidebar widths leaves grid columns unbalanced.
-  -- Layout (each | is a 1-char separator): filetree | col1 | ... | colN | sidebar = (cols + 1)
-  local grid_width = vim.o.columns - 2 * M.SIDEBAR_WIDTH - (cols + 1)
-  local col_width = math.max(1, math.floor(grid_width / math.max(1, cols)))
-  for _, win in ipairs(grid_wins) do
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_set_height(win, row_height)
-      vim.api.nvim_win_set_width(win, col_width)
-    end
-  end
+  equalize_grid(s)
 
   -- Focus sidebar
   if vim.api.nvim_win_is_valid(s.sidebar_win) then
     vim.api.nvim_set_current_win(s.sidebar_win)
+    -- Some setups can resize the active split after focus changes.
+    -- Re-apply equalization so sidebars stay symmetric.
+    equalize_grid(s)
   end
 end
 
@@ -644,25 +884,8 @@ function M.rebuild_grid(s, rows, cols, apply_keymaps)
     end
   end
 
-  -- Fix dimensions: set sidebar/filetree widths first, then equalize grid cells
-  if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
-    vim.api.nvim_win_set_width(s.sidebar_win, M.SIDEBAR_WIDTH)
-  end
-  if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
-    vim.api.nvim_win_set_width(s.filetree_win, M.SIDEBAR_WIDTH)
-  end
-  if s.header_win and vim.api.nvim_win_is_valid(s.header_win) then
-    vim.api.nvim_win_set_height(s.header_win, math.max(1, #vim.api.nvim_buf_get_lines(s.header_buf, 0, -1, false)))
-  end
-  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
-  local grid_width = vim.o.columns - 2 * M.SIDEBAR_WIDTH - (cols + 1)
-  local col_width = math.max(1, math.floor(grid_width / math.max(1, cols)))
-  for _, win in ipairs(grid_wins) do
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_set_height(win, row_height)
-      vim.api.nvim_win_set_width(win, col_width)
-    end
-  end
+  -- Fix dimensions using the same symmetric sidebar logic as create_grid_layout
+  equalize_grid(s)
 
   -- Apply keymaps to the new buffers
   apply_keymaps(grid_bufs)
@@ -821,8 +1044,8 @@ function M.open_maximize(opts)
       end
     end
 
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
+    local width = math.max(1, math.floor(vim.o.columns * 0.85))
+    local height = math.max(1, math.floor(vim.o.lines * 0.85))
     local row = math.floor((vim.o.lines - height) / 2)
     local col = math.floor((vim.o.columns - width) / 2)
 
@@ -836,7 +1059,7 @@ function M.open_maximize(opts)
       vim.bo[buf].filetype = ft
     end
 
-    local win = vim.api.nvim_open_win(buf, true, {
+    local win_ok, win = pcall(vim.api.nvim_open_win, buf, true, {
       relative = "editor",
       width = width,
       height = height,
@@ -846,6 +1069,11 @@ function M.open_maximize(opts)
       border = "rounded",
       zindex = 50,
     })
+    if not win_ok then
+      vim.notify("Failed to open maximize window: " .. tostring(win), vim.log.levels.WARN)
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      return
+    end
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
@@ -915,16 +1143,90 @@ function M.open_maximize(opts)
   end)
 end
 
+--- Open a floating picker list. Items are displayed in a bordered window; pressing
+--- Enter calls on_select with the chosen item's value, q or the close shortcut closes.
+---@param opts { title: string, items: { display: string, value: any }[], state: table, on_select: fun(value: any) }
+function M.open_maximize_list(opts)
+  local items = opts.items or {}
+  if #items == 0 then return end
+
+  local lines = {}
+  for _, item in ipairs(items) do
+    table.insert(lines, item.display)
+  end
+
+  local width = math.max(1, math.floor(vim.o.columns * 0.6))
+  local height = math.max(1, math.min(#lines, math.floor(vim.o.lines * 0.7)))
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local buf = M.create_scratch_buf()
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  local ok, win = pcall(vim.api.nvim_open_win, buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    zindex = 50,
+  })
+  if not ok then
+    vim.notify("Failed to open maximize window: " .. tostring(win), vim.log.levels.WARN)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    return
+  end
+
+  opts.state.maximize_win = win
+  opts.state.maximize_buf = buf
+
+  local shortcuts = config.load_shortcuts()
+  local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+  vim.wo[win].winbar = " " .. opts.title .. "%=%#Comment# " .. close_hint .. " to exit %*"
+  vim.wo[win].cursorline = true
+
+  M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
+
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+  local function close_fn()
+    M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
+  end
+  local function select_fn()
+    if not vim.api.nvim_win_is_valid(win) then return end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local idx = cursor[1]
+    if idx >= 1 and idx <= #items then
+      close_fn()
+      opts.on_select(items[idx].value)
+    end
+  end
+
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
+  end
+  vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+  vim.keymap.set(NORMAL_MODE, "<CR>", select_fn, buf_opts)
+end
+
 --- Stop the file watcher for the maximize window
 ---@param s table State table
 function M.stop_maximize_watcher(s)
   if s.maximize_fs_event then
-    pcall(function()
-      s.maximize_fs_event:stop()
-      if not s.maximize_fs_event:is_closing() then
-        s.maximize_fs_event:close()
+    local stop_ok, stop_err = pcall(s.maximize_fs_event.stop, s.maximize_fs_event)
+    if not stop_ok and stop_err then
+      vim.notify("FS watcher stop error: " .. tostring(stop_err), vim.log.levels.DEBUG)
+    end
+    local ok, is_closing = pcall(s.maximize_fs_event.is_closing, s.maximize_fs_event)
+    if not ok or not is_closing then
+      local close_ok, close_err = pcall(s.maximize_fs_event.close, s.maximize_fs_event)
+      if not close_ok and close_err then
+        vim.notify("FS watcher close error: " .. tostring(close_err), vim.log.levels.DEBUG)
       end
-    end)
+    end
     s.maximize_fs_event = nil
   end
 end
@@ -940,11 +1242,19 @@ function M.start_maximize_watcher(s)
   if not handle then return end
 
   s.maximize_fs_event = handle
-  handle:start(filepath, {}, vim.schedule_wrap(function(err)
-    if err then return end
+  local start_ok, start_err = pcall(handle.start, handle, filepath, {}, vim.schedule_wrap(function(err)
+    if err then
+      vim.notify("File watch error (live refresh disabled): " .. tostring(err), vim.log.levels.WARN)
+      return
+    end
     if not s.maximize_workdir_opts then return end
     M.refresh_maximize(s)
   end))
+  if not start_ok then
+    vim.notify("File watcher unavailable: " .. tostring(start_err), vim.log.levels.DEBUG)
+    pcall(handle.close, handle)
+    s.maximize_fs_event = nil
+  end
 end
 
 --- Refresh the maximize window in-place for working directory changes
@@ -1011,8 +1321,8 @@ function M.open_file_content(opts)
       return
     end
 
-    local width = math.floor(vim.o.columns * 0.85)
-    local height = math.floor(vim.o.lines * 0.85)
+    local width = math.max(1, math.floor(vim.o.columns * 0.85))
+    local height = math.max(1, math.floor(vim.o.lines * 0.85))
     local row = math.floor((vim.o.lines - height) / 2)
     local col = math.floor((vim.o.columns - width) / 2)
 
@@ -1024,7 +1334,7 @@ function M.open_file_content(opts)
     local ft = vim.filetype.match({ filename = opts.filename })
     if ft then vim.bo[buf].filetype = ft end
 
-    local win = vim.api.nvim_open_win(buf, true, {
+    local win_ok, win = pcall(vim.api.nvim_open_win, buf, true, {
       relative = "editor",
       width = width,
       height = height,
@@ -1034,6 +1344,11 @@ function M.open_file_content(opts)
       border = "rounded",
       zindex = 50,
     })
+    if not win_ok then
+      vim.notify("Failed to open file content window: " .. tostring(win), vim.log.levels.WARN)
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      return
+    end
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
@@ -1071,8 +1386,27 @@ function M.build_filetree_cache(s, repo_path, sha)
 
   s.cached_sha = cache_key
 
-  git.list_files(repo_path, sha, function(raw, _)
+  git.list_files(repo_path, sha, function(raw, err)
     if s.cached_sha ~= cache_key then return end
+
+    if err then
+      vim.notify("Failed to list files: " .. tostring(err), vim.log.levels.WARN)
+      s.cached_tree_lines = { "  Error loading files" }
+      s.cached_line_paths = {}
+      s.cached_stat_lines = {}
+      s.cached_file_count = 0
+      M.render_filetree(s)
+      return
+    end
+
+    if not raw or #raw == 0 then
+      s.cached_tree_lines = { "  No files" }
+      s.cached_line_paths = {}
+      s.cached_stat_lines = {}
+      s.cached_file_count = 0
+      M.render_filetree(s)
+      return
+    end
 
     table.sort(raw)
     local tree = M.build_file_tree(raw)
@@ -1171,9 +1505,34 @@ function M.update_sidebar_winbar(s, count)
   end
 end
 
+--- Fetch full commit message asynchronously, cache it on the commit, and refresh the header.
+--- Immediately shows the subject line; replaces it with the full body when the async fetch completes.
+---@param s table State table (needs select_generation)
+---@param commit table Commit object (must have .sha; .full_message is written on success)
+---@param repo_path string Repository path
+---@param generation number Generation counter at call time (stale callbacks are discarded)
+---@param pages_fn fun(): number Returns current total page count
+function M.fetch_full_message(s, commit, repo_path, generation, pages_fn)
+  if not commit then return end
+  local git = require("raccoon.git")
+  M.update_header(s, commit, pages_fn())
+  if not commit.sha or commit.full_message then return end
+  git.get_commit_message(repo_path, commit.sha, function(message, err)
+    if generation ~= s.select_generation then return end
+    if err then
+      vim.notify("Failed to load commit message: " .. tostring(err), vim.log.levels.WARN)
+      return
+    end
+    if message and message ~= "" then
+      commit.full_message = message
+      M.update_header(s, commit, pages_fn())
+    end
+  end)
+end
+
 --- Update the header bar with commit message and page indicator
 ---@param s table State table
----@param commit table|nil Current commit {message}
+---@param commit table|nil Current commit {message, full_message?}
 ---@param pages number Total page count
 function M.update_header(s, commit, pages)
   local buf = s.header_buf
@@ -1188,19 +1547,31 @@ function M.update_header(s, commit, pages)
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { page_str })
     vim.bo[buf].modifiable = false
-    vim.api.nvim_win_set_height(win, 1)
+    set_header_height(win)
     return
   end
 
-  local msg = commit.message or ""
-  local msg_lines = vim.split(msg, "\n", { trimempty = true })
-  if #msg_lines == 0 then msg_lines = { "" } end
+  local msg = commit.full_message or commit.message or ""
 
-  local lines = {}
-  table.insert(lines, page_str .. " " .. msg_lines[1])
-  for i = 2, #msg_lines do
-    table.insert(lines, " " .. msg_lines[i])
+  -- Join all lines with spaces so the message flows continuously with wrapping
+  local msg_lines = vim.split(msg, "\n", { trimempty = true })
+  local joined = table.concat(msg_lines, " ")
+
+  local header_line_cap = effective_header_line_cap()
+  local win_width = math.max(1, vim.api.nvim_win_get_width(win))
+
+  -- Truncate text to fit within max_lines of visual wrapping
+  local prefix = show_pages and page_str or ""
+  local ellipsis = "..."
+  local ellipsis_width = vim.fn.strdisplaywidth(ellipsis)
+  local max_display_width = header_line_cap * win_width - vim.fn.strdisplaywidth(prefix)
+  if max_display_width <= ellipsis_width then
+    joined = ""
+  elseif vim.fn.strdisplaywidth(joined) > max_display_width then
+    joined = truncate_to_display_width(joined, max_display_width - ellipsis_width) .. ellipsis
   end
+
+  local lines = { prefix .. joined }
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -1208,11 +1579,12 @@ function M.update_header(s, commit, pages)
 
   local hl_ns = vim.api.nvim_create_namespace("raccoon_header_hl")
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
-  if show_pages then
-    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #page_str)
+  if #prefix > 0 then
+    pcall(vim.api.nvim_buf_add_highlight, buf, hl_ns, "Comment", 0, 0, #prefix)
   end
 
-  vim.api.nvim_win_set_height(win, math.max(1, #lines))
+  -- Use the effective cap so the header stays a fixed size (no jumping between commits)
+  set_header_height(win)
 end
 
 --- Render the current page of hunks into the grid
@@ -1277,13 +1649,14 @@ function M.collect_bufs(s)
   return bufs
 end
 
---- Setup sidebar navigation keymaps (j/k/gg/G/Enter/arrows) and lock the buffer
+--- Setup sidebar navigation keymaps (j/k/gg/G/Enter/arrows) and lock the buffer.
+--- lock_buf is called first to block everything, then nav keymaps override specific keys.
 ---@param buf number Buffer ID
 ---@param callbacks table {move_down, move_up, move_to_top, move_to_bottom, select_at_cursor}
 function M.setup_sidebar_nav(buf, callbacks)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  local o = { buffer = buf, noremap = true, silent = true }
   M.lock_buf(buf)
+  local o = { buffer = buf, noremap = true, silent = true }
   vim.keymap.set(NORMAL_MODE, "j", callbacks.move_down, o)
   vim.keymap.set(NORMAL_MODE, "k", callbacks.move_up, o)
   vim.keymap.set(NORMAL_MODE, "<Down>", callbacks.move_down, o)
@@ -1300,6 +1673,7 @@ end
 ---@return number augroup_id
 function M.setup_focus_lock(s, augroup_name)
   local augroup = vim.api.nvim_create_augroup(augroup_name, { clear = true })
+
   vim.api.nvim_create_autocmd("WinEnter", {
     group = augroup,
     callback = function()
@@ -1453,6 +1827,7 @@ function M.toggle_filetree_focus(s, opts)
     end
     if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
       vim.api.nvim_set_current_win(s.sidebar_win)
+      equalize_grid(s)
     end
   else
     -- Switching to filetree: collapse grid to 1x1 with file preview
@@ -1464,6 +1839,7 @@ function M.toggle_filetree_focus(s, opts)
     if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
       vim.wo[s.filetree_win].cursorline = true
       vim.api.nvim_set_current_win(s.filetree_win)
+      equalize_grid(s)
     end
   end
 end
@@ -1520,13 +1896,14 @@ end
 --- Render a two-section sidebar (section1 commits + separator + section2 commits dimmed).
 --- Works for both PR viewer ("PR Branch"/"Base Branch") and local viewer ("feat-xyz"/"main").
 ---@param buf number Buffer ID
----@param opts table {section1_header, section1_commits, section2_header, section2_commits, commit_hl_fn?, loading?}
----@return table highlights Array of {line, hl} used for highlight application
+---@param opts table {section1_header, section1_commits, section2_header,
+--- section2_commits, commit_hl_fn?, loading?, sidebar_width?}
 function M.render_split_sidebar(buf, opts)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
   local lines = {}
   local highlights = {}
+  local sidebar_width = opts.sidebar_width or M.SIDEBAR_WIDTH
 
   -- Section 1 header
   table.insert(lines, opts.section1_header)
@@ -1534,10 +1911,7 @@ function M.render_split_sidebar(buf, opts)
 
   -- Section 1 commits
   for _, commit in ipairs(opts.section1_commits) do
-    local msg = commit.message
-    if #msg > M.SIDEBAR_WIDTH - 2 then
-      msg = msg:sub(1, M.SIDEBAR_WIDTH - 5) .. "..."
-    end
+    local msg = M.truncate_sidebar_text(commit.message, sidebar_width)
     table.insert(lines, "  " .. msg)
     if opts.commit_hl_fn then
       local hl = opts.commit_hl_fn(commit)
@@ -1554,10 +1928,7 @@ function M.render_split_sidebar(buf, opts)
 
   -- Section 2 commits (dimmed)
   for _, commit in ipairs(opts.section2_commits) do
-    local msg = commit.message
-    if #msg > M.SIDEBAR_WIDTH - 2 then
-      msg = msg:sub(1, M.SIDEBAR_WIDTH - 5) .. "..."
-    end
+    local msg = M.truncate_sidebar_text(commit.message, sidebar_width)
     table.insert(lines, "  " .. msg)
     table.insert(highlights, { line = #lines - 1, hl = "Comment" })
   end

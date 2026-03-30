@@ -5,31 +5,6 @@ describe("raccoon.state", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(state)
-    end)
-
-    it("has session table", function()
-      assert.is_table(state.session)
-    end)
-
-    it("has reset function", function()
-      assert.is_function(state.reset)
-    end)
-
-    it("has start function", function()
-      assert.is_function(state.start)
-    end)
-
-    it("has stop function", function()
-      assert.is_function(state.stop)
-    end)
-
-    it("has is_active function", function()
-      assert.is_function(state.is_active)
-    end)
-  end)
 
   describe("reset", function()
     it("resets session to initial state", function()

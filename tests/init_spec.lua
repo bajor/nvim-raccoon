@@ -1,14 +1,4 @@
 describe("raccoon", function()
-  it("can be required", function()
-    local raccoon = require("raccoon")
-    assert.is_not_nil(raccoon)
-  end)
-
-  it("has setup function", function()
-    local raccoon = require("raccoon")
-    assert.is_function(raccoon.setup)
-  end)
-
   it("setup accepts empty options", function()
     local raccoon = require("raccoon")
     -- Should not error

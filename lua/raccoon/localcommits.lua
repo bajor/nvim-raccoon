@@ -67,6 +67,7 @@ local function make_initial_state()
     orig_grid_cols = nil,
     preview_generation = 0,
     pr_was_active = false,
+    sidebar_width = nil,
   }
 end
 
@@ -154,7 +155,10 @@ local function select_commit(index)
   local generation = local_state.select_generation
 
   local commit = get_commit(index)
+  if not commit then return end
   if not local_state.repo_path then return end
+
+  ui.fetch_full_message(local_state, commit, local_state.repo_path, generation, total_pages)
 
   local context = ui.compute_grid_context(local_state.grid_rows)
   local fetch_diff = commit.sha
@@ -259,21 +263,20 @@ local function render_sidebar()
         if commit.sha == nil then return "DiagnosticInfo" end
       end,
       loading = local_state.loading_more,
+      sidebar_width = local_state.sidebar_width,
     })
   else
     -- Flat mode: single section
     local lines = {}
     local highlights = {}
+    local sidebar_width = local_state.sidebar_width or ui.SIDEBAR_WIDTH
 
     local commit_count = math.max(0, total_commits() - 1)
     table.insert(lines, "── Commits (" .. commit_count .. ") ──")
     table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
     for i, commit in ipairs(local_state.branch_commits) do
-      local msg = commit.message
-      if #msg > ui.SIDEBAR_WIDTH - 2 then
-        msg = msg:sub(1, ui.SIDEBAR_WIDTH - 5) .. "..."
-      end
+      local msg = ui.truncate_sidebar_text(commit.message, sidebar_width)
       table.insert(lines, "  " .. msg)
       if commit.sha == nil then
         table.insert(highlights, { line = i, hl = "DiagnosticInfo" })
@@ -507,11 +510,25 @@ local function setup_keymaps()
   local_state.focus_augroup = ui.setup_focus_lock(local_state, "RaccoonLocalCommitFocus")
 end
 
+--- Safely stop and close a libuv timer handle
+local function safe_close_timer(timer)
+  local ok, err = pcall(timer.stop, timer)
+  if not ok and err then
+    vim.notify("Timer stop error: " .. tostring(err), vim.log.levels.DEBUG)
+  end
+  local closing_ok, is_closing = pcall(timer.is_closing, timer)
+  if not closing_ok or not is_closing then
+    local close_ok, close_err = pcall(timer.close, timer)
+    if not close_ok and close_err then
+      vim.notify("Timer close error: " .. tostring(close_err), vim.log.levels.DEBUG)
+    end
+  end
+end
+
 --- Stop the poll timer
 local function stop_poll_timer()
   if local_state.poll_timer then
-    local_state.poll_timer:stop()
-    local_state.poll_timer:close()
+    safe_close_timer(local_state.poll_timer)
     local_state.poll_timer = nil
   end
 end
@@ -519,8 +536,7 @@ end
 --- Stop the working directory poll timer
 local function stop_workdir_poll_timer()
   if local_state.workdir_poll_timer then
-    local_state.workdir_poll_timer:stop()
-    local_state.workdir_poll_timer:close()
+    safe_close_timer(local_state.workdir_poll_timer)
     local_state.workdir_poll_timer = nil
   end
 end
@@ -539,7 +555,12 @@ start_workdir_poll_timer = function()
     or (now - local_state.last_change_time) >= WORKDIR_IDLE_THRESHOLD_MS
   local interval = idle and WORKDIR_POLL_SLOW_MS or WORKDIR_POLL_FAST_MS
 
-  local_state.workdir_poll_timer = vim.uv.new_timer()
+  local timer = vim.uv.new_timer()
+  if not timer then
+    vim.notify("Failed to create workdir poll timer", vim.log.levels.WARN)
+    return
+  end
+  local_state.workdir_poll_timer = timer
   local_state.workdir_poll_timer:start(interval, 0, vim.schedule_wrap(function()
     if not local_state.active then return end
 
@@ -591,7 +612,10 @@ local function refresh_commits()
   if local_state.base_branch and local_state.merge_base_sha then
     -- Branch mode: refresh branch commits only (base stays static)
     git.log_branch_commits(local_state.repo_path, local_state.merge_base_sha, function(new_branch, err)
-      if err or not new_branch then return end
+      if err or not new_branch then
+        if err then vim.notify("Failed to refresh branch commits: " .. tostring(err), vim.log.levels.WARN) end
+        return
+      end
       table.insert(new_branch, 1, { sha = nil, message = "Current changes" })
       local_state.branch_commits = new_branch
       local_state.last_status_output = ""
@@ -602,7 +626,10 @@ local function refresh_commits()
     -- Flat mode: refresh all commits
     local count = math.max(total_commits() - 1, BATCH_SIZE)
     git.log_all_commits(local_state.repo_path, count, 0, function(new_commits, err)
-      if err or not new_commits then return end
+      if err or not new_commits then
+        if err then vim.notify("Failed to refresh commits: " .. tostring(err), vim.log.levels.WARN) end
+        return
+      end
       table.insert(new_commits, 1, { sha = nil, message = "Current changes" })
       local_state.branch_commits = new_commits
       local_state.last_status_output = ""
@@ -622,7 +649,12 @@ local function start_poll_timer()
     end
   end)
 
-  local_state.poll_timer = vim.uv.new_timer()
+  local timer = vim.uv.new_timer()
+  if not timer then
+    vim.notify("Failed to create poll timer", vim.log.levels.WARN)
+    return
+  end
+  local_state.poll_timer = timer
   local_state.poll_timer:start(POLL_INTERVAL_MS, POLL_INTERVAL_MS, vim.schedule_wrap(function()
     if not local_state.active then return end
 
@@ -647,7 +679,11 @@ load_more_commits = function()
       BATCH_SIZE, local_state.total_base_loaded,
       function(new_commits, err)
         local_state.loading_more = false
-        if err or not new_commits or #new_commits == 0 then return end
+        if err then
+          vim.notify("Failed to load more commits: " .. tostring(err), vim.log.levels.WARN)
+          return
+        end
+        if not new_commits or #new_commits == 0 then return end
         for _, commit in ipairs(new_commits) do
           table.insert(local_state.base_commits, commit)
         end
@@ -660,7 +696,11 @@ load_more_commits = function()
     local skip = #local_state.branch_commits - 1 -- -1 for "Current changes"
     git.log_all_commits(local_state.repo_path, BATCH_SIZE, skip, function(new_commits, err)
       local_state.loading_more = false
-      if err or not new_commits or #new_commits == 0 then return end
+      if err then
+        vim.notify("Failed to load more commits: " .. tostring(err), vim.log.levels.WARN)
+        return
+      end
+      if not new_commits or #new_commits == 0 then return end
       for _, commit in ipairs(new_commits) do
         table.insert(local_state.branch_commits, commit)
       end
@@ -672,13 +712,12 @@ end
 --- Activate local mode with the given state
 local function activate_mode(repo_root, rows, cols, notify_msg)
   local_state.saved_buf = vim.api.nvim_get_current_buf()
-  local_state.saved_laststatus = vim.o.laststatus
+  ui.save_vim_options(local_state)
   local_state.pr_was_active = state.is_active()
   if local_state.pr_was_active then
     keymaps.clear()
     open.pause_sync()
   end
-  vim.o.laststatus = 3
   local_state.active = true
   local_state.repo_path = repo_root
   local_state.last_change_time = vim.uv.now()
@@ -696,18 +735,7 @@ end
 
 --- Enter local commit viewer mode
 local function enter_local_mode()
-  local cfg = config.load()
-  local rows = 2
-  local cols = 2
-  local base_count = 20
-  if cfg and cfg.commit_viewer then
-    if cfg.commit_viewer.grid then
-      rows = ui.clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
-      cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
-    end
-    base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
-    ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
-  end
+  local rows, cols, base_count = ui.load_viewer_config()
 
   vim.notify("Loading commits...", vim.log.levels.INFO)
 
@@ -794,12 +822,18 @@ local function enter_local_mode()
             if pending == 0 then on_both_ready() end
           end
 
-          git.log_branch_commits(repo_root, merge_sha, function(commits, _)
+          git.log_branch_commits(repo_root, merge_sha, function(commits, err)
+            if err then
+              vim.notify("Failed to load branch commits: " .. err, vim.log.levels.WARN)
+            end
             branch_result = commits
             check_done()
           end)
 
-          git.log_from_ref(repo_root, merge_sha, base_count, 0, function(commits, _)
+          git.log_from_ref(repo_root, merge_sha, base_count, 0, function(commits, err)
+            if err then
+              vim.notify("Failed to load base commits: " .. err, vim.log.levels.WARN)
+            end
             base_result = commits
             check_done()
           end)
@@ -828,7 +862,10 @@ local function exit_local_mode(opts)
   stop_workdir_poll_timer()
 
   if local_state.focus_augroup then
-    pcall(vim.api.nvim_del_augroup_by_id, local_state.focus_augroup)
+    local ok, err = pcall(vim.api.nvim_del_augroup_by_id, local_state.focus_augroup)
+    if not ok then
+      vim.notify("Failed to delete focus lock augroup: " .. tostring(err), vim.log.levels.DEBUG)
+    end
   end
 
   ui.close_win_pair(local_state, "maximize_win", "maximize_buf")
@@ -837,9 +874,7 @@ local function exit_local_mode(opts)
   ui.close_win_pair(local_state, "sidebar_win", "sidebar_buf")
   ui.close_win_pair(local_state, "filetree_win", "filetree_buf")
 
-  if local_state.saved_laststatus then
-    vim.o.laststatus = local_state.saved_laststatus
-  end
+  ui.restore_vim_options(local_state)
 
   vim.cmd("only")
   restore_saved_buffer(local_state.saved_buf)

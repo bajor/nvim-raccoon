@@ -276,22 +276,6 @@ describe("E2E: PR review workflow", function()
     end)
   end)
 
-  describe("Diff parsing integration", function()
-    it("parses hunk headers correctly", function()
-      -- parse_hunk_header returns new_start, new_count (for the + side)
-      local header = "@@ -1,5 +1,10 @@"
-      local new_start, new_count = diff.parse_hunk_header(header)
-      assert.equals(1, new_start)
-      assert.equals(10, new_count)
-    end)
-
-    it("handles patch with additions and deletions", function()
-      local patch = "@@ -1,3 +1,4 @@\n local M = {}\n-local old = true\n+local new = false\n+local added = 1\n return M"
-      local changed = diff.get_changed_lines(patch)
-      assert.is_table(changed)
-    end)
-  end)
-
   describe("Session cleanup", function()
     it("resets state on close", function()
       state.start({

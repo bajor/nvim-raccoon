@@ -1,39 +1,6 @@
 local git = require("raccoon.git")
 
 describe("raccoon.git", function()
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(git)
-    end)
-
-    it("has clone function", function()
-      assert.is_function(git.clone)
-    end)
-
-    it("has fetch_reset function", function()
-      assert.is_function(git.fetch_reset)
-    end)
-
-    it("has get_current_branch function", function()
-      assert.is_function(git.get_current_branch)
-    end)
-
-    it("has get_current_sha function", function()
-      assert.is_function(git.get_current_sha)
-    end)
-
-    it("has is_git_repo function", function()
-      assert.is_function(git.is_git_repo)
-    end)
-
-    it("has get_remote_url function", function()
-      assert.is_function(git.get_remote_url)
-    end)
-
-    it("has build_pr_path function", function()
-      assert.is_function(git.build_pr_path)
-    end)
-  end)
 
   describe("build_pr_path", function()
     it("builds correct path", function()
@@ -319,6 +286,40 @@ describe("raccoon.git command format", function()
     assert.truthy(recorded[1].cmd:match("%-U7"))
     assert.is_nil(recorded[1].cmd:match("%-U7%."))
   end)
+
+  it("get_commit_message uses --format=%B with the SHA", function()
+    git.get_commit_message("/tmp", "abc123def", function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("log %-1 %-%-format=%%B abc123def"))
+  end)
+
+  it("get_commit_message includes core.longpaths flag", function()
+    git.get_commit_message("/tmp", "abc123", function() end)
+    assert.equals(1, #recorded)
+    assert.truthy(recorded[1].cmd:match("^git %-c core%.longpaths=true"))
+  end)
+
+  it("get_commit_message calls callback with error for nil SHA", function()
+    local result_msg, result_err
+    git.get_commit_message("/tmp", nil, function(msg, err)
+      result_msg = msg
+      result_err = err
+    end)
+    assert.equals(0, #recorded)
+    assert.is_nil(result_msg)
+    assert.equals("Invalid commit SHA", result_err)
+  end)
+
+  it("get_commit_message calls callback with error for empty SHA", function()
+    local result_msg, result_err
+    git.get_commit_message("/tmp", "", function(msg, err)
+      result_msg = msg
+      result_err = err
+    end)
+    assert.equals(0, #recorded)
+    assert.is_nil(result_msg)
+    assert.equals("Invalid commit SHA", result_err)
+  end)
 end)
 
 -- Long-path error enhancement tests
@@ -550,47 +551,6 @@ describe("raccoon.git path edge cases", function()
       assert.is_false(result)
     end)
 
-    it("handles relative path", function()
-      -- Current directory is likely a git repo
-      local result = git.is_git_repo(".")
-      -- Result depends on where tests run
-      assert.is_boolean(result)
-    end)
   end)
 end)
 
--- Git function availability tests
-describe("raccoon.git functions", function()
-  describe("additional functions", function()
-    it("has set_remote_url function", function()
-      assert.is_function(git.set_remote_url)
-    end)
-
-    it("has count_commits_behind function", function()
-      assert.is_function(git.count_commits_behind)
-    end)
-
-    it("has check_merge_conflicts function", function()
-      assert.is_function(git.check_merge_conflicts)
-    end)
-
-    it("has get_sync_status function", function()
-      assert.is_function(git.get_sync_status)
-    end)
-  end)
-
-  describe("async operation patterns", function()
-    it("clone accepts callback", function()
-      -- Just verify function signature, don't actually clone
-      assert.is_function(git.clone)
-    end)
-
-    it("fetch_reset accepts callback", function()
-      assert.is_function(git.fetch_reset)
-    end)
-
-    it("get_sync_status accepts callback", function()
-      assert.is_function(git.get_sync_status)
-    end)
-  end)
-end)

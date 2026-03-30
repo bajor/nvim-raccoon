@@ -50,6 +50,7 @@ local commit_state = {
   orig_grid_rows = nil,
   orig_grid_cols = nil,
   preview_generation = 0,
+  sidebar_width = nil,
 }
 
 --- Commit mode keymaps (global)
@@ -92,6 +93,7 @@ local function reset_state()
     orig_grid_rows = nil,
     orig_grid_cols = nil,
     preview_generation = 0,
+    sidebar_width = nil,
   }
 end
 
@@ -187,8 +189,11 @@ local function select_commit(index)
   local generation = commit_state.select_generation
 
   local commit = get_commit(index)
+  if not commit then return end
   local clone_path = state.get_clone_path()
   if not clone_path then return end
+
+  ui.fetch_full_message(commit_state, commit, clone_path, generation, total_pages)
 
   local context = ui.compute_grid_context(commit_state.grid_rows)
   git.show_commit(clone_path, commit.sha, context, function(files, err)
@@ -262,6 +267,7 @@ local function render_sidebar()
     section1_commits = commit_state.pr_commits,
     section2_header = "── Base Branch ──",
     section2_commits = commit_state.base_commits,
+    sidebar_width = commit_state.sidebar_width,
   })
   ui.update_sidebar_winbar(commit_state, total_commits())
   update_sidebar_selection()
@@ -426,26 +432,14 @@ local function enter_commit_mode()
   end
 
   commit_state.saved_buf = vim.api.nvim_get_current_buf()
-  commit_state.saved_laststatus = vim.o.laststatus
-  vim.o.laststatus = 3
+  ui.save_vim_options(commit_state)
 
   keymaps.clear()
   open.pause_sync()
   state.set_commit_mode(true)
   commit_state.active = true
 
-  local cfg = config.load()
-  local rows = 2
-  local cols = 2
-  local base_count = 20
-  if cfg and cfg.commit_viewer then
-    if cfg.commit_viewer.grid then
-      rows = ui.clamp_int(cfg.commit_viewer.grid.rows, 2, 1, 10)
-      cols = ui.clamp_int(cfg.commit_viewer.grid.cols, 2, 1, 10)
-    end
-    base_count = ui.clamp_int(cfg.commit_viewer.base_commits_count, 20, 1, 200)
-    ui.SIDEBAR_WIDTH = ui.clamp_int(cfg.commit_viewer.sidebar_width, 50, 20, 120)
-  end
+  local rows, cols, base_count = ui.load_viewer_config()
 
   local base_branch = pr.base.ref
 
@@ -499,6 +493,7 @@ local function enter_commit_mode()
 
       git.log_base_commits(clone_path, base_branch, base_count, function(commits, err)
         if err then
+          vim.notify("Failed to load base commits: " .. tostring(err), vim.log.levels.WARN)
           commit_state.base_commits = {}
         else
           commit_state.base_commits = commits or {}
@@ -524,7 +519,10 @@ local function exit_commit_mode(opts)
   end
 
   if commit_state.focus_augroup then
-    pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
+    local ok, err = pcall(vim.api.nvim_del_augroup_by_id, commit_state.focus_augroup)
+    if not ok then
+      vim.notify("Failed to delete focus lock augroup: " .. tostring(err), vim.log.levels.DEBUG)
+    end
   end
 
   ui.close_win_pair(commit_state, "maximize_win", "maximize_buf")
@@ -535,9 +533,7 @@ local function exit_commit_mode(opts)
 
   state.set_commit_mode(false)
 
-  if commit_state.saved_laststatus then
-    vim.o.laststatus = commit_state.saved_laststatus
-  end
+  ui.restore_vim_options(commit_state)
 
   vim.cmd("only")
   if commit_state.saved_buf and vim.api.nvim_buf_is_valid(commit_state.saved_buf) then

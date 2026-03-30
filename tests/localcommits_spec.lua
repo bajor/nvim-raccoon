@@ -8,32 +8,6 @@ describe("raccoon.localcommits", function()
     state.reset()
   end)
 
-  describe("module", function()
-    it("can be required", function()
-      assert.is_not_nil(localcommits)
-    end)
-
-    it("has toggle function", function()
-      assert.is_function(localcommits.toggle)
-    end)
-
-    it("has exit_local_mode function", function()
-      assert.is_function(localcommits.exit_local_mode)
-    end)
-
-    it("has is_active function", function()
-      assert.is_function(localcommits.is_active)
-    end)
-
-    it("has popup window helpers", function()
-      assert.is_function(localcommits.set_popup_win)
-      assert.is_function(localcommits.clear_popup_win)
-    end)
-
-    it("has _get_state for testing", function()
-      assert.is_function(localcommits._get_state)
-    end)
-  end)
 
   describe("initial state", function()
     it("starts inactive", function()
@@ -115,13 +89,14 @@ describe("raccoon.localcommits", function()
   end)
 
   describe("context pass-through", function()
-    local original_show_commit, original_diff_working_dir, original_list_files
+    local original_show_commit, original_diff_working_dir, original_list_files, original_get_commit_message
     local captured_context
 
     before_each(function()
       original_show_commit = git.show_commit
       original_diff_working_dir = git.diff_working_dir
       original_list_files = git.list_files
+      original_get_commit_message = git.get_commit_message
       git.show_commit = function(_, _, ctx, cb)
         captured_context = ctx
         cb({}, nil)
@@ -131,6 +106,7 @@ describe("raccoon.localcommits", function()
         cb({}, nil)
       end
       git.list_files = function(_, _, cb) cb({}, nil) end
+      git.get_commit_message = function(_, _, cb) cb("", nil) end
       local ls = localcommits._get_state()
       ls.branch_commits = { { sha = "aaaa", message = "commit 1" } }
       ls.active = true
@@ -139,12 +115,20 @@ describe("raccoon.localcommits", function()
       ls.grid_wins = {}
       ls.all_hunks = {}
       ls.select_generation = 0
+      ls.header_buf = vim.api.nvim_create_buf(false, true)
+      ls.header_win = vim.api.nvim_open_win(ls.header_buf, false, {
+        relative = "editor", row = 0, col = 0, width = 80, height = 1,
+      })
     end)
 
     after_each(function()
       git.show_commit = original_show_commit
       git.diff_working_dir = original_diff_working_dir
       git.list_files = original_list_files
+      git.get_commit_message = original_get_commit_message
+      local ls = localcommits._get_state()
+      pcall(vim.api.nvim_win_close, ls.header_win, true)
+      pcall(vim.api.nvim_buf_delete, ls.header_buf, { force = true })
       state.reset()
     end)
 
@@ -163,6 +147,76 @@ describe("raccoon.localcommits", function()
       local expected = commit_ui.compute_grid_context(3)
       localcommits._select_commit(1)
       assert.equals(expected, captured_context)
+    end)
+  end)
+
+  describe("stale callback handling", function()
+    local original_show_commit
+    local original_list_files
+    local original_get_commit_message
+    local captured_callback
+
+    before_each(function()
+      original_show_commit = git.show_commit
+      original_list_files = git.list_files
+      original_get_commit_message = git.get_commit_message
+      git.show_commit = function(_, _, _, cb)
+        captured_callback = cb
+      end
+      git.list_files = function(_, _, cb) cb({}, nil) end
+      git.get_commit_message = function(_, _, cb) cb("", nil) end
+      local ls = localcommits._get_state()
+      ls.branch_commits = {
+        { sha = "aaaa", message = "commit 1" },
+        { sha = "bbbb", message = "commit 2" },
+      }
+      ls.active = true
+      ls.repo_path = "/tmp/fake"
+      ls.grid_bufs = {}
+      ls.grid_wins = {}
+      ls.all_hunks = {}
+      ls.select_generation = 0
+      ls.header_buf = vim.api.nvim_create_buf(false, true)
+      ls.header_win = vim.api.nvim_open_win(ls.header_buf, false, {
+        relative = "editor", row = 0, col = 0, width = 80, height = 1,
+      })
+    end)
+
+    after_each(function()
+      git.show_commit = original_show_commit
+      git.list_files = original_list_files
+      git.get_commit_message = original_get_commit_message
+      local ls = localcommits._get_state()
+      pcall(vim.api.nvim_win_close, ls.header_win, true)
+      pcall(vim.api.nvim_buf_delete, ls.header_buf, { force = true })
+      state.reset()
+    end)
+
+    it("discards stale callback when generation has advanced", function()
+      local ls = localcommits._get_state()
+
+      localcommits._select_commit(1)
+      local stale_cb = captured_callback
+      assert.equals(1, ls.select_generation)
+
+      localcommits._select_commit(2)
+      assert.equals(2, ls.select_generation)
+
+      -- Fire the stale callback — should be silently discarded
+      stale_cb({ { filename = "stale.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" } }, nil)
+      assert.equals(0, #ls.all_hunks)
+    end)
+
+    it("accepts callback when generation matches", function()
+      local ls = localcommits._get_state()
+
+      localcommits._select_commit(1)
+      local cb = captured_callback
+      assert.equals(1, ls.select_generation)
+
+      -- Fire the current callback — should be accepted
+      cb({ { filename = "fresh.lua", patch = "@@ -1,1 +1,1 @@\n-old\n+new" } }, nil)
+      assert.is_true(#ls.all_hunks > 0)
     end)
   end)
 end)
