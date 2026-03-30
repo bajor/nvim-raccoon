@@ -145,6 +145,90 @@ describe("raccoon.commit_ui", function()
     end)
   end)
 
+  it("rebuild_grid keeps filetree and commit sidebar widths symmetric", function()
+    local state = { grid_wins = {}, grid_bufs = {} }
+
+    local function cleanup()
+      commit_ui.close_grid(state)
+      commit_ui.close_win_pair(state, "header_win", "header_buf")
+      commit_ui.close_win_pair(state, "sidebar_win", "sidebar_buf")
+      commit_ui.close_win_pair(state, "filetree_win", "filetree_buf")
+      pcall(vim.cmd, "only")
+    end
+
+    local ok, err = pcall(function()
+      commit_ui.create_grid_layout(state, 1, 2)
+
+      local sidebar_width = vim.api.nvim_win_get_width(state.sidebar_win)
+      pcall(vim.api.nvim_win_set_width, state.filetree_win, sidebar_width + 7)
+      local pre_filetree = vim.api.nvim_win_get_width(state.filetree_win)
+      local pre_sidebar = vim.api.nvim_win_get_width(state.sidebar_win)
+      assert.is_true(pre_filetree ~= pre_sidebar)
+
+      commit_ui.rebuild_grid(state, 1, 2, function() end)
+
+      local post_filetree = vim.api.nvim_win_get_width(state.filetree_win)
+      local post_sidebar = vim.api.nvim_win_get_width(state.sidebar_win)
+      assert.equals(post_filetree, post_sidebar)
+    end)
+
+    cleanup()
+    if not ok then error(err) end
+  end)
+
+  it("toggle_filetree_focus keeps sidebars symmetric for 1x2 layouts", function()
+    local state = {
+      active = true,
+      grid_wins = {},
+      grid_bufs = {},
+      cached_line_paths = {},
+      focus_target = "sidebar",
+      preview_generation = 0,
+      select_generation = 0,
+    }
+
+    local original_sidebar_width = commit_ui.SIDEBAR_WIDTH
+    commit_ui.SIDEBAR_WIDTH = 30
+
+    local function cleanup()
+      commit_ui.SIDEBAR_WIDTH = original_sidebar_width
+      commit_ui.close_grid(state)
+      commit_ui.close_win_pair(state, "header_win", "header_buf")
+      commit_ui.close_win_pair(state, "sidebar_win", "sidebar_buf")
+      commit_ui.close_win_pair(state, "filetree_win", "filetree_buf")
+      pcall(vim.cmd, "only")
+    end
+
+    local function assert_symmetric()
+      local filetree_width = vim.api.nvim_win_get_width(state.filetree_win)
+      local sidebar_width = vim.api.nvim_win_get_width(state.sidebar_win)
+      assert.equals(filetree_width, sidebar_width)
+    end
+
+    local ok, err = pcall(function()
+      commit_ui.create_grid_layout(state, 1, 2)
+      assert_symmetric()
+
+      local opts = {
+        apply_keymaps = function() end,
+        render_page = function() end,
+        ns_id = vim.api.nvim_create_namespace("raccoon_test_toggle_ft"),
+        get_repo_path = function() return nil end,
+        get_sha = function() return nil end,
+        get_is_working_dir = function() return false end,
+      }
+
+      commit_ui.toggle_filetree_focus(state, opts)
+      assert_symmetric()
+
+      commit_ui.toggle_filetree_focus(state, opts)
+      assert_symmetric()
+    end)
+
+    cleanup()
+    if not ok then error(err) end
+  end)
+
   it("sidebar widths stay symmetric when requested width is too large", function()
     local cols = 2
     local huge_width = 9999

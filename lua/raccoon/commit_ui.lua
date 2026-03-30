@@ -553,6 +553,15 @@ local function set_focused_split_width(win, width)
   return applied_width
 end
 
+--- Toggle winfixwidth safely for a window if it is still valid.
+---@param win number|nil
+---@param enabled boolean
+local function set_winfixwidth(win, enabled)
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].winfixwidth = enabled
+  end
+end
+
 --- Re-equalize sidebar widths, header height, and grid cell dimensions.
 --- Called after initial layout creation and after any layout disruption (rogue window, terminal resize).
 ---@param s table State table (needs sidebar_win, filetree_win, header_win,
@@ -563,29 +572,32 @@ local function equalize_grid(s)
   local effective_sidebar_width = M.compute_effective_sidebar_width(cols)
 
   -- Unlock sidebars so we can resize them (they may be locked from a previous call)
-  for _, win in ipairs({ s.filetree_win, s.sidebar_win }) do
-    if win and vim.api.nvim_win_is_valid(win) then
-      vim.wo[win].winfixwidth = false
-    end
-  end
+  set_winfixwidth(s.filetree_win, false)
+  set_winfixwidth(s.sidebar_win, false)
 
-  -- Set filetree width, then lock it so the sidebar resize won't steal its space
+  -- First pass: ask both sidebars for the same width.
   local filetree_width = set_focused_split_width(s.filetree_win, effective_sidebar_width) or effective_sidebar_width
-  if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
-    vim.wo[s.filetree_win].winfixwidth = true
+  local sidebar_width = set_focused_split_width(s.sidebar_win, effective_sidebar_width) or effective_sidebar_width
+
+  -- If one side was clamped smaller by Neovim, converge both to the shared feasible width.
+  local symmetric_sidebar_width = math.max(1, math.min(effective_sidebar_width, filetree_width, sidebar_width))
+  if filetree_width ~= symmetric_sidebar_width then
+    filetree_width = set_focused_split_width(s.filetree_win, symmetric_sidebar_width) or symmetric_sidebar_width
+  end
+  if sidebar_width ~= symmetric_sidebar_width then
+    sidebar_width = set_focused_split_width(s.sidebar_win, symmetric_sidebar_width) or symmetric_sidebar_width
   end
 
-  -- Set sidebar width (filetree is locked), then lock it so grid cell resizing won't steal its space
-  local sidebar_width = set_focused_split_width(s.sidebar_win, effective_sidebar_width) or effective_sidebar_width
-  if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
-    vim.wo[s.sidebar_win].winfixwidth = true
-  end
-  s.sidebar_width = sidebar_width
+  -- Finalize using the actual applied values and lock both sidebars.
+  symmetric_sidebar_width = math.max(1, math.min(filetree_width, sidebar_width))
+  set_winfixwidth(s.filetree_win, true)
+  set_winfixwidth(s.sidebar_win, true)
+  s.sidebar_width = symmetric_sidebar_width
 
   set_header_height(s.header_win)
   local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
   -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
-  local grid_width = vim.o.columns - filetree_width - sidebar_width - (cols + 1)
+  local grid_width = vim.o.columns - symmetric_sidebar_width - symmetric_sidebar_width - (cols + 1)
   if grid_width < cols then
     vim.notify("Terminal too narrow for commit viewer layout", vim.log.levels.WARN)
     return
@@ -731,6 +743,9 @@ function M.create_grid_layout(s, rows, cols)
   -- Focus sidebar
   if vim.api.nvim_win_is_valid(s.sidebar_win) then
     vim.api.nvim_set_current_win(s.sidebar_win)
+    -- Some setups can resize the active split after focus changes.
+    -- Re-apply equalization so sidebars stay symmetric.
+    equalize_grid(s)
   end
 end
 
@@ -1788,6 +1803,7 @@ function M.toggle_filetree_focus(s, opts)
     end
     if s.sidebar_win and vim.api.nvim_win_is_valid(s.sidebar_win) then
       vim.api.nvim_set_current_win(s.sidebar_win)
+      equalize_grid(s)
     end
   else
     -- Switching to filetree: collapse grid to 1x1 with file preview
@@ -1799,6 +1815,7 @@ function M.toggle_filetree_focus(s, opts)
     if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
       vim.wo[s.filetree_win].cursorline = true
       vim.api.nvim_set_current_win(s.filetree_win)
+      equalize_grid(s)
     end
   end
 end
