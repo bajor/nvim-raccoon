@@ -644,7 +644,12 @@ local function start_poll_timer()
     end
   end)
 
-  local_state.poll_timer = vim.uv.new_timer()
+  local timer = vim.uv.new_timer()
+  if not timer then
+    vim.notify("Failed to create poll timer", vim.log.levels.WARN)
+    return
+  end
+  local_state.poll_timer = timer
   local_state.poll_timer:start(POLL_INTERVAL_MS, POLL_INTERVAL_MS, vim.schedule_wrap(function()
     if not local_state.active then return end
 
@@ -812,12 +817,18 @@ local function enter_local_mode()
             if pending == 0 then on_both_ready() end
           end
 
-          git.log_branch_commits(repo_root, merge_sha, function(commits, _)
+          git.log_branch_commits(repo_root, merge_sha, function(commits, err)
+            if err then
+              vim.notify("Failed to load branch commits: " .. err, vim.log.levels.WARN)
+            end
             branch_result = commits
             check_done()
           end)
 
-          git.log_from_ref(repo_root, merge_sha, base_count, 0, function(commits, _)
+          git.log_from_ref(repo_root, merge_sha, base_count, 0, function(commits, err)
+            if err then
+              vim.notify("Failed to load base commits: " .. err, vim.log.levels.WARN)
+            end
             base_result = commits
             check_done()
           end)

@@ -601,11 +601,19 @@ local function equalize_grid(s)
   set_winfixwidth(s.sidebar_win, true)
   s.sidebar_width = symmetric_sidebar_width
 
+  local row_count = math.max(1, rows)
+  local header_line_cap = effective_header_line_cap()
+  -- Reserve fixed header space so collapsing to a 1x1 grid does not shrink the header to one line.
+  local row_separators = math.max(0, row_count - 1)
+  local available_grid_height = M.grid_total_height() - header_line_cap - row_separators
+  local clamped_grid_height = math.max(row_count, available_grid_height)
+  local row_height = math.floor(clamped_grid_height / row_count)
   set_header_height(s.header_win)
-  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
   -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
   local grid_width = vim.o.columns - symmetric_sidebar_width - symmetric_sidebar_width - (cols + 1)
   if grid_width < cols then
+    set_winfixwidth(s.filetree_win, false)
+    set_winfixwidth(s.sidebar_win, false)
     vim.notify("Terminal too narrow for commit viewer layout", vim.log.levels.WARN)
     return
   end
@@ -629,6 +637,9 @@ local function equalize_grid(s)
       end
     end
   end
+
+  -- Keep header height stable after grid row resizing.
+  set_header_height(s.header_win)
 end
 
 --- Create the full grid layout: file tree (left), diff grid (center), commit sidebar (right), header (top).

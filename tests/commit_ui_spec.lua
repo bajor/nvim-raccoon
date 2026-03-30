@@ -248,6 +248,57 @@ describe("raccoon.commit_ui", function()
     if not ok then error(err) end
   end)
 
+  it("toggle_filetree_focus preserves header height for 1x2 layouts", function()
+    local state = {
+      active = true,
+      grid_wins = {},
+      grid_bufs = {},
+      cached_line_paths = {},
+      focus_target = "sidebar",
+      preview_generation = 0,
+      select_generation = 0,
+    }
+
+    local saved_lines = vim.o.lines
+
+    local function cleanup()
+      vim.o.lines = saved_lines
+      commit_ui.close_grid(state)
+      commit_ui.close_win_pair(state, "header_win", "header_buf")
+      commit_ui.close_win_pair(state, "sidebar_win", "sidebar_buf")
+      commit_ui.close_win_pair(state, "filetree_win", "filetree_buf")
+      pcall(vim.cmd, "only")
+    end
+
+    local ok, err = pcall(function()
+      vim.o.lines = math.max(saved_lines, 36)
+      commit_ui.create_grid_layout(state, 1, 2)
+
+      local initial_header_height = vim.api.nvim_win_get_height(state.header_win)
+      assert.is_true(initial_header_height > 1)
+
+      local opts = {
+        apply_keymaps = function() end,
+        render_page = function() end,
+        ns_id = vim.api.nvim_create_namespace("raccoon_test_toggle_ft_header"),
+        get_repo_path = function() return nil end,
+        get_sha = function() return nil end,
+        get_is_working_dir = function() return false end,
+      }
+
+      commit_ui.toggle_filetree_focus(state, opts)
+      local filetree_header_height = vim.api.nvim_win_get_height(state.header_win)
+      assert.equals(initial_header_height, filetree_header_height)
+
+      commit_ui.toggle_filetree_focus(state, opts)
+      local sidebar_header_height = vim.api.nvim_win_get_height(state.header_win)
+      assert.equals(initial_header_height, sidebar_header_height)
+    end)
+
+    cleanup()
+    if not ok then error(err) end
+  end)
+
   it("sidebar widths stay symmetric when requested width is too large", function()
     local cols = 2
     local huge_width = 9999
