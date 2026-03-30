@@ -86,6 +86,43 @@ describe("raccoon.commit_ui", function()
       local result = commit_ui.truncate_sidebar_text("hello")
       assert.is_string(result)
     end)
+
+    it("truncates CJK characters at display-width boundary", function()
+      -- Each CJK char = 2 display columns. 5 chars = 10 cols.
+      -- sidebar_width=9 → content_width=7, keep_width=4 → 2 CJK chars (4 cols) + "..."
+      local text = "漢字測試文"
+      local result = commit_ui.truncate_sidebar_text(text, 9)
+      assert.truthy(result:find("%.%.%.$"))
+      assert.truthy(vim.fn.strdisplaywidth(result) <= 7)
+    end)
+
+    it("truncates mixed ASCII and CJK correctly", function()
+      -- "ab漢字cd" = 2 + 4 + 2 = 8 display cols
+      -- sidebar_width=8 → content_width=6, keep_width=3 → "ab" (2 cols) fits, "ab漢" (4 cols) > 3
+      local text = "ab漢字cd"
+      local result = commit_ui.truncate_sidebar_text(text, 8)
+      assert.truthy(result:find("%.%.%.$"))
+      assert.truthy(vim.fn.strdisplaywidth(result) <= 6)
+    end)
+
+    it("truncates emoji at display-width boundary", function()
+      -- Emoji are typically 2 display columns each
+      local text = "hello🎉🎊🎈world"
+      local result = commit_ui.truncate_sidebar_text(text, 12)
+      -- content_width=10, keep_width=7
+      assert.truthy(result:find("%.%.%.$"))
+      assert.truthy(vim.fn.strdisplaywidth(result) <= 10)
+    end)
+
+    it("handles all double-width chars truncated to minimal width", function()
+      local text = "漢字"
+      -- sidebar_width=5 → content_width=3, text=4 cols → needs truncation
+      -- keep_width = max(1, 3-3) = 1, but a CJK char is 2 cols wide
+      -- binary search should return 0 chars, result = "" .. "..."
+      local result = commit_ui.truncate_sidebar_text(text, 5)
+      assert.is_string(result)
+      assert.truthy(result:find("%.%.%.$"))
+    end)
   end)
 
   describe("update_header", function()
@@ -162,6 +199,34 @@ describe("raccoon.commit_ui", function()
 
       teardown_header(buf, win)
     end)
+  end)
+
+  it("compute_grid_context matches rendered grid row height", function()
+    local state = { grid_wins = {}, grid_bufs = {} }
+    local saved_lines = vim.o.lines
+
+    local function cleanup()
+      vim.o.lines = saved_lines
+      commit_ui.close_grid(state)
+      commit_ui.close_win_pair(state, "header_win", "header_buf")
+      commit_ui.close_win_pair(state, "sidebar_win", "sidebar_buf")
+      commit_ui.close_win_pair(state, "filetree_win", "filetree_buf")
+      pcall(vim.cmd, "only")
+    end
+
+    local ok, err = pcall(function()
+      vim.o.lines = math.max(saved_lines, 36)
+      commit_ui.create_grid_layout(state, 2, 2)
+
+      local row_height = vim.api.nvim_win_get_height(state.grid_wins[1])
+      local expected = math.max(3, math.floor(row_height / 2))
+      local actual = commit_ui.compute_grid_context(2)
+
+      assert.equals(expected, actual)
+    end)
+
+    cleanup()
+    if not ok then error(err) end
   end)
 
   it("rebuild_grid keeps filetree and commit sidebar widths symmetric", function()

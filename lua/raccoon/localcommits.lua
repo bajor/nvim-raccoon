@@ -555,7 +555,12 @@ start_workdir_poll_timer = function()
     or (now - local_state.last_change_time) >= WORKDIR_IDLE_THRESHOLD_MS
   local interval = idle and WORKDIR_POLL_SLOW_MS or WORKDIR_POLL_FAST_MS
 
-  local_state.workdir_poll_timer = vim.uv.new_timer()
+  local timer = vim.uv.new_timer()
+  if not timer then
+    vim.notify("Failed to create workdir poll timer", vim.log.levels.WARN)
+    return
+  end
+  local_state.workdir_poll_timer = timer
   local_state.workdir_poll_timer:start(interval, 0, vim.schedule_wrap(function()
     if not local_state.active then return end
 

@@ -108,14 +108,25 @@ function M.grid_total_height()
   return math.max(1, vim.o.lines - vim.o.cmdheight - GRID_CHROME_LINES)
 end
 
+--- Compute per-row height using the same budget equalize_grid applies.
+---@param rows number
+---@return number
+local function compute_grid_row_height(rows)
+  local row_count = math.max(1, rows or 1)
+  local header_line_cap = effective_header_line_cap()
+  local row_separators = math.max(0, row_count - 1)
+  local available_grid_height = M.grid_total_height() - header_line_cap - row_separators
+  local clamped_grid_height = math.max(row_count, available_grid_height)
+  return math.max(1, math.floor(clamped_grid_height / row_count))
+end
+
 --- Compute the diff context line count for grid cells based on available row height.
 --- Uses floor(row_height / 2) as a heuristic: with N context lines a single hunk produces
 --- roughly 2N+1 output lines plus the hunk header, so halving is a reasonable approximation.
 ---@param rows number Number of grid rows
 ---@return number context Lines of context to pass to git diff (-U<N>, always >= 3)
 function M.compute_grid_context(rows)
-  rows = rows or 1
-  local row_height = math.floor(M.grid_total_height() / math.max(1, rows))
+  local row_height = compute_grid_row_height(rows)
   return math.max(MIN_DIFF_CONTEXT, math.floor(row_height / 2))
 end
 
@@ -601,13 +612,8 @@ local function equalize_grid(s)
   set_winfixwidth(s.sidebar_win, true)
   s.sidebar_width = symmetric_sidebar_width
 
-  local row_count = math.max(1, rows)
-  local header_line_cap = effective_header_line_cap()
   -- Reserve fixed header space so collapsing to a 1x1 grid does not shrink the header to one line.
-  local row_separators = math.max(0, row_count - 1)
-  local available_grid_height = M.grid_total_height() - header_line_cap - row_separators
-  local clamped_grid_height = math.max(row_count, available_grid_height)
-  local row_height = math.floor(clamped_grid_height / row_count)
+  local row_height = compute_grid_row_height(rows)
   set_header_height(s.header_win)
   -- Layout: filetree | col1 | col2 | ... | colN | sidebar → (cols + 1) separators
   local grid_width = vim.o.columns - symmetric_sidebar_width - symmetric_sidebar_width - (cols + 1)

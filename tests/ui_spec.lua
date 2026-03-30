@@ -447,13 +447,15 @@ describe("raccoon.ui", function()
     end)
 
     it("returns half of row height for 1 row", function()
-      -- row_height = floor(47 / 1) = 47, context = floor(47 / 2) = 23
-      assert.equals(23, commit_ui.compute_grid_context(1))
+      -- row_height = floor((47 - header(3) - separators(0)) / 1) = 44
+      -- context = floor(44 / 2) = 22
+      assert.equals(22, commit_ui.compute_grid_context(1))
     end)
 
     it("returns half of row height for 2 rows (default)", function()
-      -- row_height = floor(47 / 2) = 23, context = floor(23 / 2) = 11
-      assert.equals(11, commit_ui.compute_grid_context(2))
+      -- row_height = floor((47 - header(3) - separators(1)) / 2) = 21
+      -- context = floor(21 / 2) = 10
+      assert.equals(10, commit_ui.compute_grid_context(2))
     end)
 
     it("clamps to minimum of 3 when rows are large", function()
@@ -463,24 +465,25 @@ describe("raccoon.ui", function()
 
     it("handles rows=0 without division by zero", function()
       -- math.max(1, 0) = 1, so same as rows=1
-      assert.equals(23, commit_ui.compute_grid_context(0))
+      assert.equals(22, commit_ui.compute_grid_context(0))
     end)
 
     it("handles negative rows", function()
       -- math.max(1, -1) = 1, so same as rows=1
-      assert.equals(23, commit_ui.compute_grid_context(-1))
+      assert.equals(22, commit_ui.compute_grid_context(-1))
     end)
 
     it("handles nil rows", function()
       -- nil defaults to 1, so same as rows=1
-      assert.equals(23, commit_ui.compute_grid_context(nil))
+      assert.equals(22, commit_ui.compute_grid_context(nil))
     end)
 
     it("adjusts for cmdheight=2", function()
       vim.o.cmdheight = 2
       -- grid_total_height = 50 - 2 - 2 = 46
-      -- row_height = floor(46 / 2) = 23, context = floor(23 / 2) = 11
-      assert.equals(11, commit_ui.compute_grid_context(2))
+      -- row_height = floor((46 - header(3) - separators(1)) / 2) = 21
+      -- context = floor(21 / 2) = 10
+      assert.equals(10, commit_ui.compute_grid_context(2))
     end)
 
     it("always returns an integer", function()
