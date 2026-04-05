@@ -167,7 +167,7 @@ describe("raccoon.commit_ui", function()
       teardown_header(buf, win)
     end)
 
-    it("truncates with the effective header line cap when terminal height is constrained", function()
+    it("truncates with the visible header line cap when terminal height is constrained", function()
       local buf, win = make_header(20)
       local saved_lines = vim.o.lines
       local ok, err = pcall(function()
@@ -179,6 +179,7 @@ describe("raccoon.commit_ui", function()
         local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
         assert.equals(1, #lines)
         assert.truthy(lines[1]:find("%.%.%.$"))
+        assert.equals(1, vim.api.nvim_win_get_height(win))
         assert.truthy(vim.fn.strdisplaywidth(lines[1]) <= 20)
       end)
 
