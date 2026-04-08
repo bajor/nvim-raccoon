@@ -95,7 +95,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 | `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (1–500) |
 | `commit_viewer.commit_message_max_lines` | number | `3` | Max lines shown in the commit message header (1–50) |
-| `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
+| `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `popup_width`) |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
 
@@ -136,7 +136,7 @@ The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for R
 
 ### Shortcut defaults
 
-See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
+See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 24 configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
 
 ### Full config example
 
@@ -182,7 +182,8 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
       "next_page_alt": "<leader>l",
       "exit": "<leader>cm",
       "maximize_prefix": "<leader>m",
-      "browse_files": "<leader>f"
+      "browse_files": "<leader>f",
+      "dispatch_agent": "<leader>aa"
     }
   }
 }
@@ -279,6 +280,7 @@ Commit mode shortcuts live under `shortcuts.commit_mode` in config:
 | `<leader>l` | `commit_mode.next_page_alt` | Next page of diff hunks (alias) |
 | `<leader>f` | `commit_mode.browse_files` | Toggle focus between commit sidebar and file tree |
 | `<leader>m1`..`m9` | `commit_mode.maximize_prefix` | Maximize a grid cell (full file diff) |
+| `<leader>aa` | `commit_mode.dispatch_agent` | Dispatch agent from the maximized diff view (requires `parallel_agents.enabled`) |
 | `<leader>q` / `q` | `close` | Exit maximized view |
 | `<leader>cm` | `commit_mode.exit` | Exit commit viewer mode |
 
@@ -312,9 +314,9 @@ Local mode works alongside an active PR review — entering `:Raccoon local` pau
 
 ## Parallel Agents
 
-Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. Review a commit, optionally select code lines, and press `<leader>aa` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
+Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. Review a commit, optionally select code lines, and press `<leader>aa` by default to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
 
-Configure with the `parallel_agents` block in `config.json`. Set `command` to your CLI agent template (e.g. `claude --dangerously-skip-permissions -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
+Configure the runner with the `parallel_agents` block in `config.json`, and configure the keybinding under `shortcuts.commit_mode.dispatch_agent`. Set `command` to your CLI agent template (e.g. `claude --dangerously-skip-permissions -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
 
 ## Statusline
 

@@ -250,6 +250,9 @@ describe("raccoon.config", function()
       assert.is_nil(err)
       assert.equals(1, vim.fn.filereadable(config.config_path))
 
+      local created = table.concat(vim.fn.readfile(config.config_path), "\n")
+      assert.matches('"dispatch_agent"%s*:%s*"<leader>aa"', created)
+
       -- Cleanup
       os.remove(config.config_path)
       vim.fn.delete(tmpdir, "d")
@@ -452,7 +455,10 @@ describe("raccoon.config", function()
 
     it("has commit_mode subsection with expected keys", function()
       assert.is_table(config.defaults.shortcuts.commit_mode)
-      local expected = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" }
+      local expected = {
+        "next_page", "prev_page", "next_page_alt",
+        "exit", "maximize_prefix", "browse_files", "dispatch_agent",
+      }
       for _, key in ipairs(expected) do
         assert.is_string(config.defaults.shortcuts.commit_mode[key],
           "Missing commit_mode shortcut default: " .. key)
@@ -533,7 +539,8 @@ describe("raccoon.config", function()
           "pr_list": "<leader>pp",
           "close": "<leader>x",
           "commit_mode": {
-            "exit": "<leader>xx"
+            "exit": "<leader>xx",
+            "dispatch_agent": "<leader>ag"
           }
         }
       }]])
@@ -549,6 +556,7 @@ describe("raccoon.config", function()
       assert.equals(config.defaults.shortcuts.description, shortcuts.description)
       -- Nested commit_mode: overridden key
       assert.equals("<leader>xx", shortcuts.commit_mode.exit)
+      assert.equals("<leader>ag", shortcuts.commit_mode.dispatch_agent)
       -- Nested commit_mode: non-overridden keys keep defaults
       assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
 
@@ -714,6 +722,119 @@ describe("raccoon.config", function()
 
       os.remove(tmpfile)
     end)
+
+    it("falls back to legacy parallel_agents.shortcut when unified shortcut is absent", function()
+      local tmpfile = test_tmp_dir .. "/legacy_pa_shortcut.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "parallel_agents": {
+          "enabled": true,
+          "command": "echo <PROMPT>",
+          "shortcut": "<leader>az"
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.equals("<leader>az", shortcuts.commit_mode.dispatch_agent)
+
+      os.remove(tmpfile)
+    end)
+
+    it("prefers unified shortcut over legacy parallel_agents.shortcut", function()
+      local tmpfile = test_tmp_dir .. "/new_shortcut_wins.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "parallel_agents": {
+          "enabled": true,
+          "command": "echo <PROMPT>",
+          "shortcut": "<leader>old"
+        },
+        "shortcuts": {
+          "commit_mode": {
+            "dispatch_agent": "<leader>new"
+          }
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.equals("<leader>new", shortcuts.commit_mode.dispatch_agent)
+
+      os.remove(tmpfile)
+    end)
+
+    it("lets unified shortcut disable the legacy parallel agents binding", function()
+      local tmpfile = test_tmp_dir .. "/disable_dispatch_agent.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "parallel_agents": {
+          "enabled": true,
+          "command": "echo <PROMPT>",
+          "shortcut": "<leader>old"
+        },
+        "shortcuts": {
+          "commit_mode": {
+            "dispatch_agent": false
+          }
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.is_false(shortcuts.commit_mode.dispatch_agent)
+      assert.is_false(config.is_enabled(shortcuts.commit_mode.dispatch_agent))
+
+      os.remove(tmpfile)
+    end)
+
+    it("produces the same shortcuts regardless of JSON key order", function()
+      local first = test_tmp_dir .. "/order_a.json"
+      local second = test_tmp_dir .. "/order_b.json"
+
+      local f1 = io.open(first, "w")
+      f1:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "parallel_agents": {
+          "shortcut": "<leader>az",
+          "enabled": true,
+          "command": "echo <PROMPT>"
+        },
+        "shortcuts": {
+          "close": "<leader>x"
+        }
+      }]])
+      f1:close()
+
+      local f2 = io.open(second, "w")
+      f2:write([[{
+        "shortcuts": {
+          "close": "<leader>x"
+        },
+        "tokens": {"user": "ghp_xxx"},
+        "parallel_agents": {
+          "enabled": true,
+          "command": "echo <PROMPT>",
+          "shortcut": "<leader>az"
+        }
+      }]])
+      f2:close()
+
+      config.config_path = first
+      local shortcuts_a = config.load_shortcuts()
+      config.config_path = second
+      local shortcuts_b = config.load_shortcuts()
+      assert.same(shortcuts_a, shortcuts_b)
+
+      os.remove(first)
+      os.remove(second)
+    end)
   end)
 
   describe("load_parallel_agents", function()
@@ -724,7 +845,7 @@ describe("raccoon.config", function()
       assert.is_false(pa.enabled)
       assert.equals("", pa.command)
       assert.equals("", pa.suffix_prompt)
-      assert.equals("<leader>aa", pa.shortcut)
+      assert.equals(70, pa.popup_width)
     end)
 
     it("returns defaults for invalid JSON", function()
@@ -736,7 +857,7 @@ describe("raccoon.config", function()
       config.config_path = tmpfile
       local pa = config.load_parallel_agents()
       assert.is_false(pa.enabled)
-      assert.equals("<leader>aa", pa.shortcut)
+      assert.equals(70, pa.popup_width)
 
       os.remove(tmpfile)
     end)
@@ -758,7 +879,7 @@ describe("raccoon.config", function()
       assert.is_true(pa.enabled)
       assert.equals('claude -p <PROMPT>', pa.command)
       assert.equals("Always push.", pa.suffix_prompt)
-      assert.equals("<leader>aa", pa.shortcut) -- default kept
+      assert.equals(70, pa.popup_width)
 
       os.remove(tmpfile)
     end)
@@ -781,12 +902,12 @@ describe("raccoon.config", function()
       assert.is_false(pa.enabled) -- default
       assert.equals("", pa.command) -- default
       assert.equals("", pa.suffix_prompt) -- default
-      assert.equals("<leader>aa", pa.shortcut) -- default
+      assert.equals(70, pa.popup_width) -- default
 
       os.remove(tmpfile)
     end)
 
-    it("shortcut false disables shortcut", function()
+    it("ignores legacy shortcut field and keeps operational fields", function()
       local tmpfile = test_tmp_dir .. "/pa_no_shortcut.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
@@ -800,8 +921,9 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local pa = config.load_parallel_agents()
-      assert.is_false(pa.shortcut)
-      assert.is_false(config.is_enabled(pa.shortcut))
+      assert.is_true(pa.enabled)
+      assert.equals("test", pa.command)
+      assert.is_nil(pa.shortcut)
 
       os.remove(tmpfile)
     end)

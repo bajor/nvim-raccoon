@@ -125,63 +125,16 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     localcommits.toggle()
   elseif subcommand == "config" then
     -- Open config file in current buffer
-    local config_path = require("raccoon.config").config_path
-    -- Create directory if it doesn't exist
-    local config_dir = vim.fn.fnamemodify(config_path, ":h")
-    if vim.fn.isdirectory(config_dir) == 0 then
-      vim.fn.mkdir(config_dir, "p")
-    end
-    -- Create default config if file doesn't exist
+    local cfg = require("raccoon.config")
+    local config_path = cfg.config_path
     if vim.fn.filereadable(config_path) == 0 then
-      local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
-      local home = vim.fn.expand("~")
-      clone_root = clone_root:gsub("^" .. vim.pesc(home), "~")
-      local default_config = string.format([[{
-  "github_host": "github.com",
-  "tokens": {
-    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
-  },
-  "clone_root": "%s",
-  "pull_changes_interval": 300,
-  "commit_viewer": {
-    "grid": { "rows": 2, "cols": 2 },
-    "base_commits_count": 20
-  },
-  "shortcuts": {
-    "pr_list": "<leader>pr",
-    "show_shortcuts": "<leader>?",
-    "next_point": "<leader>j",
-    "prev_point": "<leader>k",
-    "next_file": "<leader>nf",
-    "prev_file": "<leader>pf",
-    "next_thread": "<leader>nt",
-    "prev_thread": "<leader>pt",
-    "comment": "<leader>c",
-    "description": "<leader>dd",
-    "list_comments": "<leader>ll",
-    "merge": "<leader>rr",
-    "commit_viewer": "<leader>cm",
-    "comment_save": "<leader>s",
-    "comment_resolve": "<leader>r",
-    "comment_unresolve": "<leader>u",
-    "close": "<leader>q",
-    "commit_mode": {
-      "next_page": "<leader>j",
-      "prev_page": "<leader>k",
-      "next_page_alt": "<leader>l",
-      "exit": "<leader>cm",
-      "maximize_prefix": "<leader>m",
-      "browse_files": "<leader>f"
-    }
-  }
-}]], clone_root)
-      local file = io.open(config_path, "w")
-      if file then
-        file:write(default_config)
-        file:close()
+      local ok, err = cfg.create_default()
+      if not ok then
+        vim.notify("Failed to create config file: " .. err, vim.log.levels.ERROR)
+        return
       end
     end
-    vim.cmd("edit " .. config_path)
+    vim.cmd("edit " .. vim.fn.fnameescape(config_path))
   else
     vim.notify("Unknown subcommand: " .. subcommand, vim.log.levels.ERROR)
   end

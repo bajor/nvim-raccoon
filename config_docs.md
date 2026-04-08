@@ -240,7 +240,6 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
 | `enabled` | boolean | `false` | Enable the feature |
 | `command` | string | `""` | Shell command template containing `<PROMPT>` placeholder |
 | `suffix_prompt` | string | `""` | Text appended to every agent prompt |
-| `shortcut` | string or false | `"<leader>aa"` | Keymap to trigger dispatch. Set to `false` to disable. |
 | `popup_width` | number | `70` | Width of the task input popup (clamped to terminal width). |
 
 ```json
@@ -248,11 +247,12 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
   "parallel_agents": {
     "enabled": true,
     "command": "claude --dangerously-skip-permissions -p <PROMPT>",
-    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request.",
-    "shortcut": "<leader>aa"
+    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request."
   }
 }
 ```
+
+The shortcut for dispatch lives in `shortcuts.commit_mode.dispatch_agent`, not in the `parallel_agents` block.
 
 In **PR commit viewer** mode, agents run inside the shallow clone checked out to the PR branch (`{clone_root}/{owner}/{repo}/pr-{number}`), so "commit and push" pushes directly to the PR. In **local commit viewer** mode, agents run in your working directory.
 
@@ -262,7 +262,7 @@ In **PR commit viewer** mode, agents run inside the shallow clone checked out to
 |------|---------|
 | object | see [shortcuts_docs.md](shortcuts_docs.md) |
 
-Custom keyboard shortcuts. See [shortcuts_docs.md](shortcuts_docs.md) for the full reference of all 23 configurable shortcuts with descriptions and examples.
+Custom keyboard shortcuts. See [shortcuts_docs.md](shortcuts_docs.md) for the full reference of all 24 configurable shortcuts with descriptions and examples.
 
 Partial overrides are merged with defaults — you only need to specify keys you want to change. Set any shortcut to `false` to disable it.
 
@@ -270,7 +270,10 @@ Partial overrides are merged with defaults — you only need to specify keys you
 {
   "shortcuts": {
     "pr_list": "<leader>gp",
-    "merge": false
+    "merge": false,
+    "commit_mode": {
+      "dispatch_agent": "<leader>ag"
+    }
   }
 }
 ```
@@ -299,7 +302,10 @@ Partial overrides are merged with defaults — you only need to specify keys you
   "shortcuts": {
     "pr_list": "<leader>pr",
     "next_point": "<C-n>",
-    "prev_point": "<C-p>"
+    "prev_point": "<C-p>",
+    "commit_mode": {
+      "dispatch_agent": "<leader>aa"
+    }
   }
 }
 ```

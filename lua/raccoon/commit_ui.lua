@@ -315,8 +315,10 @@ end
 ---@param opts table {repo_path, sha, commit_message, filename, state}
 ---@param pa_cfg? table Pre-loaded parallel_agents config (avoids re-reading disk)
 local function setup_parallel_agent_keymap(buf, opts, pa_cfg)
+  local shortcuts = config.load_shortcuts()
+  local dispatch_key = shortcuts.commit_mode and shortcuts.commit_mode.dispatch_agent
   pa_cfg = pa_cfg or config.load_parallel_agents()
-  if not pa_cfg.enabled or not config.is_enabled(pa_cfg.shortcut) then return end
+  if not pa_cfg.enabled or not config.is_enabled(dispatch_key) then return end
   local pa = require("raccoon.parallel_agents")
   local buf_opts = { buffer = buf, noremap = true, silent = true }
   local function dispatch_fn()
@@ -341,7 +343,7 @@ local function setup_parallel_agent_keymap(buf, opts, pa_cfg)
       view_state = opts.state,
     })
   end
-  vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
+  vim.keymap.set({ "n", "v" }, dispatch_key, dispatch_fn, buf_opts)
 end
 
 --- Block editing and commit-mode navigation keys in a maximize floating window.

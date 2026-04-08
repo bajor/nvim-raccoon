@@ -37,7 +37,6 @@ M.defaults = {
     enabled = false,
     command = "",
     suffix_prompt = "",
-    shortcut = "<leader>aa",
     popup_width = 70,
   },
   shortcuts = {
@@ -71,6 +70,7 @@ M.defaults = {
       exit = "<leader>cm",
       maximize_prefix = "<leader>m",
       browse_files = "<leader>f",
+      dispatch_agent = "<leader>aa",
     },
   },
 }
@@ -172,6 +172,55 @@ function M.load()
 end
 
 --- Create a default config file if it doesn't exist
+---@return string
+local function build_default_config_contents()
+  local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
+  local home = vim.fn.expand("~")
+  clone_root = clone_root:gsub("^" .. vim.pesc(home), "~")
+
+  return string.format([[{
+  "github_host": "github.com",
+  "tokens": {
+    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
+  },
+  "clone_root": "%s",
+  "pull_changes_interval": 300,
+  "commit_viewer": {
+    "grid": { "rows": 2, "cols": 2 },
+    "base_commits_count": 20
+  },
+  "shortcuts": {
+    "pr_list": "<leader>pr",
+    "show_shortcuts": "<leader>?",
+    "next_point": "<leader>j",
+    "prev_point": "<leader>k",
+    "next_file": "<leader>nf",
+    "prev_file": "<leader>pf",
+    "next_thread": "<leader>nt",
+    "prev_thread": "<leader>pt",
+    "comment": "<leader>c",
+    "description": "<leader>dd",
+    "list_comments": "<leader>ll",
+    "merge": "<leader>rr",
+    "commit_viewer": "<leader>cm",
+    "comment_save": "<leader>s",
+    "comment_resolve": "<leader>r",
+    "comment_unresolve": "<leader>u",
+    "close": "<leader>q",
+    "commit_mode": {
+      "next_page": "<leader>j",
+      "prev_page": "<leader>k",
+      "next_page_alt": "<leader>l",
+      "exit": "<leader>cm",
+      "maximize_prefix": "<leader>m",
+      "browse_files": "<leader>f",
+      "dispatch_agent": "<leader>aa"
+    }
+  }
+}]], clone_root)
+end
+
+--- Create a default config file if it doesn't exist
 ---@return boolean, string?
 function M.create_default()
   local dir = vim.fn.fnamemodify(M.config_path, ":h")
@@ -186,27 +235,12 @@ function M.create_default()
     return false, "Config file already exists"
   end
 
-  local default = {
-    github_host = "github.com",
-    tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
-    clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-    pull_changes_interval = 300,
-    commit_viewer = {
-      grid = { rows = 2, cols = 2 },
-      base_commits_count = 20,
-    },
-  }
-
-  local json = vim.json.encode(default)
-  -- Pretty print JSON
-  local formatted = json:gsub(",", ",\n  "):gsub("{", "{\n  "):gsub("}", "\n}")
-
   local file = io.open(M.config_path, "w")
   if not file then
     return false, "Cannot create config file"
   end
 
-  file:write(formatted)
+  file:write(build_default_config_contents())
   file:close()
 
   return true, nil
@@ -300,6 +334,33 @@ local function sanitize_shortcuts(merged, defaults)
   return result
 end
 
+--- Fold the legacy parallel_agents.shortcut field into shortcuts.commit_mode.dispatch_agent.
+--- The new shortcuts path wins whenever it is explicitly present, even if the value is invalid.
+---@param parsed table
+---@return table
+local function apply_legacy_parallel_agents_shortcut(parsed)
+  if type(parsed) ~= "table" then
+    return {}
+  end
+
+  local shortcuts = type(parsed.shortcuts) == "table" and parsed.shortcuts or nil
+  local commit_mode = shortcuts and type(shortcuts.commit_mode) == "table" and shortcuts.commit_mode or nil
+  if commit_mode and commit_mode.dispatch_agent ~= nil then
+    return parsed
+  end
+
+  local parallel_agents = type(parsed.parallel_agents) == "table" and parsed.parallel_agents or nil
+  if not parallel_agents or parallel_agents.shortcut == nil then
+    return parsed
+  end
+
+  local merged = vim.deepcopy(parsed)
+  merged.shortcuts = type(merged.shortcuts) == "table" and merged.shortcuts or {}
+  merged.shortcuts.commit_mode = type(merged.shortcuts.commit_mode) == "table" and merged.shortcuts.commit_mode or {}
+  merged.shortcuts.commit_mode.dispatch_agent = parallel_agents.shortcut
+  return merged
+end
+
 --- Load shortcuts from config, falling back to defaults gracefully.
 --- Unlike load(), this does not require valid tokens.
 ---@return table shortcuts
@@ -309,6 +370,7 @@ function M.load_shortcuts()
     return vim.deepcopy(M.defaults.shortcuts)
   end
 
+  parsed = apply_legacy_parallel_agents_shortcut(parsed)
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
   return sanitize_shortcuts(merged, M.defaults.shortcuts)
 end
@@ -349,20 +411,10 @@ function M.load_parallel_agents()
     return vim.deepcopy(defaults)
   end
 
-  local shortcut
-  if user.shortcut == false then
-    shortcut = false
-  elseif type(user.shortcut) == "string" and user.shortcut ~= "" then
-    shortcut = user.shortcut
-  else
-    shortcut = defaults.shortcut
-  end
-
   return {
     enabled = bool_field(user.enabled, defaults.enabled),
     command = type(user.command) == "string" and user.command or defaults.command,
     suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
-    shortcut = shortcut,
     popup_width = type(user.popup_width) == "number" and user.popup_width > 0
       and math.floor(user.popup_width) or defaults.popup_width,
   }
