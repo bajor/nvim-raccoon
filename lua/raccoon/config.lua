@@ -334,33 +334,6 @@ local function sanitize_shortcuts(merged, defaults)
   return result
 end
 
---- Fold the legacy parallel_agents.shortcut field into shortcuts.commit_mode.dispatch_agent.
---- The new shortcuts path wins whenever it is explicitly present, even if the value is invalid.
----@param parsed table
----@return table
-local function apply_legacy_parallel_agents_shortcut(parsed)
-  if type(parsed) ~= "table" then
-    return {}
-  end
-
-  local shortcuts = type(parsed.shortcuts) == "table" and parsed.shortcuts or nil
-  local commit_mode = shortcuts and type(shortcuts.commit_mode) == "table" and shortcuts.commit_mode or nil
-  if commit_mode and commit_mode.dispatch_agent ~= nil then
-    return parsed
-  end
-
-  local parallel_agents = type(parsed.parallel_agents) == "table" and parsed.parallel_agents or nil
-  if not parallel_agents or parallel_agents.shortcut == nil then
-    return parsed
-  end
-
-  local merged = vim.deepcopy(parsed)
-  merged.shortcuts = type(merged.shortcuts) == "table" and merged.shortcuts or {}
-  merged.shortcuts.commit_mode = type(merged.shortcuts.commit_mode) == "table" and merged.shortcuts.commit_mode or {}
-  merged.shortcuts.commit_mode.dispatch_agent = parallel_agents.shortcut
-  return merged
-end
-
 --- Load shortcuts from config, falling back to defaults gracefully.
 --- Unlike load(), this does not require valid tokens.
 ---@return table shortcuts
@@ -370,7 +343,6 @@ function M.load_shortcuts()
     return vim.deepcopy(M.defaults.shortcuts)
   end
 
-  parsed = apply_legacy_parallel_agents_shortcut(parsed)
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
   return sanitize_shortcuts(merged, M.defaults.shortcuts)
 end

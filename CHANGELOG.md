@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12] - 2026-04-11
+
+### Changed
+- Parallel agent dispatch keybinding is now defined only in `shortcuts.commit_mode.dispatch_agent`
+- Commit viewer shortcut loading no longer reads `parallel_agents.shortcut`
+
+### Removed
+- Legacy fallback that mapped `parallel_agents.shortcut` into `shortcuts.commit_mode.dispatch_agent`
+
+### Breaking
+- Configs using only `parallel_agents.shortcut` will no longer affect the dispatch keybinding. Move that value to `shortcuts.commit_mode.dispatch_agent`.
+
 ## [0.11.1] - 2026-03-26
 
 ### Added

@@ -723,8 +723,8 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("falls back to legacy parallel_agents.shortcut when unified shortcut is absent", function()
-      local tmpfile = test_tmp_dir .. "/legacy_pa_shortcut.json"
+    it("does not read legacy parallel_agents.shortcut for dispatch shortcut", function()
+      local tmpfile = test_tmp_dir .. "/legacy_pa_shortcut_ignored.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
         "tokens": {"user": "ghp_xxx"},
@@ -738,58 +738,7 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local shortcuts = config.load_shortcuts()
-      assert.equals("<leader>az", shortcuts.commit_mode.dispatch_agent)
-
-      os.remove(tmpfile)
-    end)
-
-    it("prefers unified shortcut over legacy parallel_agents.shortcut", function()
-      local tmpfile = test_tmp_dir .. "/new_shortcut_wins.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "tokens": {"user": "ghp_xxx"},
-        "parallel_agents": {
-          "enabled": true,
-          "command": "echo <PROMPT>",
-          "shortcut": "<leader>old"
-        },
-        "shortcuts": {
-          "commit_mode": {
-            "dispatch_agent": "<leader>new"
-          }
-        }
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local shortcuts = config.load_shortcuts()
-      assert.equals("<leader>new", shortcuts.commit_mode.dispatch_agent)
-
-      os.remove(tmpfile)
-    end)
-
-    it("lets unified shortcut disable the legacy parallel agents binding", function()
-      local tmpfile = test_tmp_dir .. "/disable_dispatch_agent.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "tokens": {"user": "ghp_xxx"},
-        "parallel_agents": {
-          "enabled": true,
-          "command": "echo <PROMPT>",
-          "shortcut": "<leader>old"
-        },
-        "shortcuts": {
-          "commit_mode": {
-            "dispatch_agent": false
-          }
-        }
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local shortcuts = config.load_shortcuts()
-      assert.is_false(shortcuts.commit_mode.dispatch_agent)
-      assert.is_false(config.is_enabled(shortcuts.commit_mode.dispatch_agent))
+      assert.equals(config.defaults.shortcuts.commit_mode.dispatch_agent, shortcuts.commit_mode.dispatch_agent)
 
       os.remove(tmpfile)
     end)
@@ -801,13 +750,11 @@ describe("raccoon.config", function()
       local f1 = io.open(first, "w")
       f1:write([[{
         "tokens": {"user": "ghp_xxx"},
-        "parallel_agents": {
-          "shortcut": "<leader>az",
-          "enabled": true,
-          "command": "echo <PROMPT>"
-        },
         "shortcuts": {
-          "close": "<leader>x"
+          "close": "<leader>x",
+          "commit_mode": {
+            "dispatch_agent": "<leader>az"
+          }
         }
       }]])
       f1:close()
@@ -815,14 +762,12 @@ describe("raccoon.config", function()
       local f2 = io.open(second, "w")
       f2:write([[{
         "shortcuts": {
-          "close": "<leader>x"
+          "close": "<leader>x",
+          "commit_mode": {
+            "dispatch_agent": "<leader>az"
+          }
         },
-        "tokens": {"user": "ghp_xxx"},
-        "parallel_agents": {
-          "enabled": true,
-          "command": "echo <PROMPT>",
-          "shortcut": "<leader>az"
-        }
+        "tokens": {"user": "ghp_xxx"}
       }]])
       f2:close()
 
