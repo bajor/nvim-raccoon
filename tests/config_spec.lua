@@ -258,6 +258,48 @@ describe("raccoon.config", function()
       vim.fn.delete(tmpdir, "d")
     end)
 
+    it("escapes clone_root in default config JSON", function()
+      local tmpdir = test_tmp_dir .. "/create_default_escape_test"
+      vim.fn.delete(tmpdir, "rf")
+      vim.fn.mkdir(tmpdir, "p")
+
+      config.config_path = tmpdir .. "/config.json"
+
+      local original_stdpath = vim.fn.stdpath
+      local original_expand = vim.fn.expand
+      local fake_home = [[C:\Users\m]]
+      local fake_data_root = [[C:\Users\m\my "quoted" data]]
+
+      vim.fn.stdpath = function(what)
+        if what == "data" then
+          return fake_data_root
+        end
+        return original_stdpath(what)
+      end
+
+      vim.fn.expand = function(expr)
+        if expr == "~" then
+          return fake_home
+        end
+        return original_expand(expr)
+      end
+
+      local ok, err = config.create_default()
+
+      vim.fn.stdpath = original_stdpath
+      vim.fn.expand = original_expand
+
+      assert.is_true(ok)
+      assert.is_nil(err)
+
+      local created = table.concat(vim.fn.readfile(config.config_path), "\n")
+      local decoded = vim.json.decode(created)
+      assert.equals([[~\my "quoted" data/raccoon/repos]], decoded.clone_root)
+
+      os.remove(config.config_path)
+      vim.fn.delete(tmpdir, "d")
+    end)
+
     it("returns error if config already exists", function()
       local tmpfile = test_tmp_dir .. "/existing_config.json"
       local f = io.open(tmpfile, "w")
@@ -271,6 +313,58 @@ describe("raccoon.config", function()
       assert.matches("already exists", err)
 
       os.remove(tmpfile)
+    end)
+
+    it("returns structured error when mkdir throws", function()
+      local original_isdirectory = vim.fn.isdirectory
+      local original_mkdir = vim.fn.mkdir
+      local target_path = test_tmp_dir .. "/mkdir_throw/config.json"
+
+      local ok_case, err_case = pcall(function()
+        config.config_path = target_path
+        vim.fn.isdirectory = function() return 0 end
+        vim.fn.mkdir = function()
+          error("E739: cannot create directory")
+        end
+
+        local ok, err = config.create_default()
+        assert.is_false(ok)
+        assert.is_string(err)
+        assert.matches("Cannot create config directory", err)
+      end)
+
+      vim.fn.isdirectory = original_isdirectory
+      vim.fn.mkdir = original_mkdir
+      if not ok_case then error(err_case) end
+    end)
+
+    it("returns error when writing default config fails", function()
+      local tmpdir = test_tmp_dir .. "/create_default_write_fail"
+      vim.fn.mkdir(tmpdir, "p")
+      local target_path = tmpdir .. "/config.json"
+
+      local original_io_open = io.open
+      local ok_case, err_case = pcall(function()
+        config.config_path = target_path
+        io.open = function(path, mode)
+          if path == target_path and mode == "w" then
+            return {
+              write = function() return nil, "disk full" end,
+              close = function() return true end,
+            }
+          end
+          return original_io_open(path, mode)
+        end
+
+        local ok, err = config.create_default()
+        assert.is_false(ok)
+        assert.matches("Cannot write config file", err)
+        assert.matches("disk full", err)
+      end)
+
+      io.open = original_io_open
+      vim.fn.delete(tmpdir, "d")
+      if not ok_case then error(err_case) end
     end)
   end)
 
@@ -723,7 +817,7 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("does not read legacy parallel_agents.shortcut for dispatch shortcut", function()
+    it("does not read legacy parallel_agents.shortcut for dispatch shortcut and warns", function()
       local tmpfile = test_tmp_dir .. "/legacy_pa_shortcut_ignored.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
@@ -736,9 +830,31 @@ describe("raccoon.config", function()
       }]])
       f:close()
 
-      config.config_path = tmpfile
-      local shortcuts = config.load_shortcuts()
-      assert.equals(config.defaults.shortcuts.commit_mode.dispatch_agent, shortcuts.commit_mode.dispatch_agent)
+      local original_notify = vim.notify
+      local notifications = {}
+      local ok_case, err_case = pcall(function()
+        config._reset_warning_state_for_tests()
+        config.config_path = tmpfile
+        vim.notify = function(msg, level)
+          table.insert(notifications, { msg = msg, level = level })
+        end
+
+        local shortcuts = config.load_shortcuts()
+        assert.equals(config.defaults.shortcuts.commit_mode.dispatch_agent, shortcuts.commit_mode.dispatch_agent)
+      end)
+      vim.notify = original_notify
+      if not ok_case then error(err_case) end
+
+      local warned = false
+      for _, notification in ipairs(notifications) do
+        if notification.level == vim.log.levels.WARN
+          and notification.msg:find("parallel_agents%.shortcut")
+          and notification.msg:find("shortcuts%.commit_mode%.dispatch_agent") then
+          warned = true
+          break
+        end
+      end
+      assert.is_true(warned)
 
       os.remove(tmpfile)
     end)
