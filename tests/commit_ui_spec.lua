@@ -1,6 +1,19 @@
 local commit_ui = require("raccoon.commit_ui")
+local config = require("raccoon.config")
 
 describe("raccoon.commit_ui", function()
+  local function has_buf_keymap(buf, mode, lhs)
+    local expected = vim.fn.keytrans(vim.api.nvim_replace_termcodes(lhs, true, true, true))
+    local maps = vim.api.nvim_buf_get_keymap(buf, mode)
+    for _, map in ipairs(maps) do
+      local actual = vim.fn.keytrans(vim.api.nvim_replace_termcodes(map.lhs, true, true, true))
+      if actual == expected then
+        return true
+      end
+    end
+    return false
+  end
+
   -- Shared header window helper
   local function make_header(width)
     width = width or 80
@@ -379,5 +392,62 @@ describe("raccoon.commit_ui", function()
 
     -- A small width that fits should pass through unchanged
     assert.equals(10, commit_ui.compute_effective_sidebar_width(cols, 10))
+  end)
+
+  it("does not register dispatch keymap when shortcuts.commit_mode.dispatch_agent is false", function()
+    local original_config_path = config.config_path
+    local original_git = package.loaded["raccoon.git"]
+    local tmpdir = "/tmp/claude/raccoon-tests"
+    local tmpfile = tmpdir .. "/commit_ui_dispatch_disabled.json"
+    vim.fn.mkdir(tmpdir, "p")
+
+    local state = { grid_rows = 1, grid_cols = 2 }
+    local ok_case, err_case = pcall(function()
+      local f = assert(io.open(tmpfile, "w"))
+      f:write(vim.json.encode({
+        shortcuts = {
+          commit_mode = {
+            dispatch_agent = false,
+          },
+        },
+        parallel_agents = {
+          enabled = true,
+          command = "echo <PROMPT>",
+        },
+      }))
+      f:close()
+
+      config.config_path = tmpfile
+      package.loaded["raccoon.git"] = {
+        show_commit_file = function(_, _, _, callback)
+          callback("@@ -1,1 +1,1 @@\n-old\n+new\n", nil)
+        end,
+        diff_working_dir_file = function(_, _, callback)
+          callback("@@ -1,1 +1,1 @@\n-old\n+new\n", nil)
+        end,
+      }
+
+      commit_ui.open_maximize({
+        ns_id = vim.api.nvim_create_namespace("raccoon_test_dispatch_disabled"),
+        repo_path = "/tmp",
+        sha = "abc1234",
+        filename = "lua/raccoon/test.lua",
+        commit_message = "test",
+        generation = 1,
+        get_generation = function() return 1 end,
+        state = state,
+      })
+
+      assert.is_true(type(state.maximize_buf) == "number" and vim.api.nvim_buf_is_valid(state.maximize_buf))
+      assert.is_false(has_buf_keymap(state.maximize_buf, "n", "<leader>aa"))
+      assert.is_false(has_buf_keymap(state.maximize_buf, "v", "<leader>aa"))
+    end)
+
+    commit_ui.close_win_pair(state, "maximize_win", "maximize_buf")
+    config.config_path = original_config_path
+    package.loaded["raccoon.git"] = original_git
+    os.remove(tmpfile)
+
+    if not ok_case then error(err_case) end
   end)
 end)

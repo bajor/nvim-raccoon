@@ -37,7 +37,6 @@ M.defaults = {
     enabled = false,
     command = "",
     suffix_prompt = "",
-    shortcut = "<leader>aa",
     popup_width = 70,
   },
   shortcuts = {
@@ -71,6 +70,7 @@ M.defaults = {
       exit = "<leader>cm",
       maximize_prefix = "<leader>m",
       browse_files = "<leader>f",
+      dispatch_agent = "<leader>aa",
     },
   },
 }
@@ -172,13 +172,69 @@ function M.load()
 end
 
 --- Create a default config file if it doesn't exist
+---@return string
+local function build_default_config_contents()
+  local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
+  local home = vim.fn.expand("~")
+  clone_root = clone_root:gsub("^" .. vim.pesc(home), "~")
+  local encoded_clone_root = vim.json.encode(clone_root)
+
+  return string.format([[{
+  "github_host": "github.com",
+  "tokens": {
+    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
+  },
+  "clone_root": %s,
+  "pull_changes_interval": 300,
+  "commit_viewer": {
+    "grid": { "rows": 2, "cols": 2 },
+    "base_commits_count": 20
+  },
+  "shortcuts": {
+    "pr_list": "<leader>pr",
+    "show_shortcuts": "<leader>?",
+    "next_point": "<leader>j",
+    "prev_point": "<leader>k",
+    "next_file": "<leader>nf",
+    "prev_file": "<leader>pf",
+    "next_thread": "<leader>nt",
+    "prev_thread": "<leader>pt",
+    "comment": "<leader>c",
+    "description": "<leader>dd",
+    "list_comments": "<leader>ll",
+    "merge": "<leader>rr",
+    "commit_viewer": "<leader>cm",
+    "comment_save": "<leader>s",
+    "comment_resolve": "<leader>r",
+    "comment_unresolve": "<leader>u",
+    "close": "<leader>q",
+    "commit_mode": {
+      "next_page": "<leader>j",
+      "prev_page": "<leader>k",
+      "next_page_alt": "<leader>l",
+      "exit": "<leader>cm",
+      "maximize_prefix": "<leader>m",
+      "browse_files": "<leader>f",
+      "dispatch_agent": "<leader>aa"
+    }
+  }
+}]], encoded_clone_root)
+end
+
+--- Create a default config file if it doesn't exist
 ---@return boolean, string?
 function M.create_default()
   local dir = vim.fn.fnamemodify(M.config_path, ":h")
 
   -- Create directory if needed
   if vim.fn.isdirectory(dir) == 0 then
-    vim.fn.mkdir(dir, "p")
+    local mkdir_ok, mkdir_result = pcall(vim.fn.mkdir, dir, "p")
+    if not mkdir_ok then
+      return false, string.format("Cannot create config directory: %s", tostring(mkdir_result))
+    end
+    if mkdir_result == 0 then
+      return false, string.format("Cannot create config directory: %s", dir)
+    end
   end
 
   -- Check if file already exists
@@ -186,28 +242,22 @@ function M.create_default()
     return false, "Config file already exists"
   end
 
-  local default = {
-    github_host = "github.com",
-    tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
-    clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-    pull_changes_interval = 300,
-    commit_viewer = {
-      grid = { rows = 2, cols = 2 },
-      base_commits_count = 20,
-    },
-  }
-
-  local json = vim.json.encode(default)
-  -- Pretty print JSON
-  local formatted = json:gsub(",", ",\n  "):gsub("{", "{\n  "):gsub("}", "\n}")
-
   local file = io.open(M.config_path, "w")
   if not file then
     return false, "Cannot create config file"
   end
 
-  file:write(formatted)
-  file:close()
+  local write_ok, write_err = file:write(build_default_config_contents())
+  if not write_ok then
+    file:close()
+    pcall(vim.uv.fs_unlink, M.config_path)
+    return false, string.format("Cannot write config file: %s", tostring(write_err))
+  end
+
+  local close_ok, close_err = file:close()
+  if not close_ok then
+    return false, string.format("Cannot finalize config file: %s", tostring(close_err))
+  end
 
   return true, nil
 end
@@ -229,6 +279,29 @@ local function read_config_json()
     return nil
   end
   return parsed
+end
+
+--- Warn when the legacy parallel_agents.shortcut field is present.
+--- This field is ignored; users should migrate to shortcuts.commit_mode.dispatch_agent.
+---@param parsed table
+local warned_legacy_parallel_agents_shortcut = false
+local function warn_legacy_parallel_agents_shortcut(parsed)
+  if warned_legacy_parallel_agents_shortcut then return end
+  if type(parsed) ~= "table" then return end
+  local user = parsed.parallel_agents
+  if type(user) ~= "table" then return end
+  local legacy_shortcut = user.shortcut
+  if legacy_shortcut == nil or legacy_shortcut == vim.NIL then return end
+  warned_legacy_parallel_agents_shortcut = true
+  vim.notify(
+    "Raccoon: parallel_agents.shortcut is deprecated and ignored; use shortcuts.commit_mode.dispatch_agent",
+    vim.log.levels.WARN
+  )
+end
+
+--- Reset one-shot warning state for tests.
+function M._reset_warning_state_for_tests()
+  warned_legacy_parallel_agents_shortcut = false
 end
 
 --- Return val if it is a boolean, otherwise return default.
@@ -309,6 +382,7 @@ function M.load_shortcuts()
     return vim.deepcopy(M.defaults.shortcuts)
   end
 
+  warn_legacy_parallel_agents_shortcut(parsed)
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
   return sanitize_shortcuts(merged, M.defaults.shortcuts)
 end
@@ -349,20 +423,11 @@ function M.load_parallel_agents()
     return vim.deepcopy(defaults)
   end
 
-  local shortcut
-  if user.shortcut == false then
-    shortcut = false
-  elseif type(user.shortcut) == "string" and user.shortcut ~= "" then
-    shortcut = user.shortcut
-  else
-    shortcut = defaults.shortcut
-  end
-
+  warn_legacy_parallel_agents_shortcut(parsed)
   return {
     enabled = bool_field(user.enabled, defaults.enabled),
     command = type(user.command) == "string" and user.command or defaults.command,
     suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
-    shortcut = shortcut,
     popup_width = type(user.popup_width) == "number" and user.popup_width > 0
       and math.floor(user.popup_width) or defaults.popup_width,
   }

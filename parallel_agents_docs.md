@@ -11,8 +11,12 @@ Add a `parallel_agents` section to `~/.config/raccoon/config.json`:
   "parallel_agents": {
     "enabled": true,
     "command": "claude --dangerously-skip-permissions -p <PROMPT>",
-    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request.",
-    "shortcut": "<leader>aa"
+    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request."
+  },
+  "shortcuts": {
+    "commit_mode": {
+      "dispatch_agent": "<leader>aa"
+    }
   }
 }
 ```
@@ -22,10 +26,10 @@ Add a `parallel_agents` section to `~/.config/raccoon/config.json`:
 | `enabled` | boolean | `false` | Enable the feature. When false, no keymaps are registered. |
 | `command` | string | `""` | Shell command template. Must contain `<PROMPT>` as a placeholder — it will be replaced with the assembled prompt (shell-escaped). |
 | `suffix_prompt` | string | `""` | Text appended to every agent prompt. Use this for instructions like "always commit and push when done". |
-| `shortcut` | string or false | `"<leader>aa"` | Keymap to trigger agent dispatch in maximized diff view. Set to `false` to disable. |
 | `popup_width` | number | `70` | Width of the task input popup in columns. Clamped to terminal width minus 4. |
 
 The `command` field is a shell string executed via `sh -c`. The `<PROMPT>` placeholder is replaced with a shell-escaped prompt containing the user's task description, commit context, and optionally the visual selection.
+The keybinding is configured separately under `shortcuts.commit_mode.dispatch_agent`. Set it to `false` to disable the maximize-view shortcut while keeping the feature available in config.
 
 ### Command template examples
 
@@ -43,8 +47,8 @@ For `claude`, use either `--dangerously-skip-permissions` or `--allowedTools <to
 1. Open the commit viewer (`:Raccoon commits` or `:Raccoon local`)
 2. Navigate to a commit and maximize a diff cell (`<leader>m1`, `<leader>m2`, etc.) or browse files and press Enter
 3. In the maximized diff view:
-   - **Normal mode**: Press the shortcut (default `<leader>aa`), type your task, press `<leader>s` to send
-   - **Visual mode**: Select lines of interest, press the shortcut, type your task, press `<leader>s` to send
+   - **Normal mode**: Press the dispatch shortcut (default `shortcuts.commit_mode.dispatch_agent = <leader>aa`), type your task, press `<leader>s` to send
+   - **Visual mode**: Select lines of interest, press the dispatch shortcut, type your task, press `<leader>s` to send
 
 The agent receives:
 - Your task description

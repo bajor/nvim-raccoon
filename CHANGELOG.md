@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12] - 2026-04-11
+
+### Changed
+- Parallel agent dispatch keybinding is now defined only in `shortcuts.commit_mode.dispatch_agent`
+- Commit viewer shortcut loading no longer reads `parallel_agents.shortcut`
+
+### Fixed
+- `:Raccoon config` now returns structured `false, err` failures when config directory creation fails (instead of throwing a raw Lua traceback)
+- `create_default()` now checks `file:write()` and returns an error on write failures (e.g. disk full), avoiding false success on partial/empty files
+- `create_default()` now checks `file:close()` and returns an error if finalization fails
+- `create_default()` now JSON-encodes `clone_root` when generating `config.json`, preventing invalid JSON on paths with backslashes or quotes (common on Windows)
+- Legacy `parallel_agents.shortcut` usage now emits a deprecation warning (once per session) directing users to `shortcuts.commit_mode.dispatch_agent`
+
+### Added
+- Regression tests for `create_default()` error handling (`mkdir` throw path and `write` failure path)
+- Regression test ensuring `create_default()` writes valid JSON when `clone_root` contains Windows-style backslashes and quotes
+- Regression test ensuring `shortcuts.commit_mode.dispatch_agent = false` prevents dispatch keymap registration in the maximize-view path
+
+### Removed
+- Legacy fallback that mapped `parallel_agents.shortcut` into `shortcuts.commit_mode.dispatch_agent`
+
+### Breaking
+- Configs using only `parallel_agents.shortcut` will no longer affect the dispatch keybinding. Move that value to `shortcuts.commit_mode.dispatch_agent`.
+
 ## [0.11.1] - 2026-03-26
 
 ### Added

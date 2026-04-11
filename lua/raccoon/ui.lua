@@ -741,6 +741,7 @@ local commit_mode_descriptions = {
   exit = "Exit commit viewer",
   maximize_prefix = "Maximize cell (+ number, f=files, c=commits)",
   browse_files = "Browse commit files",
+  dispatch_agent = "Dispatch agent (maximized diff)",
 }
 
 --- Display groups for the shortcuts help window
@@ -757,7 +758,7 @@ local shortcut_groups = {
   { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
   {
     title = "Commit Viewer", nested = "commit_mode",
-    keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix", "browse_files" },
+    keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix", "browse_files", "dispatch_agent" },
   },
   { title = "Common", keys = { "close" } },
 }
