@@ -254,7 +254,31 @@ Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized 
 }
 ```
 
-In **PR commit viewer** mode, agents run inside the shallow clone checked out to the PR branch (`{clone_root}/{owner}/{repo}/pr-{number}`), so "commit and push" pushes directly to the PR. In **local commit viewer** mode, agents run in your working directory.
+Agents run in your working directory. This feature is only available in **local commit viewer** mode (`:Raccoon local`) where files exist on disk.
+
+### `human_edit`
+
+| Type | Default |
+|------|---------|
+| object | see below |
+
+Configure the human edit feature for the commit viewer's maximized diff view. Only available in local mode (`:Raccoon local`).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `shortcut` | string or false | `"<leader>ee"` | Keymap to open the file for editing in maximized diff view. Set to `false` to disable. |
+| `command` | string | `"git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"` | Shell command run after saving edits. `<FILE>` is replaced with the shell-escaped relative file path, `<TIMESTAMP>` with the current timestamp (e.g. `2026-03-22_14:30:05`). Set to `""` to disable post-edit execution. |
+
+```json
+{
+  "human_edit": {
+    "shortcut": "<leader>ee",
+    "command": "git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"
+  }
+}
+```
+
+The edit window provides full Vim editing capabilities — insert mode, all editing keys, undo history, and LSP support. Press `<leader>s` to save and `q` or `<leader>q` to close. Modified files are auto-saved on close. If the file was modified externally (e.g. by a parallel agent) while editing, a 3-way merge is attempted automatically — clean merges are applied silently, conflicts show standard conflict markers.
 
 ### `shortcuts`
 

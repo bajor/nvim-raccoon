@@ -81,9 +81,7 @@ The `is_active()` function returns `true` while agents are running, even without
 
 ## Where agents run
 
-**PR mode**: Agents run in the shallow clone at `{clone_root}/{owner}/{repo}/pr-{number}`, checked out to the PR branch. Pushing from here updates the PR directly — making a commit-focused `suffix_prompt` a natural fit for review-driven fixes.
-
-**Local mode**: Agents run in your working directory (the git root). Changes happen in place.
+Agents run in your working directory (the git root). Changes happen in place. This feature is only available in **local mode** (`:Raccoon local`) where files exist on disk.
 
 ## Concurrent access
 
@@ -94,4 +92,4 @@ Multiple agents can run simultaneously on the same repo. Since they share the wo
 - The feature is completely inert when `enabled` is `false` (the default) — no keymaps are registered and no agent processes are spawned
 - Agents run as child processes of Neovim — closing Neovim will terminate running agents, so ensure agents complete before exiting
 - The shortcut works in both normal and visual mode, making it the first visual-mode keymap in the commit viewer
-- The feature works in both PR commit viewer and local commit viewer modes
+- The feature is only available in local commit viewer mode (`:Raccoon local`), not in PR commit viewer mode

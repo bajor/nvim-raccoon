@@ -40,7 +40,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 - Merge, squash, or rebase PRs
 - Auto-sync to detect new commits pushed to the branch
 - Local commit viewer (`:Raccoon local`) for browsing any git repo's history with live "Current changes" view
-- Dispatch CLI agents (claude, amp, aider) from commit viewer diffs with context injection
+- Dispatch CLI agents (claude, amp, aider) from local commit viewer diffs with context injection
 - Statusline integration showing file position and sync status
 
 ## Requirements

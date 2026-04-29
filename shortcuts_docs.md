@@ -109,6 +109,14 @@ Active inside the maximized diff floating window when `parallel_agents.enabled` 
 
 Note: `j`/`k` for navigating commits in the sidebar and `Enter` for selecting a commit are hardcoded and not configurable.
 
+## Human edit (maximized diff view)
+
+Active inside the maximized diff floating window in local mode (`:Raccoon local`). Opens the actual file for editing.
+
+| Config key | Default | Description |
+|------------|---------|-------------|
+| `human_edit.shortcut` | `<leader>ee` | Open the file in an editable floating window from maximized diff view. Full Vim editing capabilities, LSP support, and undo history. Set to `false` to disable. See [Human Edit in README](README.md#human-edit). |
+
 ## Example: custom config
 
 Override only the keys you want to change:
@@ -144,7 +152,7 @@ Disabled shortcuts show as `(disabled)` in the `:Raccoon shortcuts` window.
 
 ## Corresponding commands
 
-Every shortcut has a `:Raccoon` command equivalent that works regardless of whether the shortcut is enabled:
+Some shortcuts have `:Raccoon` command equivalents that work regardless of whether the shortcut is enabled:
 
 | Shortcut | Command |
 |----------|---------|
