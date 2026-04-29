@@ -15,8 +15,15 @@ M.INSERT = "i"
 --- Users can set a shortcut to false (JSON false) or null (JSON null -> vim.NIL) to disable it.
 ---@param value any The shortcut value from config
 ---@return boolean
+local function is_valid_shortcut_string(value)
+  return type(value) == "string" and value:match("%S") ~= nil
+end
+
+--- Check whether a shortcut binding is enabled.
+---@param value any
+---@return boolean
 function M.is_enabled(value)
-  return type(value) == "string" and value ~= ""
+  return is_valid_shortcut_string(value)
 end
 
 --- Default configuration values
@@ -217,22 +224,26 @@ function M.create_default()
 end
 
 --- Read and parse the JSON config file.
---- Returns the parsed table, or nil on any failure.
----@return table?
-local function read_config_json()
+--- Returns the parsed table, or nil on failure.
+---@param opts? table { silent?: boolean }
+---@return table?, string?
+local function read_config_json(opts)
+  opts = opts or {}
   local path = M.config_path
   local stat = vim.uv.fs_stat(path)
-  if not stat then return nil end
+  if not stat then return nil, "missing" end
   local file = io.open(path, "r")
-  if not file then return nil end
+  if not file then return nil, "read_error" end
   local content = file:read("*a")
   file:close()
   local ok, parsed = pcall(vim.json.decode, content)
   if not ok or type(parsed) ~= "table" then
-    vim.notify("Raccoon: failed to parse config.json, using defaults", vim.log.levels.WARN)
-    return nil
+    if not opts.silent then
+      vim.notify("Raccoon: failed to parse config.json, using defaults", vim.log.levels.WARN)
+    end
+    return nil, "parse_error"
   end
-  return parsed
+  return parsed, nil
 end
 
 --- Return val if it is a boolean, otherwise return default.
@@ -286,7 +297,7 @@ end
 ---@return string|false
 local function resolve_shortcut(user_val, default_val)
   if user_val == false then return false end
-  if type(user_val) == "string" and user_val ~= "" then return user_val end
+  if is_valid_shortcut_string(user_val) then return user_val end
   return default_val
 end
 
@@ -303,9 +314,15 @@ local function sanitize_shortcuts(merged, defaults)
     local val = merged[key]
     if type(default_val) == "table" then
       result[key] = sanitize_shortcuts(type(val) == "table" and val or {}, default_val)
+    elseif key == "close" then
+      if is_valid_shortcut_string(val) then
+        result[key] = val
+      else
+        result[key] = default_val
+      end
     elseif val == false then
       result[key] = false
-    elseif type(val) == "string" and val ~= "" then
+    elseif is_valid_shortcut_string(val) then
       result[key] = val
     else
       result[key] = default_val
@@ -439,6 +456,178 @@ function M.get_all_tokens(config)
     end
   end
   return entries
+end
+
+--- Validate `shortcuts.close` in user config.
+--- Missing config file is treated as valid (defaults apply).
+---@return table { valid: boolean, reason?: string, value?: any }
+function M.validate_close_shortcut()
+  local parsed, read_err = read_config_json({ silent = true })
+  if read_err == "missing" then
+    return { valid = true }
+  end
+  if not parsed then
+    return { valid = true }
+  end
+
+  if type(parsed.shortcuts) ~= "table" then
+    return {
+      valid = false,
+      reason = "missing shortcuts object",
+      value = nil,
+    }
+  end
+
+  local close = parsed.shortcuts.close
+  if not is_valid_shortcut_string(close) then
+    return {
+      valid = false,
+      reason = "shortcuts.close must be a non-empty shortcut string",
+      value = close,
+    }
+  end
+
+  return { valid = true, value = close }
+end
+
+local close_warning_shown = false
+
+--- Warn once per Neovim session when shortcuts.close is invalid.
+function M.warn_invalid_close_shortcut_once()
+  if close_warning_shown then
+    return
+  end
+  local check = M.validate_close_shortcut()
+  if check.valid then
+    return
+  end
+  close_warning_shown = true
+  vim.notify(
+    "Raccoon: invalid shortcuts.close in config.json. "
+      .. "Set \"shortcuts\": { \"close\": \"<leader>q\" }. "
+      .. "Most :Raccoon commands are blocked until fixed. Run :Raccoon config.",
+    vim.log.levels.WARN
+  )
+end
+
+--- Best-effort minimal textual patch for required shortcuts.close.
+---@param content string
+---@param parsed table
+---@return string|nil patched, string? err
+local function patch_required_close_shortcut(content, parsed)
+  local desired = "\"<leader>q\""
+  local has_shortcuts = type(parsed.shortcuts) == "table"
+  local has_close_key = has_shortcuts and parsed.shortcuts.close ~= nil
+
+  if has_close_key then
+    local replaced, count = content:gsub('("close"%s*:%s*)([^,%}%]]+)', "%1" .. desired, 1)
+    if count == 1 then
+      return replaced, nil
+    end
+    return nil, "could not safely patch existing shortcuts.close value"
+  end
+
+  if has_shortcuts then
+    local start_i, end_i = content:find('"shortcuts"%s*:%s*%{')
+    if not start_i or not end_i then
+      return nil, "could not locate shortcuts object for close insertion"
+    end
+
+    local line_prefix = content:sub(1, start_i):match("([^\n]*)$") or ""
+    local indent = line_prefix:match("^(%s*)") or ""
+    local multiline = content:find("\n", end_i + 1, true) ~= nil
+    local insertion
+    if multiline then
+      insertion = "\n" .. indent .. "  \"close\": \"<leader>q\","
+    else
+      insertion = " \"close\": \"<leader>q\","
+    end
+    return content:sub(1, end_i) .. insertion .. content:sub(end_i + 1), nil
+  end
+
+  -- No shortcuts object: inject minimal path at root.
+  local close_obj_multiline = '"shortcuts": {\n  "close": "<leader>q"\n}'
+  local close_obj_inline = '"shortcuts": {"close": "<leader>q"}'
+  local insert_pos = content:match("()%s*}$")
+  if not insert_pos then
+    return nil, "could not locate root object close brace for shortcuts insertion"
+  end
+
+  local existing_keys = next(parsed) ~= nil
+  local has_newline = content:find("\n", 1, true) ~= nil
+  local prefix = content:sub(1, insert_pos - 1)
+  local suffix = content:sub(insert_pos)
+
+  local injection
+  if has_newline then
+    if existing_keys then
+      injection = ",\n  " .. close_obj_multiline
+    else
+      injection = "\n  " .. close_obj_multiline .. "\n"
+    end
+  else
+    if existing_keys then
+      injection = "," .. close_obj_inline
+    else
+      injection = close_obj_inline
+    end
+  end
+
+  return prefix .. injection .. suffix, nil
+end
+
+--- Auto-fix invalid/missing shortcuts.close in config.json.
+---@return table
+function M.autofix_close_shortcut()
+  local stat = vim.uv.fs_stat(M.config_path)
+  if not stat then
+    return { changed = false, skipped = true, reason = "missing_config" }
+  end
+
+  local file = io.open(M.config_path, "r")
+  if not file then
+    return { changed = false, skipped = true, reason = "read_error" }
+  end
+  local content = file:read("*a")
+  file:close()
+
+  local ok, parsed = pcall(vim.json.decode, content)
+  if not ok or type(parsed) ~= "table" then
+    return { changed = false, skipped = true, reason = "parse_error" }
+  end
+
+  local old_value = nil
+  if type(parsed.shortcuts) == "table" then
+    old_value = parsed.shortcuts.close
+  end
+  local check = M.validate_close_shortcut()
+  if check.valid then
+    return { changed = false, skipped = true, reason = "already_valid", old_value = old_value }
+  end
+
+  local patched, patch_err = patch_required_close_shortcut(content, parsed)
+  if not patched then
+    return {
+      changed = false,
+      skipped = true,
+      reason = "unsafe_patch",
+      error = patch_err,
+      old_value = old_value,
+    }
+  end
+
+  local out = io.open(M.config_path, "w")
+  if not out then
+    return { changed = false, skipped = true, reason = "write_error", old_value = old_value }
+  end
+  out:write(patched)
+  out:close()
+
+  return {
+    changed = true,
+    old_value = old_value,
+    new_value = "<leader>q",
+  }
 end
 
 return M

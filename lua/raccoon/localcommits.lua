@@ -888,7 +888,9 @@ local function exit_local_mode(opts)
   end
 
   local_state = make_initial_state()
-  vim.notify("Exited local commit viewer", vim.log.levels.INFO)
+  if not opts.silent then
+    vim.notify("Exited local commit viewer", vim.log.levels.INFO)
+  end
 end
 
 --- Toggle local commit viewer mode
@@ -901,7 +903,7 @@ function M.toggle()
 end
 
 --- Exit local commit viewer mode (safe to call when not active)
----@param opts table|nil { resume_pr?: boolean }
+---@param opts table|nil { resume_pr?: boolean, silent?: boolean }
 function M.exit_local_mode(opts)
   if not local_state.active then
     local_state = make_initial_state()

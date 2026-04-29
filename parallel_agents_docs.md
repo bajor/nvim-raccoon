@@ -1,6 +1,6 @@
 # Parallel Agents
 
-Dispatch fire-and-forget CLI agent processes (e.g. `claude -p`, `amp -x`) directly from the commit viewer's maximized diff view. Review a commit diff, optionally select code, and fire off an agent with context automatically injected. Multiple agents can run in parallel.
+Dispatch fire-and-forget CLI agent processes (e.g. `claude -p`, `amp -x`) directly from maximized **`Current changes`** diffs in local commit viewer mode. Review a diff, optionally select code, and fire off an agent with context automatically injected. Multiple agents can run in parallel.
 
 ## Configuration
 
@@ -40,8 +40,8 @@ For `claude`, use either `--dangerously-skip-permissions` or `--allowedTools <to
 
 ## Usage
 
-1. Open the commit viewer (`:Raccoon commits` or `:Raccoon local`)
-2. Navigate to a commit and maximize a diff cell (`<leader>m1`, `<leader>m2`, etc.) or browse files and press Enter
+1. Open local commit viewer (`:Raccoon local`)
+2. Select **Current changes** in the sidebar and maximize a diff cell (`<leader>m1`, `<leader>m2`, etc.) or browse files and press Enter
 3. In the maximized diff view:
    - **Normal mode**: Press the shortcut (default `<leader>aa`), type your task, press `<leader>s` to send
    - **Visual mode**: Select lines of interest, press the shortcut, type your task, press `<leader>s` to send
@@ -91,5 +91,6 @@ Multiple agents can run simultaneously on the same repo. Since they share the wo
 
 - The feature is completely inert when `enabled` is `false` (the default) — no keymaps are registered and no agent processes are spawned
 - Agents run as child processes of Neovim — closing Neovim will terminate running agents, so ensure agents complete before exiting
+- `:Raccoon exit` hard-stops all running parallel-agent jobs as part of global teardown
 - The shortcut works in both normal and visual mode, making it the first visual-mode keymap in the commit viewer
 - The feature is only available in local commit viewer mode (`:Raccoon local`), not in PR commit viewer mode

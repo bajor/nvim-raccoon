@@ -9,6 +9,7 @@ local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 local state = require("raccoon.state")
+local windows = require("raccoon.windows")
 
 --- Default keymap options
 local default_opts = { noremap = true, silent = true }
@@ -388,6 +389,7 @@ function M.merge_picker()
       else
         ci_status = format_ci_status(check_runs)
       end
+      local shortcuts = config.load_shortcuts()
 
       -- Create picker buffer with CI status
       local lines = {
@@ -399,7 +401,7 @@ function M.merge_picker()
         "  [2] Squash       - Squash and merge",
         "  [3] Rebase       - Rebase and merge",
         "",
-        "  [q] Cancel",
+        string.format("  [%s] Cancel", shortcuts.close),
       }
 
       local buf = vim.api.nvim_create_buf(false, true)
@@ -420,12 +422,13 @@ function M.merge_picker()
         title = " Merge PR ",
         title_pos = "center",
       })
+      windows.mark(win)
 
       -- Highlight the title and CI status
       vim.api.nvim_buf_call(buf, function()
         vim.fn.matchadd("Title", "^Select merge method.*")
         vim.fn.matchadd("Number", "\\[1\\]\\|\\[2\\]\\|\\[3\\]")
-        vim.fn.matchadd("Comment", "\\[q\\]")
+        vim.fn.matchadd("Comment", "^  \\[.*\\] Cancel$")
         -- Highlight CI status based on content
         if ci_status:find("failed") then
           vim.fn.matchadd("ErrorMsg", "CI:.*failed.*")
@@ -453,17 +456,13 @@ function M.merge_picker()
         elseif cursor_line == 7 then do_merge("rebase")
         end
       end, { buffer = buf, noremap = true, silent = true })
-      local shortcuts = config.load_shortcuts()
       local close_win = function()
         if vim.api.nvim_win_is_valid(win) then
           vim.api.nvim_win_close(win, true)
         end
       end
       local close_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
-      if config.is_enabled(shortcuts.close) then
-        vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, close_opts)
-      end
-      vim.keymap.set(NORMAL_MODE, "<Esc>", close_win, close_opts)
+      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, close_opts)
     end)
   end)
 end

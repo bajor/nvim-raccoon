@@ -1,6 +1,6 @@
 # Keyboard Shortcuts Reference
 
-All keyboard shortcuts in raccoon.nvim are configurable via the `shortcuts` field in `~/.config/raccoon/config.json`. You only need to specify the keys you want to change — unspecified keys keep their defaults. Set any shortcut to `false` to disable it entirely.
+Most keyboard shortcuts in raccoon.nvim are configurable via the `shortcuts` field in `~/.config/raccoon/config.json` (feature-specific shortcuts: `parallel_agents.shortcut`, `human_edit.shortcut`). You only need to specify the keys you want to change — unspecified keys keep their defaults. Set any shortcut except `shortcuts.close` to `false` to disable it.
 
 Run `:Raccoon shortcuts` (or press `<leader>?` by default) to see your active bindings in a floating window.
 
@@ -10,10 +10,10 @@ Shortcuts are loaded from `config.json` at startup and whenever a floating windo
 
 Values are validated on load:
 - **Strings** are accepted as keybindings (e.g. `"<leader>j"`, `"<C-n>"`, `"gj"`)
-- **`false`** disables the shortcut — the keymap is not registered, but the feature remains available via `:Raccoon` commands
+- **`false`** disables the shortcut — the keymap is not registered. For shortcuts that have command equivalents, the corresponding `:Raccoon` command still works. (`shortcuts.close` is the exception and cannot be disabled.)
 - **Invalid values** (numbers, `null`, empty strings) are silently replaced with the default
 
-Every floating window always responds to `Esc`, so disabling `close` won't lock you out.
+`shortcuts.close` is mandatory and must be a non-empty string (default: `<leader>q`). If it is missing or invalid, most `:Raccoon` subcommands are blocked until fixed. Run `:Raccoon config` to auto-fix it.
 
 ## Config structure
 
@@ -41,7 +41,7 @@ These are registered at startup and work everywhere in Neovim while the plugin i
 | Config key | Default | Description |
 |------------|---------|-------------|
 | `pr_list` | `<leader>pr` | Open the PR list floating picker. Shows all open PRs across your configured repos, grouped by repository. Use `j`/`k` to navigate and `Enter` to open a PR for review. |
-| `show_shortcuts` | `<leader>?` | Open a floating window listing all active shortcuts grouped by category. Disabled shortcuts appear as `(disabled)`. The window closes on any keystroke. |
+| `show_shortcuts` | `<leader>?` | Open a floating window listing all active shortcuts grouped by category. Disabled shortcuts appear as `(disabled)`. Close it with `close`. |
 
 ## Review navigation
 
@@ -84,7 +84,7 @@ Used across multiple contexts.
 
 | Config key | Default | Description |
 |------------|---------|-------------|
-| `close` | `<leader>q` | Close the current floating window or exit the review session. Used in the PR list, comment windows, description window, merge picker, and other floating UI. `Esc` always works as a fallback. |
+| `close` | `<leader>q` | Close the current floating/maximized window. Used in the PR list, comment windows, description window, merge picker, and other floating UI. Use `:Raccoon exit` to end a PR review session. |
 
 ## Commit viewer mode
 
@@ -96,12 +96,12 @@ These shortcuts are nested under `shortcuts.commit_mode` in config and are only 
 | `prev_page` | `<leader>k` | Show the previous page of diff hunks. |
 | `next_page_alt` | `<leader>l` | Alias for `next_page`. Provides an alternative key for forward navigation. |
 | `exit` | `<leader>cm` | Exit commit viewer mode and return to the normal PR review view. |
-| `maximize_prefix` | `<leader>m` | Prefix for maximizing a grid cell. Followed by a cell number (1-9), e.g. `<leader>m1` maximizes cell 1 into a full floating window with the complete file diff. Inside the maximized view, normal vim navigation works (scrolling, search). Close with `q` or the `close` shortcut. |
+| `maximize_prefix` | `<leader>m` | Prefix for maximizing a grid cell. Followed by a cell number from `1..rows*cols` (for example `<leader>m1`). In local mode it also supports `<leader>mf` (file picker) and `<leader>mc` (commit picker). Inside maximized view, normal vim navigation works (scrolling, search). Close with `close`. |
 | `browse_files` | `<leader>f` | Toggle focus between the commit sidebar and the file tree. While in file tree mode, navigate with j/k, jump with gg/G, search with `/`, and press Enter to view a file's content at the current commit state. |
 
 ## Parallel agents (maximized diff view)
 
-Active inside the maximized diff floating window when `parallel_agents.enabled` is `true` in config. Works in both normal and visual mode.
+Active inside maximized **`Current changes`** diff floating windows in local mode (`:Raccoon local`) when `parallel_agents.enabled` is `true` in config. Works in both normal and visual mode.
 
 | Config key | Default | Description |
 |------------|---------|-------------|
@@ -162,4 +162,6 @@ Some shortcuts have `:Raccoon` command equivalents that work regardless of wheth
 | `list_comments` | `:Raccoon list` |
 | `merge` | `:Raccoon merge` / `:Raccoon squash` / `:Raccoon rebase` |
 | `commit_viewer` | `:Raccoon commits` |
-| `close` | `:Raccoon close` |
+| `close` | *(none; window-level only)* |
+
+`close` and `:Raccoon exit` are related but not equivalent: `close` dismisses the current window, while `:Raccoon exit` ends the active PR review session.

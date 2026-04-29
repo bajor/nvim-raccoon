@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Removed
+- **BREAKING**: Removed `:Raccoon close` command alias.
+- **BREAKING**: Removed `Esc` and bare `q` close behavior from raccoon popups/maximized windows. Window close is now only `shortcuts.close` (default `<leader>q`).
+
+### Added
+- Added `:Raccoon exit` as global raccoon teardown: exits PR/local/commit modes, closes raccoon popups, and stops running parallel-agent jobs.
+- Added warning when `:Raccoon exit` is called with nothing active (instead of silent no-op).
+- Added one-time startup warning when `shortcuts.close` is missing/invalid.
+- Added `:Raccoon config` auto-fix for missing/invalid `shortcuts.close` (writes `<leader>q`).
+
+### Changed
+- **BREAKING**: `shortcuts.close` is now mandatory and must be a non-empty string.
+- Most `:Raccoon` subcommands are blocked when `shortcuts.close` is invalid; only `:Raccoon config` and `:Raccoon exit` remain available.
+- `:Raccoon config` now warns when auto-fix cannot be safely applied (e.g. invalid JSON).
+- Documentation now distinguishes window-level `close` shortcut behavior from global `:Raccoon exit`.
+
 ## [0.11.1] - 2026-03-26
 
 ### Added

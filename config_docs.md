@@ -233,7 +233,7 @@ Maximum number of lines displayed in the commit message header bar. The header s
 |------|---------|
 | object | see below |
 
-Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized diff view. See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
+Configure fire-and-forget CLI agent dispatch from maximized `Current changes` diffs in local mode. See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -278,7 +278,7 @@ Configure the human edit feature for the commit viewer's maximized diff view. On
 }
 ```
 
-The edit window provides full Vim editing capabilities — insert mode, all editing keys, undo history, and LSP support. Press `<leader>s` to save and `q` or `<leader>q` to close. Modified files are auto-saved on close. If the file was modified externally (e.g. by a parallel agent) while editing, a 3-way merge is attempted automatically — clean merges are applied silently, conflicts show standard conflict markers.
+The edit window provides full Vim editing capabilities — insert mode, all editing keys, undo history, and LSP support. Press `<leader>s` to save and `<leader>q` to close (or your configured `shortcuts.close`). Modified files are auto-saved on close. If the file was modified externally (e.g. by a parallel agent) while editing, a 3-way merge is attempted automatically — clean merges are applied silently, conflicts show standard conflict markers.
 
 ### `shortcuts`
 
@@ -286,9 +286,11 @@ The edit window provides full Vim editing capabilities — insert mode, all edit
 |------|---------|
 | object | see [shortcuts_docs.md](shortcuts_docs.md) |
 
-Custom keyboard shortcuts. See [shortcuts_docs.md](shortcuts_docs.md) for the full reference of all 23 configurable shortcuts with descriptions and examples.
+Custom keyboard shortcuts. See [shortcuts_docs.md](shortcuts_docs.md) for the full reference of all configurable shortcuts with descriptions and examples.
 
-Partial overrides are merged with defaults — you only need to specify keys you want to change. Set any shortcut to `false` to disable it.
+Partial overrides are merged with defaults — you only need to specify keys you want to change. Set any shortcut except `shortcuts.close` to `false` to disable it.
+
+`shortcuts.close` is required and must be a non-empty string (default: `<leader>q`). If it is missing or invalid, most `:Raccoon` subcommands are blocked until fixed. `:Raccoon config` auto-fixes it to `<leader>q`.
 
 ```json
 {
@@ -349,6 +351,6 @@ The config file is always at `~/.config/raccoon/config.json`. This path is not c
 
 | Command | What it does |
 |---------|-------------|
-| `:Raccoon config` | Creates the file with defaults (if missing) and opens it in a buffer |
+| `:Raccoon config` | Creates the file with defaults (if missing), auto-fixes missing/invalid `shortcuts.close` to `<leader>q` when safe, and opens it in a buffer |
 
 The file is plain JSON — edit it with any editor. Changes take effect on the next PR operation (no restart needed).

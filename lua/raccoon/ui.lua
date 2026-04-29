@@ -7,6 +7,7 @@ local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local state = require("raccoon.state")
 local localcommits = require("raccoon.localcommits")
+local windows = require("raccoon.windows")
 
 --- Current floating window state
 M.state = {
@@ -61,6 +62,7 @@ function M.create_floating_window(opts)
   -- Create window
   local enter = opts.enter ~= false
   local win = vim.api.nvim_open_win(buf, enter, win_opts)
+  windows.mark(win)
 
   -- Set window options
   vim.wo[win].cursorline = true
@@ -154,8 +156,7 @@ local function render_pr_list(prs, buf_width, shortcuts)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-    table.insert(lines, string.format("  Press 'r' to refresh, '%s' to close", close_key))
+    table.insert(lines, string.format("  Press 'r' to refresh, '%s' to close", shortcuts.close))
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -211,8 +212,7 @@ local function render_pr_list(prs, buf_width, shortcuts)
 
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
-  local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", close_key))
+  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", shortcuts.close))
 
   return lines, highlights
 end
@@ -388,10 +388,7 @@ function M.show_pr_list()
   end, opts)
 
   -- Close keymaps
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function() M.close_pr_list() end, opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function() M.close_pr_list() end, opts)
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function() M.close_pr_list() end, opts)
 
   -- Refresh on r
   vim.keymap.set(NORMAL_MODE, "r", function() M.refresh_pr_list() end, opts)
@@ -700,13 +697,7 @@ function M.show_description()
   -- Close keymaps (also clear state)
   local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-      M.state.description_win = nil
-    end, opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
     M.state.description_win = nil
   end, opts)
@@ -825,23 +816,37 @@ function M.show_shortcuts()
     pcall(vim.api.nvim_buf_add_highlight, buf, ns, hl.hl, hl.line, 0, -1)
   end
 
-  -- Close on any keystroke
+  -- Close on configured close shortcut
   local function close_win()
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
     end
   end
 
-  local key_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
-  -- Map all printable chars
-  local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()-_=+[]{}|;:',.<>?/ "
-  for i = 1, #chars do
-    pcall(vim.keymap.set, NORMAL_MODE, chars:sub(i, i), close_win, key_opts)
+  local key_opts = { buffer = buf, noremap = true, silent = true }
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, key_opts)
+end
+
+--- Return whether any raccoon UI window is currently open.
+---@return boolean
+function M.has_open_windows()
+  if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
+    return true
   end
-  -- Map special keys
-  for _, key in ipairs({ "<CR>", "<Esc>", "<Space>", "<BS>", "<Tab>", "<leader>" }) do
-    pcall(vim.keymap.set, NORMAL_MODE, key, close_win, key_opts)
+  if M.state.description_win and vim.api.nvim_win_is_valid(M.state.description_win) then
+    return true
   end
+  return windows.has_open()
+end
+
+--- Close all raccoon floating windows/popups.
+function M.close_all_windows()
+  M.close_pr_list()
+  if M.state.description_win and vim.api.nvim_win_is_valid(M.state.description_win) then
+    pcall(vim.api.nvim_win_close, M.state.description_win, true)
+  end
+  M.state.description_win = nil
+  windows.close_all()
 end
 
 return M

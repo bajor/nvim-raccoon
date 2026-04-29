@@ -662,7 +662,7 @@ describe("raccoon.comments show_readonly_thread", function()
     assert.equals(" Thread ", config.title[1][1])
   end)
 
-  it("closes on q keypress", function()
+  it("closes on close shortcut keypress", function()
     comments.show_readonly_thread({
       comments = {
         { body = "Test", user = { login = "alice" } },

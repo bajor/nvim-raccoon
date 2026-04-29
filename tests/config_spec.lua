@@ -496,6 +496,11 @@ describe("raccoon.config", function()
       assert.is_false(config.is_enabled(""))
     end)
 
+    it("returns false for whitespace-only strings", function()
+      assert.is_false(config.is_enabled(" "))
+      assert.is_false(config.is_enabled("\t"))
+    end)
+
     it("returns false for non-string types", function()
       assert.is_false(config.is_enabled(42))
       assert.is_false(config.is_enabled({}))
@@ -712,6 +717,189 @@ describe("raccoon.config", function()
       local shortcuts = config.load_shortcuts()
       assert.is_nil(shortcuts.nonexistent_key)
       assert.equals("<leader>pp", shortcuts.pr_list)
+
+      os.remove(tmpfile)
+    end)
+
+    it("forces shortcuts.close to default when user disables it", function()
+      local tmpfile = test_tmp_dir .. "/close_disabled_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "close": false
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.equals(config.defaults.shortcuts.close, shortcuts.close)
+
+      os.remove(tmpfile)
+    end)
+  end)
+
+  describe("validate_close_shortcut", function()
+    it("is valid when config file is missing", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local result = config.validate_close_shortcut()
+      assert.is_true(result.valid)
+    end)
+
+    it("is invalid when shortcuts object is missing", function()
+      local tmpfile = test_tmp_dir .. "/missing_shortcuts_for_close.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"}
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local result = config.validate_close_shortcut()
+      assert.is_false(result.valid)
+      assert.truthy(result.reason:find("missing shortcuts object", 1, true))
+
+      os.remove(tmpfile)
+    end)
+
+    it("is invalid when shortcuts.close is false", function()
+      local tmpfile = test_tmp_dir .. "/invalid_close_false.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "close": false
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local result = config.validate_close_shortcut()
+      assert.is_false(result.valid)
+      assert.equals(false, result.value)
+
+      os.remove(tmpfile)
+    end)
+
+    it("is invalid when shortcuts.close is whitespace", function()
+      local tmpfile = test_tmp_dir .. "/invalid_close_whitespace.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "close": "   "
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local result = config.validate_close_shortcut()
+      assert.is_false(result.valid)
+
+      os.remove(tmpfile)
+    end)
+
+    it("is valid when shortcuts.close is a non-empty binding", function()
+      local tmpfile = test_tmp_dir .. "/valid_close_shortcut.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "close": "<leader>x"
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local result = config.validate_close_shortcut()
+      assert.is_true(result.valid)
+      assert.equals("<leader>x", result.value)
+
+      os.remove(tmpfile)
+    end)
+  end)
+
+  describe("autofix_close_shortcut", function()
+    it("inserts missing shortcuts.close into an existing shortcuts object", function()
+      local tmpfile = test_tmp_dir .. "/autofix_insert_close.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+  "tokens": {"user": "ghp_xxx"},
+  "shortcuts": {
+    "pr_list": "<leader>pr"
+  }
+}]])
+      f:close()
+
+      config.config_path = tmpfile
+      local result = config.autofix_close_shortcut()
+      assert.is_true(result.changed)
+
+      local out = io.open(tmpfile, "r")
+      local content = out:read("*a")
+      out:close()
+      assert.truthy(content:find('"close"%s*:%s*"<leader>q"'))
+
+      os.remove(tmpfile)
+    end)
+
+    it("replaces invalid shortcuts.close value", function()
+      local tmpfile = test_tmp_dir .. "/autofix_replace_close.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+  "tokens": {"user": "ghp_xxx"},
+  "shortcuts": {
+    "close": false
+  }
+}]])
+      f:close()
+
+      config.config_path = tmpfile
+      local result = config.autofix_close_shortcut()
+      assert.is_true(result.changed)
+      assert.equals(false, result.old_value)
+      assert.equals("<leader>q", result.new_value)
+
+      local out = io.open(tmpfile, "r")
+      local content = out:read("*a")
+      out:close()
+      assert.truthy(content:find('"close"%s*:%s*"<leader>q"'))
+
+      os.remove(tmpfile)
+    end)
+
+    it("adds minimal shortcuts object when missing", function()
+      local tmpfile = test_tmp_dir .. "/autofix_add_shortcuts.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+  "tokens": {"user": "ghp_xxx"}
+}]])
+      f:close()
+
+      config.config_path = tmpfile
+      local result = config.autofix_close_shortcut()
+      assert.is_true(result.changed)
+
+      local out = io.open(tmpfile, "r")
+      local content = out:read("*a")
+      out:close()
+      assert.truthy(content:find('"shortcuts"%s*:%s*%{'))
+      assert.truthy(content:find('"close"%s*:%s*"<leader>q"'))
+
+      os.remove(tmpfile)
+    end)
+
+    it("skips when JSON is invalid", function()
+      local tmpfile = test_tmp_dir .. "/autofix_invalid_json.json"
+      local f = io.open(tmpfile, "w")
+      f:write("{ invalid json }")
+      f:close()
+
+      config.config_path = tmpfile
+      local result = config.autofix_close_shortcut()
+      assert.is_false(result.changed)
+      assert.equals("parse_error", result.reason)
 
       os.remove(tmpfile)
     end)

@@ -6,6 +6,7 @@ local api = require("raccoon.api")
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local state = require("raccoon.state")
+local windows = require("raccoon.windows")
 
 --- Get a valid line number from a comment, handling vim.NIL from JSON null
 ---@param comment table
@@ -301,16 +302,11 @@ function M.show_comment_popup(comment)
     title = " Comment ",
     title_pos = "center",
   })
+  windows.mark(win)
 
   -- Close keymaps
   local shortcuts = config.load_shortcuts()
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-    end, { buffer = buf, noremap = true, silent = true })
-  end
-
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 end
@@ -373,17 +369,13 @@ function M.show_readonly_thread(opts)
     title = opts.title or " Thread ",
     title_pos = "center",
   })
+  windows.mark(win)
 
   vim.wo[win].wrap = true
 
   local shortcuts = config.load_shortcuts()
   local keymap_opts = { buffer = buf, noremap = true, silent = true }
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-    end, keymap_opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, keymap_opts)
 end
@@ -484,6 +476,7 @@ function M.show_comment_thread()
     title = M._build_thread_title(current_line, shortcuts),
     title_pos = "center",
   })
+  windows.mark(win)
 
   -- Helper to find which comment section cursor is in
   local function get_cursor_section()
@@ -801,12 +794,7 @@ function M.show_comment_thread()
   if config.is_enabled(shortcuts.comment_unresolve) then
     vim.keymap.set(NORMAL_MODE, shortcuts.comment_unresolve, unresolve_thread, km_opts)
   end
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-    end, { buffer = buf, noremap = true, silent = true })
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 
@@ -852,6 +840,7 @@ function M.create_comment()
     title = M._build_comment_title("New Comment", shortcuts),
     title_pos = "center",
   })
+  windows.mark(win)
 
   -- Start in insert mode
   vim.cmd("startinsert")
@@ -979,17 +968,7 @@ function M.create_comment()
   end
 
   -- Keymap: close/cancel
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      if not submitted then
-        vim.notify("Comment cancelled", vim.log.levels.INFO)
-      end
-      vim.api.nvim_win_close(win, true)
-    end, { buffer = buf, noremap = true, silent = true })
-  end
-
-  -- Also allow Escape to cancel
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     if not submitted then
       vim.notify("Comment cancelled", vim.log.levels.INFO)
     end
@@ -1113,6 +1092,7 @@ function M.list_comments()
     title = " All PR Comments (" .. total_count .. ") ",
     title_pos = "center",
   })
+  windows.mark(win)
 
   -- Track window for toggle behavior
   comment_list_win = win
@@ -1165,10 +1145,7 @@ function M.list_comments()
   end, { buffer = buf, noremap = true, silent = true })
 
   -- Close keymaps
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_list, { buffer = buf, noremap = true, silent = true })
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", close_list, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, close_list, { buffer = buf, noremap = true, silent = true })
 end
 
 --- Toggle resolved status of comment at current line

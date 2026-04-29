@@ -40,7 +40,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 - Merge, squash, or rebase PRs
 - Auto-sync to detect new commits pushed to the branch
 - Local commit viewer (`:Raccoon local`) for browsing any git repo's history with live "Current changes" view
-- Dispatch CLI agents (claude, amp, aider) from local commit viewer diffs with context injection
+- Dispatch CLI agents (claude, amp, aider) from maximized `Current changes` diffs in local commit viewer
 - Statusline integration showing file position and sync status
 
 ## Requirements
@@ -95,7 +95,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 | `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (1–500) |
 | `commit_viewer.commit_message_max_lines` | number | `3` | Max lines shown in the commit message header (1–50) |
-| `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
+| `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized `Current changes` diffs in local commit viewer (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
 | `human_edit.shortcut` | string/false | `"<leader>ee"` | Shortcut to open file for editing from maximized diff view (set to `false` to disable) |
 | `human_edit.command` | string | `"git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"` | Post-edit command template (`<FILE>` = shell-escaped relative path, `<TIMESTAMP>` = current timestamp; set to `""` to disable) |
 
@@ -138,7 +138,7 @@ The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for R
 
 ### Shortcut defaults
 
-See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
+See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
 
 ### Full config example
 
@@ -157,7 +157,7 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
   },
   "parallel_agents": {
     "enabled": true,
-    "command": "claude -p <PROMPT>",
+    "command": "claude --dangerously-skip-permissions -p <PROMPT>",
     "suffix_prompt": "Commit and push when done."
   },
   "human_edit": {
@@ -196,7 +196,9 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
 
 ### Disabling shortcuts
 
-Set any shortcut to `false` to prevent it from being registered as a keymap. The feature remains available via `:Raccoon` commands. Every floating window always responds to `Esc`, so disabling `close` won't lock you out.
+Set any shortcut (except `shortcuts.close`) to `false` to prevent it from being registered as a keymap. For shortcuts that have command equivalents, the corresponding `:Raccoon` command still works.
+
+`shortcuts.close` is required and must be a non-empty string (default: `<leader>q`). If it is missing or invalid, most `:Raccoon` subcommands are blocked until fixed. `:Raccoon config` auto-fixes it to `<leader>q`.
 
 ```json
 {
@@ -243,12 +245,12 @@ One review session is active at a time. Opening a second PR closes the first.
 | `:Raccoon commits` | Toggle commit viewer mode |
 | `:Raccoon local` | Toggle local commit viewer for the current repo |
 | `:Raccoon shortcuts` | Show all keyboard shortcuts in a floating window |
-| `:Raccoon close` | Close the review session |
-| `:Raccoon config` | Open the config file (creates default if missing) |
+| `:Raccoon exit` | Global teardown: exits PR/local/commit modes, closes raccoon popups, and stops running parallel agents |
+| `:Raccoon config` | Open the config file (creates default if missing, auto-fixes invalid `shortcuts.close` when safe) |
 
 ## Keymaps
 
-All keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Set any shortcut to `false` to disable it entirely — the keymap won't be registered, but the underlying `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
+Most keymaps are configurable via the `shortcuts` field in `config.json` (feature-specific shortcuts: `parallel_agents.shortcut`, `human_edit.shortcut`). The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Set any shortcut except `shortcuts.close` to `false` to disable it entirely — the keymap won't be registered. For shortcuts that have command equivalents, the corresponding `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
 
 | Key | Config key | Action |
 |-----|------------|--------|
@@ -265,7 +267,7 @@ All keymaps are configurable via the `shortcuts` field in `config.json`. The val
 | `<leader>?` | `show_shortcuts` | Show shortcuts help |
 | `<leader>rr` | `merge` | Merge PR (pick method) |
 | `<leader>cm` | `commit_viewer` | Toggle commit viewer mode |
-| `<leader>q` | `close` | Close window / exit session |
+| `<leader>q` | `close` | Close floating/maximized window (`:Raccoon exit` ends PR session) |
 
 ## Commit Viewer Mode
 
@@ -286,14 +288,14 @@ Commit mode shortcuts live under `shortcuts.commit_mode` in config:
 | `<leader>f` | `commit_mode.browse_files` | Toggle focus between commit sidebar and file tree |
 | `<leader>m1`..`m9` | `commit_mode.maximize_prefix` | Maximize a grid cell (full file diff) |
 | `<leader>ee` | `human_edit.shortcut` | Edit the file from maximized view (local mode only) |
-| `<leader>q` / `q` | `close` | Exit maximized view |
+| `<leader>q` | `close` | Exit maximized view |
 | `<leader>cm` | `commit_mode.exit` | Exit commit viewer mode |
 
 Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number are shown in the winbar. A header bar displays the current commit message and page indicator. Navigation crosses seamlessly from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
 
 Most vim keybindings are disabled in commit mode to prevent breaking the layout. Only the keys listed above work. Exit with `<leader>cm`. Auto-sync is paused while commit viewer mode is active and resumes automatically when you exit.
 
-Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. In local mode (working-directory diffs), press `<leader>ee` to edit the file directly, or `<leader>aa` to dispatch an agent. Close with `q` or `<leader>q`.
+Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. In local mode (working-directory diffs), press `<leader>ee` to edit the file directly, or `<leader>aa` to dispatch an agent. Close with `<leader>q` (or your configured `shortcuts.close`).
 
 ### File tree browsing
 
@@ -327,7 +329,7 @@ Configure with the `parallel_agents` block in `config.json`. Set `command` to yo
 
 Press `<leader>ee` in a maximized diff view to open the actual file in an editable floating window. This feature is only available in **local mode** (working-directory diffs) where the file exists on disk. Unlike the read-only maximize view, this gives you full Vim editing capabilities — insert mode, all editing keys, and undo history. If your LSP is configured to auto-attach, it will work in the edit window since it opens the real file buffer. The cursor maps from your position in the diff to the corresponding line in the real file.
 
-Use `<leader>s` to save and `q` or `<leader>q` to close. Modified files are auto-saved on close. When viewing working-directory changes, the maximize diff refreshes automatically after edits to show your updated diff.
+Use `<leader>s` to save and `<leader>q` to close (or your configured `shortcuts.close`). Modified files are auto-saved on close. When viewing working-directory changes, the maximize diff refreshes automatically after edits to show your updated diff.
 
 After closing the edit window, if any edits were made and saved successfully, a configurable post-edit command runs automatically. By default it stages the edited file, commits with a "human edit" timestamp message, and pushes:
 

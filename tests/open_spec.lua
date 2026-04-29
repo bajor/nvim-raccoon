@@ -170,6 +170,145 @@ describe("raccoon.open", function()
       assert.is_not_nil(notify_msg)
       assert.truthy(notify_msg:match("closed"))
     end)
+
+    it("supports silent_success option", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      local notify_called = false
+      local original_notify = vim.notify
+      vim.notify = function()
+        notify_called = true
+      end
+
+      open.close_pr({ silent_success = true })
+
+      vim.notify = original_notify
+      assert.is_false(notify_called)
+    end)
+  end)
+
+  describe("close_all_sessions", function()
+    local original_localcommits
+    local original_commits
+    local original_parallel_agents
+    local original_ui
+
+    before_each(function()
+      original_localcommits = package.loaded["raccoon.localcommits"]
+      original_commits = package.loaded["raccoon.commits"]
+      original_parallel_agents = package.loaded["raccoon.parallel_agents"]
+      original_ui = package.loaded["raccoon.ui"]
+    end)
+
+    after_each(function()
+      package.loaded["raccoon.localcommits"] = original_localcommits
+      package.loaded["raccoon.commits"] = original_commits
+      package.loaded["raccoon.parallel_agents"] = original_parallel_agents
+      package.loaded["raccoon.ui"] = original_ui
+    end)
+
+    it("warns when nothing is active", function()
+      local notifications = {}
+      local original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(notifications, { msg = msg, level = level })
+      end
+
+      package.loaded["raccoon.localcommits"] = {
+        is_active = function() return false end,
+        exit_local_mode = function() error("should not be called") end,
+      }
+      package.loaded["raccoon.commits"] = {
+        exit_commit_mode = function() error("should not be called") end,
+      }
+      package.loaded["raccoon.parallel_agents"] = {
+        get_running_count = function() return 0 end,
+        kill_all = function() return { requested = 0, stopped = 0, errors = {} } end,
+      }
+      package.loaded["raccoon.ui"] = {
+        has_open_windows = function() return false end,
+        close_all_windows = function() error("should not be called") end,
+      }
+
+      local did_exit = open.close_all_sessions()
+      vim.notify = original_notify
+
+      assert.is_false(did_exit)
+      assert.equals(1, #notifications)
+      assert.equals(vim.log.levels.WARN, notifications[1].level)
+      assert.truthy(notifications[1].msg:find("Nothing to exit", 1, true))
+    end)
+
+    it("kills agents and tears down active modes", function()
+      local local_exit_calls = 0
+      local commit_exit_calls = 0
+      local close_windows_calls = 0
+      local kill_calls = 0
+      local closed_pr = 0
+
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+      state.set_commit_mode(true)
+
+      package.loaded["raccoon.localcommits"] = {
+        is_active = function() return true end,
+        exit_local_mode = function(opts)
+          local_exit_calls = local_exit_calls + 1
+          assert.is_false(opts.resume_pr)
+          assert.is_true(opts.silent)
+        end,
+      }
+      package.loaded["raccoon.commits"] = {
+        exit_commit_mode = function(opts)
+          commit_exit_calls = commit_exit_calls + 1
+          assert.is_false(opts.resume_sync)
+          assert.is_true(opts.silent)
+        end,
+      }
+      package.loaded["raccoon.parallel_agents"] = {
+        get_running_count = function() return 2 end,
+        kill_all = function()
+          kill_calls = kill_calls + 1
+          return { requested = 2, stopped = 2, errors = {} }
+        end,
+      }
+      package.loaded["raccoon.ui"] = {
+        has_open_windows = function() return true end,
+        close_all_windows = function()
+          close_windows_calls = close_windows_calls + 1
+        end,
+      }
+
+      local original_close_pr = open.close_pr
+      open.close_pr = function(opts)
+        closed_pr = closed_pr + 1
+        assert.is_true(opts.silent_success)
+        assert.is_true(opts.suppress_empty_warning)
+        state.stop()
+        return true
+      end
+
+      local did_exit = open.close_all_sessions()
+      open.close_pr = original_close_pr
+
+      assert.is_true(did_exit)
+      assert.equals(1, kill_calls)
+      assert.equals(1, local_exit_calls)
+      assert.equals(1, commit_exit_calls)
+      assert.equals(1, closed_pr)
+      assert.equals(1, close_windows_calls)
+    end)
   end)
 
   describe("sync", function()

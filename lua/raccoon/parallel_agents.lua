@@ -3,9 +3,12 @@
 local M = {}
 
 local config = require("raccoon.config")
+local windows = require("raccoon.windows")
 
 --- Active agents: array of {job_id, task_name}
 local agents = {}
+local suppress_exit_notifications = false
+local kill_in_progress = false
 
 --- Build the prompt string from dispatch opts and user task text
 ---@param opts table Dispatch context
@@ -71,7 +74,7 @@ local function open_task_input(on_submit, view_state, popup_width)
   local col = math.floor((vim.o.columns - width) / 2)
 
   local save_key = config.is_enabled(shortcuts.comment_save) and shortcuts.comment_save or "<leader>s"
-  local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "q"
+  local close_key = shortcuts.close
   local title = string.format(" Agent Task (%s=send, %s=cancel) ", save_key, close_key)
 
   -- Set truthy sentinel before open_win so the WinEnter focus lock sees it
@@ -90,6 +93,7 @@ local function open_task_input(on_submit, view_state, popup_width)
     title_pos = "center",
     zindex = 200,
   })
+  windows.mark(win)
 
   if view_state then view_state.popup_win = win end
 
@@ -118,11 +122,8 @@ local function open_task_input(on_submit, view_state, popup_width)
   if config.is_enabled(shortcuts.comment_save) then
     vim.keymap.set("n", shortcuts.comment_save, submit, buf_opts)
   end
-  vim.keymap.set("n", "q", close, buf_opts)
-  vim.keymap.set("i", "<C-c>", close, buf_opts)
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set("n", shortcuts.close, close, buf_opts)
-  end
+  vim.keymap.set("n", shortcuts.close, close, buf_opts)
+  vim.keymap.set("i", shortcuts.close, close, buf_opts)
 end
 
 --- Dispatch an agent process
@@ -193,6 +194,10 @@ function M.dispatch(opts)
             end
           end
 
+          if suppress_exit_notifications then
+            return
+          end
+
           local level = exit_code == 0 and vim.log.levels.INFO or vim.log.levels.WARN
           local msg = string.format("Agent finished (exit %d): %s", exit_code, task_text)
           if exit_code ~= 0 and #stderr_lines > 0 then
@@ -212,6 +217,44 @@ function M.dispatch(opts)
       vim.notify("Failed to start agent: command not executable", vim.log.levels.ERROR)
     end
   end, opts.view_state, pa_cfg.popup_width)
+end
+
+--- Kill all running agent jobs and clear tracker.
+--- Best effort: continues on individual failures.
+---@return table summary {requested: number, stopped: number, errors: string[], in_progress?: boolean}
+function M.kill_all()
+  if kill_in_progress then
+    return { requested = 0, stopped = 0, errors = {}, in_progress = true }
+  end
+
+  kill_in_progress = true
+  suppress_exit_notifications = true
+
+  local running = agents
+  agents = {}
+
+  local stopped = 0
+  local errors = {}
+
+  for _, agent in ipairs(running) do
+    local ok, result = pcall(vim.fn.jobstop, agent.job_id)
+    if not ok then
+      table.insert(errors, string.format("job %d: %s", agent.job_id, tostring(result)))
+    elseif result == 1 then
+      stopped = stopped + 1
+    elseif result ~= 0 and result ~= -1 then
+      table.insert(errors, string.format("job %d: unexpected jobstop result %s", agent.job_id, tostring(result)))
+    end
+  end
+
+  suppress_exit_notifications = false
+  kill_in_progress = false
+
+  return {
+    requested = #running,
+    stopped = stopped,
+    errors = errors,
+  }
 end
 
 ---@private

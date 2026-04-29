@@ -475,4 +475,67 @@ describe("raccoon.parallel_agents", function()
       os.remove(tmpfile)
     end)
   end)
+
+  describe("kill_all", function()
+    it("stops running jobs and clears tracking", function()
+      local agents = pa._get_agents()
+      table.insert(agents, { job_id = 101, task_name = "a" })
+      table.insert(agents, { job_id = 202, task_name = "b" })
+
+      local stopped_ids = {}
+      local original_jobstop = vim.fn.jobstop
+      vim.fn.jobstop = function(id)
+        table.insert(stopped_ids, id)
+        return 1
+      end
+
+      local result = pa.kill_all()
+      vim.fn.jobstop = original_jobstop
+
+      assert.equals(2, result.requested)
+      assert.equals(2, result.stopped)
+      assert.equals(0, #result.errors)
+      assert.equals(0, pa.get_running_count())
+      assert.same({ 101, 202 }, stopped_ids)
+    end)
+
+    it("ignores already-gone jobs", function()
+      local agents = pa._get_agents()
+      table.insert(agents, { job_id = 303, task_name = "a" })
+      table.insert(agents, { job_id = 404, task_name = "b" })
+
+      local original_jobstop = vim.fn.jobstop
+      vim.fn.jobstop = function(id)
+        if id == 303 then return 0 end
+        return -1
+      end
+
+      local result = pa.kill_all()
+      vim.fn.jobstop = original_jobstop
+
+      assert.equals(2, result.requested)
+      assert.equals(0, result.stopped)
+      assert.equals(0, #result.errors)
+      assert.equals(0, pa.get_running_count())
+    end)
+
+    it("collects hard errors from jobstop", function()
+      local agents = pa._get_agents()
+      table.insert(agents, { job_id = 505, task_name = "a" })
+
+      local original_jobstop = vim.fn.jobstop
+      vim.fn.jobstop = function()
+        error("boom")
+      end
+
+      local result = pa.kill_all()
+      vim.fn.jobstop = original_jobstop
+
+      assert.equals(1, result.requested)
+      assert.equals(0, result.stopped)
+      assert.equals(1, #result.errors)
+      assert.truthy(result.errors[1]:find("job 505", 1, true))
+      assert.equals(0, pa.get_running_count())
+    end)
+  end)
 end)

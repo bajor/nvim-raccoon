@@ -5,6 +5,7 @@ local M = {}
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
+local windows = require("raccoon.windows")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
@@ -529,7 +530,7 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
     local width, height, row, col = float_dimensions()
 
     local save_key = config.is_enabled(shortcuts.comment_save) and shortcuts.comment_save or "<leader>s"
-    local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "q"
+    local close_key = shortcuts.close
 
     -- Set sentinel before open_win so the WinEnter focus lock sees it
     -- (open_win fires WinEnter synchronously before we can assign the real handle)
@@ -549,9 +550,10 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       vim.notify("Failed to open edit window: " .. tostring(edit_win), vim.log.levels.ERROR)
       return
     end
+    windows.mark(edit_win)
 
     vim.wo[edit_win].winbar = " Edit: " .. opts.filename
-      .. "%=%#Comment# " .. save_key .. "=save  " .. close_key .. " or q to close %*"
+      .. "%=%#Comment# " .. save_key .. "=save  " .. close_key .. " to close %*"
     vim.wo[edit_win].number = true
     vim.wo[edit_win].wrap = true
     vim.wo[edit_win].signcolumn = "yes:1"
@@ -649,10 +651,7 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       end
       -- Remove buffer-local keymaps/autocmds so they don't persist on the real file buffer
       pcall(vim.api.nvim_del_autocmd, text_changed_au)
-      pcall(vim.keymap.del, NORMAL_MODE, "q", { buffer = edit_buf })
-      if config.is_enabled(shortcuts.close) then
-        pcall(vim.keymap.del, NORMAL_MODE, shortcuts.close, { buffer = edit_buf })
-      end
+      pcall(vim.keymap.del, NORMAL_MODE, shortcuts.close, { buffer = edit_buf })
       if config.is_enabled(shortcuts.comment_save) then
         pcall(vim.keymap.del, NORMAL_MODE, shortcuts.comment_save, { buffer = edit_buf })
       end
@@ -692,10 +691,7 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
         end
       end, edit_km)
     end
-    if config.is_enabled(shortcuts.close) then
-      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_edit, edit_km)
-    end
-    vim.keymap.set(NORMAL_MODE, "q", close_edit, edit_km)
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_edit, edit_km)
   end, buf_opts)
 end
 
@@ -1425,6 +1421,7 @@ function M.open_maximize(opts)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return
     end
+    windows.mark(win)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
@@ -1445,7 +1442,7 @@ function M.open_maximize(opts)
     M.apply_diff_highlights(opts.ns_id, buf, hl_lines)
 
     local shortcuts = config.load_shortcuts()
-    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+    local close_hint = shortcuts.close
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
@@ -1463,10 +1460,7 @@ function M.open_maximize(opts)
     local function close_fn()
       M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
     end
-    if config.is_enabled(shortcuts.close) then
-      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
-    end
-    vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
 
     if #change_starts > 0 and config.is_enabled(shortcuts.commit_mode.next_page) then
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_mode.next_page, function()
@@ -1716,13 +1710,14 @@ function M.open_file_content(opts)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return
     end
+    windows.mark(win)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
     opts.state.maximize_hl_lines = nil
 
     local shortcuts = config.load_shortcuts()
-    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
+    local close_hint = shortcuts.close
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].wrap = true
 
@@ -1732,10 +1727,7 @@ function M.open_file_content(opts)
     local function close_fn()
       M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
     end
-    if config.is_enabled(shortcuts.close) then
-      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
-    end
-    vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
   end)
 end
 

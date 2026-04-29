@@ -71,6 +71,7 @@ function M.setup(opts)
 
   -- Load shortcuts from config (falls back to defaults gracefully)
   local cfg = require("raccoon.config")
+  cfg.warn_invalid_close_shortcut_once()
   local shortcuts = cfg.load_shortcuts()
   local NORMAL_MODE = cfg.NORMAL
 

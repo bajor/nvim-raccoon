@@ -505,7 +505,7 @@ local function enter_commit_mode()
 end
 
 --- Exit commit viewer mode
----@param opts table|nil { resume_sync?: boolean }
+---@param opts table|nil { resume_sync?: boolean, silent?: boolean }
 local function exit_commit_mode(opts)
   opts = opts or {}
   if not commit_state.active then
@@ -546,7 +546,9 @@ local function exit_commit_mode(opts)
   end
 
   reset_state()
-  vim.notify("Exited commit viewer mode", vim.log.levels.INFO)
+  if not opts.silent then
+    vim.notify("Exited commit viewer mode", vim.log.levels.INFO)
+  end
 end
 
 --- Toggle commit viewer mode
@@ -559,7 +561,7 @@ function M.toggle()
 end
 
 --- Exit commit viewer mode (safe to call when not active)
----@param opts table|nil { resume_sync?: boolean }
+---@param opts table|nil { resume_sync?: boolean, silent?: boolean }
 function M.exit_commit_mode(opts)
   exit_commit_mode(opts)
 end

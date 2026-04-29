@@ -8,6 +8,7 @@ local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local INSERT_MODE = config.INSERT
 local state = require("raccoon.state")
+local windows = require("raccoon.windows")
 
 --- Review event types
 M.events = {
@@ -71,6 +72,7 @@ function M.show_submit_ui()
 
   local pr = state.get_pr()
   local pending = comments.get_pending_comments()
+  local shortcuts = config.load_shortcuts()
 
   -- Build prompt lines
   local lines = {
@@ -85,7 +87,7 @@ function M.show_submit_ui()
     "  [r] Request changes",
     "  [c] Comment only",
     "",
-    "  [q] Cancel",
+    string.format("  [%s] Cancel", shortcuts.close),
   }
 
   -- Create buffer
@@ -108,6 +110,7 @@ function M.show_submit_ui()
     title = " Submit Review ",
     title_pos = "center",
   })
+  windows.mark(win)
 
   -- Handle key presses
   local function handle_selection(event)
@@ -127,15 +130,7 @@ function M.show_submit_ui()
     handle_selection(M.events.COMMENT)
   end, { buffer = buf, noremap = true, silent = true })
 
-  local shortcuts = config.load_shortcuts()
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-      vim.notify("Review cancelled", vim.log.levels.INFO)
-    end, { buffer = buf, noremap = true, silent = true })
-  end
-
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
     vim.notify("Review cancelled", vim.log.levels.INFO)
   end, { buffer = buf, noremap = true, silent = true })
@@ -166,6 +161,7 @@ function M.prompt_review_body(event)
   -- Create floating window
   local width = 70
   local height = 15
+  local shortcuts = config.load_shortcuts()
 
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
@@ -175,9 +171,10 @@ function M.prompt_review_body(event)
     height = height,
     style = "minimal",
     border = "rounded",
-    title = string.format(" %s (Ctrl-S to submit, q to cancel) ", event_name),
+    title = string.format(" %s (Ctrl-S to submit, %s to cancel) ", event_name, shortcuts.close),
     title_pos = "center",
   })
+  windows.mark(win)
 
   -- Move cursor to empty line and start insert
   vim.api.nvim_win_set_cursor(win, { 5, 0 })
@@ -214,13 +211,10 @@ function M.prompt_review_body(event)
   end, { buffer = buf, noremap = true, silent = true })
 
   -- Cancel in normal mode
-  local shortcuts = config.load_shortcuts()
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-      vim.notify("Review cancelled", vim.log.levels.INFO)
-    end, { buffer = buf, noremap = true, silent = true })
-  end
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
+    vim.api.nvim_win_close(win, true)
+    vim.notify("Review cancelled", vim.log.levels.INFO)
+  end, { buffer = buf, noremap = true, silent = true })
 end
 
 --- Quick approve - approve without comments
@@ -310,15 +304,10 @@ function M.show_status()
     title = " Review Status ",
     title_pos = "center",
   })
+  windows.mark(win)
 
   local shortcuts = config.load_shortcuts()
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-    end, { buffer = buf, noremap = true, silent = true })
-  end
-
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, noremap = true, silent = true })
 end

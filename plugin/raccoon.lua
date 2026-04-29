@@ -4,13 +4,175 @@ if vim.g.loaded_raccoon then
 end
 vim.g.loaded_raccoon = 1
 
+local function format_config_value(value)
+  if value == nil or value == vim.NIL then
+    return "null"
+  end
+  if type(value) == "string" then
+    return string.format("%q", value)
+  end
+  return tostring(value)
+end
+
+local function create_default_config(config_path)
+  local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
+  local home = vim.fn.expand("~")
+  clone_root = clone_root:gsub("^" .. vim.pesc(home), "~")
+  local default_config = string.format([[{
+  "github_host": "github.com",
+  "tokens": {
+    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
+  },
+  "clone_root": "%s",
+  "pull_changes_interval": 300,
+  "commit_viewer": {
+    "grid": { "rows": 2, "cols": 2 },
+    "base_commits_count": 20
+  },
+  "shortcuts": {
+    "pr_list": "<leader>pr",
+    "show_shortcuts": "<leader>?",
+    "next_point": "<leader>j",
+    "prev_point": "<leader>k",
+    "next_file": "<leader>nf",
+    "prev_file": "<leader>pf",
+    "next_thread": "<leader>nt",
+    "prev_thread": "<leader>pt",
+    "comment": "<leader>c",
+    "description": "<leader>dd",
+    "list_comments": "<leader>ll",
+    "merge": "<leader>rr",
+    "commit_viewer": "<leader>cm",
+    "comment_save": "<leader>s",
+    "comment_resolve": "<leader>r",
+    "comment_unresolve": "<leader>u",
+    "close": "<leader>q",
+    "commit_mode": {
+      "next_page": "<leader>j",
+      "prev_page": "<leader>k",
+      "next_page_alt": "<leader>l",
+      "exit": "<leader>cm",
+      "maximize_prefix": "<leader>m",
+      "browse_files": "<leader>f"
+    }
+  }
+}]], clone_root)
+  local file = io.open(config_path, "w")
+  if file then
+    file:write(default_config)
+    file:close()
+  end
+end
+
+local function open_config_with_autofix()
+  local cfg = require("raccoon.config")
+  local config_path = cfg.config_path
+  local config_dir = vim.fn.fnamemodify(config_path, ":h")
+  if vim.fn.isdirectory(config_dir) == 0 then
+    vim.fn.mkdir(config_dir, "p")
+  end
+
+  if vim.fn.filereadable(config_path) == 0 then
+    create_default_config(config_path)
+    vim.cmd("edit " .. config_path)
+    return
+  end
+
+  local fix = cfg.autofix_close_shortcut()
+  if fix.changed then
+    vim.notify(
+      string.format(
+        "Raccoon config auto-fix: shortcuts.close %s -> %q",
+        format_config_value(fix.old_value),
+        fix.new_value
+      ),
+      vim.log.levels.WARN
+    )
+  elseif fix.reason == "parse_error" then
+    vim.notify(
+      "Raccoon: config.json has invalid JSON; skipped auto-fix for shortcuts.close",
+      vim.log.levels.WARN
+    )
+  elseif fix.reason == "unsafe_patch" then
+    vim.notify(
+      "Raccoon: could not safely auto-fix shortcuts.close in-place; open and update it manually.",
+      vim.log.levels.WARN
+    )
+  end
+
+  vim.cmd("edit " .. config_path)
+end
+
+local known_subcommands = {
+  open = true,
+  prs = true,
+  list = true,
+  description = true,
+  desc = true,
+  sync = true,
+  update = true,
+  refresh = true,
+  exit = true,
+  merge = true,
+  squash = true,
+  rebase = true,
+  shortcuts = true,
+  commits = true,
+  ["local"] = true,
+  config = true,
+}
+
+local function validate_required_close_or_warn(subcommand)
+  if subcommand == "config" or subcommand == "exit" then
+    return true
+  end
+
+  local cfg = require("raccoon.config")
+  local check = cfg.validate_close_shortcut()
+  if check.valid then
+    return true
+  end
+
+  local msg = string.format(
+    "Cannot run :Raccoon %s because shortcuts.close is invalid (%s).\n"
+      .. "Current value: %s\n"
+      .. "Fix config to include: \"shortcuts\": { \"close\": \"<leader>q\" }\n"
+      .. "Run :Raccoon config to auto-fix.",
+    subcommand,
+    check.reason or "invalid value",
+    format_config_value(check.value)
+  )
+  vim.notify(msg, vim.log.levels.ERROR)
+  return false
+end
+
 -- Create the Raccoon command
 vim.api.nvim_create_user_command("Raccoon", function(opts)
   local args = opts.fargs
   local subcommand = args[1]
 
   if not subcommand then
-    vim.notify("Usage: :Raccoon <prs|list|description|sync|merge|local|close>", vim.log.levels.WARN)
+    vim.notify("Usage: :Raccoon <prs|list|description|sync|merge|local|exit>", vim.log.levels.WARN)
+    return
+  end
+
+  if not known_subcommands[subcommand] then
+    vim.notify("Unknown subcommand: " .. subcommand, vim.log.levels.ERROR)
+    return
+  end
+
+  if subcommand == "config" then
+    open_config_with_autofix()
+    return
+  end
+
+  if subcommand == "exit" then
+    local pr_open = require("raccoon.open")
+    pr_open.close_all_sessions()
+    return
+  end
+
+  if not validate_required_close_or_warn(subcommand) then
     return
   end
 
@@ -45,9 +207,6 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   elseif subcommand == "sync" or subcommand == "update" or subcommand == "refresh" then
     local pr_open = require("raccoon.open")
     pr_open.sync()
-  elseif subcommand == "close" then
-    local pr_open = require("raccoon.open")
-    pr_open.close_pr()
   elseif subcommand == "merge" or subcommand == "squash" or subcommand == "rebase" then
     local state = require("raccoon.state")
     local api = require("raccoon.api")
@@ -123,67 +282,6 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   elseif subcommand == "local" then
     local localcommits = require("raccoon.localcommits")
     localcommits.toggle()
-  elseif subcommand == "config" then
-    -- Open config file in current buffer
-    local config_path = require("raccoon.config").config_path
-    -- Create directory if it doesn't exist
-    local config_dir = vim.fn.fnamemodify(config_path, ":h")
-    if vim.fn.isdirectory(config_dir) == 0 then
-      vim.fn.mkdir(config_dir, "p")
-    end
-    -- Create default config if file doesn't exist
-    if vim.fn.filereadable(config_path) == 0 then
-      local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
-      local home = vim.fn.expand("~")
-      clone_root = clone_root:gsub("^" .. vim.pesc(home), "~")
-      local default_config = string.format([[{
-  "github_host": "github.com",
-  "tokens": {
-    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
-  },
-  "clone_root": "%s",
-  "pull_changes_interval": 300,
-  "commit_viewer": {
-    "grid": { "rows": 2, "cols": 2 },
-    "base_commits_count": 20
-  },
-  "shortcuts": {
-    "pr_list": "<leader>pr",
-    "show_shortcuts": "<leader>?",
-    "next_point": "<leader>j",
-    "prev_point": "<leader>k",
-    "next_file": "<leader>nf",
-    "prev_file": "<leader>pf",
-    "next_thread": "<leader>nt",
-    "prev_thread": "<leader>pt",
-    "comment": "<leader>c",
-    "description": "<leader>dd",
-    "list_comments": "<leader>ll",
-    "merge": "<leader>rr",
-    "commit_viewer": "<leader>cm",
-    "comment_save": "<leader>s",
-    "comment_resolve": "<leader>r",
-    "comment_unresolve": "<leader>u",
-    "close": "<leader>q",
-    "commit_mode": {
-      "next_page": "<leader>j",
-      "prev_page": "<leader>k",
-      "next_page_alt": "<leader>l",
-      "exit": "<leader>cm",
-      "maximize_prefix": "<leader>m",
-      "browse_files": "<leader>f"
-    }
-  }
-}]], clone_root)
-      local file = io.open(config_path, "w")
-      if file then
-        file:write(default_config)
-        file:close()
-      end
-    end
-    vim.cmd("edit " .. config_path)
-  else
-    vim.notify("Unknown subcommand: " .. subcommand, vim.log.levels.ERROR)
   end
 end, {
   nargs = "*",
@@ -192,8 +290,8 @@ end, {
     if #args == 2 then
       -- Complete subcommands
       return {
-        "prs", "list", "description", "sync", "merge", "squash",
-        "rebase", "commits", "local", "shortcuts", "close", "config",
+        "open", "prs", "list", "description", "desc", "sync", "update", "refresh",
+        "merge", "squash", "rebase", "commits", "local", "shortcuts", "exit", "config",
       }
     end
     return {}
