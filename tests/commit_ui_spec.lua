@@ -1,4 +1,5 @@
-local commit_ui = require("raccoon.commit_ui")
+local loader = require("tests.helpers.loader")
+local commit_ui = loader.reload_from_cwd("raccoon.commit_ui")
 
 describe("raccoon.commit_ui", function()
   -- Shared header window helper

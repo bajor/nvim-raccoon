@@ -538,7 +538,6 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
     local function close_edit()
       if edit_closed then return end
       edit_closed = true
-      -- Auto-save if modified
       local save_ok = false
       if vim.api.nvim_buf_is_valid(edit_buf) then
         if vim.bo[edit_buf].modified then
@@ -558,7 +557,7 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       if vim.api.nvim_win_is_valid(edit_win) then
         vim.api.nvim_win_close(edit_win, true)
       end
-      -- Clean up buffer-local keymaps and autocmds to avoid corrupting the real file buffer
+      -- Remove buffer-local keymaps/autocmds so they don't persist on the real file buffer
       pcall(vim.api.nvim_del_autocmd, text_changed_au)
       pcall(vim.keymap.del, NORMAL_MODE, "q", { buffer = edit_buf })
       if config.is_enabled(shortcuts.close) then
@@ -567,7 +566,6 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       if config.is_enabled(shortcuts.comment_save) then
         pcall(vim.keymap.del, NORMAL_MODE, shortcuts.comment_save, { buffer = edit_buf })
       end
-      -- Refresh maximize diff for working-dir views
       if opts.state.maximize_workdir_opts then
         M.refresh_maximize(opts.state)
       end
@@ -576,7 +574,6 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       end
     end
 
-    -- Clean up on any window close method (:q, :close, <C-w>c, etc.)
     vim.api.nvim_create_autocmd("WinClosed", {
       pattern = tostring(edit_win),
       once = true,
@@ -607,9 +604,10 @@ end
 ---@param grid_rows number Grid row count (for maximize prefix blocking)
 ---@param grid_cols number Grid column count
 ---@param skip_keys? table<string, boolean> Keys to exclude from blocking
-function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
+---@param shortcuts? table Pre-loaded shortcuts (avoids redundant config read)
+function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys, shortcuts)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  local shortcuts = config.load_shortcuts()
+  shortcuts = shortcuts or config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
   local nop = function() end
   shadow_global_keymaps(buf, NORMAL_MODE)
@@ -1044,6 +1042,7 @@ function M.close_win_pair(s, win_key, buf_key)
     M.stop_maximize_watcher(s)
     s.maximize_workdir_opts = nil
     s.maximize_hl_lines = nil
+    s.maximize_last_patch = nil
   end
 end
 
@@ -1329,6 +1328,7 @@ function M.open_maximize(opts)
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
     opts.state.maximize_hl_lines = hl_lines
+    opts.state.maximize_last_patch = patch
     M.stop_maximize_watcher(opts.state)
     if opts.is_working_dir then
       opts.state.maximize_workdir_opts = {
@@ -1356,7 +1356,7 @@ function M.open_maximize(opts)
         [shortcuts.commit_mode.prev_page] = true,
       }
     end
-    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols, skip_keys)
+    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols, skip_keys, shortcuts)
 
     local buf_opts = { buffer = buf, noremap = true, silent = true }
     local function close_fn()
@@ -1539,12 +1539,19 @@ function M.refresh_maximize(s)
     end
 
     if not patch or patch == "" then
-      vim.bo[buf].modifiable = true
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
-      vim.bo[buf].modifiable = false
-      s.maximize_hl_lines = nil
+      if s.maximize_last_patch ~= "" then
+        vim.bo[buf].modifiable = true
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+        vim.bo[buf].modifiable = false
+        s.maximize_hl_lines = nil
+        s.maximize_last_patch = ""
+      end
       return
     end
+
+    -- Skip buffer update when diff is unchanged (fs events can fire on metadata changes)
+    if patch == s.maximize_last_patch then return end
+    s.maximize_last_patch = patch
 
     local hunks = diff.parse_patch(patch)
     if #hunks == 0 then return end
@@ -1618,7 +1625,7 @@ function M.open_file_content(opts)
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].wrap = true
 
-    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
+    M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols, nil, shortcuts)
 
     local buf_opts = { buffer = buf, noremap = true, silent = true }
     local function close_fn()

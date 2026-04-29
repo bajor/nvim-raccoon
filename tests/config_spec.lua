@@ -1,16 +1,5 @@
--- Force-load from CWD to shadow any installed plugin copies
-local function reload_from_cwd(mod)
-  package.loaded[mod] = nil
-  local cwd = vim.fn.getcwd()
-  local path = cwd .. "/lua/" .. mod:gsub("%.", "/") .. ".lua"
-  local fn, err = loadfile(path)
-  if not fn then error("Failed to load " .. path .. ": " .. tostring(err)) end
-  local result = fn()
-  package.loaded[mod] = result
-  return result
-end
-
-local config = reload_from_cwd("raccoon.config")
+local loader = require("tests.helpers.loader")
+local config = loader.reload_from_cwd("raccoon.config")
 
 -- Use /tmp/claude/ for temp files (sandbox-safe)
 local test_tmp_dir = "/tmp/claude/raccoon-tests"
