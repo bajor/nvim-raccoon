@@ -452,4 +452,39 @@ describe("raccoon.commit_ui", function()
       assert.equals(2, commit_ui.diff_line_to_file_line(hl_lines, 4))
     end)
   end)
+
+  describe("three_way_merge", function()
+    it("returns clean merge when changes don't overlap", function()
+      local base   = { "line1", "line2", "line3", "line4", "line5" }
+      local ours   = { "line1", "OURS",  "line3", "line4", "line5" }
+      local theirs = { "line1", "line2", "line3", "line4", "THEIRS" }
+      local merged, exit_code = commit_ui.three_way_merge(base, ours, theirs)
+      assert.equals(0, exit_code)
+      assert.same({ "line1", "OURS", "line3", "line4", "THEIRS" }, merged)
+    end)
+
+    it("reports conflicts when changes overlap on same line", function()
+      local base   = { "line1", "line2", "line3" }
+      local ours   = { "line1", "OURS",  "line3" }
+      local theirs = { "line1", "THEIRS", "line3" }
+      local merged, exit_code = commit_ui.three_way_merge(base, ours, theirs)
+      assert.is_true(exit_code > 0)
+      local content = table.concat(merged, "\n")
+      assert.truthy(content:find("<<<<<<<"))
+      assert.truthy(content:find(">>>>>>>"))
+    end)
+
+    it("returns identical content when no changes", function()
+      local base = { "a", "b", "c" }
+      local merged, exit_code = commit_ui.three_way_merge(base, base, base)
+      assert.equals(0, exit_code)
+      assert.same(base, merged)
+    end)
+
+    it("handles empty files", function()
+      local merged, exit_code = commit_ui.three_way_merge({}, { "new line" }, {})
+      assert.equals(0, exit_code)
+      assert.same({ "new line" }, merged)
+    end)
+  end)
 end)

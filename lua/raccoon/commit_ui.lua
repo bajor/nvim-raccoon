@@ -447,6 +447,43 @@ local function run_post_command(command, filename, repo_path)
   end
 end
 
+--- Perform a 3-way merge using git merge-file.
+--- Compares the user's edits against external changes using the original file as the common ancestor.
+---@param base_lines string[] Original file content when edit window opened
+---@param ours_lines string[] User's buffer content
+---@param theirs_lines string[] Current file content on disk (external changes)
+---@return string[] merged_lines Merged result (may contain conflict markers)
+---@return number exit_code 0=clean, >0=conflict count, <0=git error
+local function three_way_merge(base_lines, ours_lines, theirs_lines)
+  local base_file = vim.fn.tempname()
+  local ours_file = vim.fn.tempname()
+  local theirs_file = vim.fn.tempname()
+
+  vim.fn.writefile(base_lines, base_file)
+  vim.fn.writefile(ours_lines, ours_file)
+  vim.fn.writefile(theirs_lines, theirs_file)
+
+  local merged = vim.fn.system({
+    "git", "merge-file", "--stdout",
+    "-L", "your changes",
+    "-L", "original",
+    "-L", "external changes",
+    ours_file, base_file, theirs_file,
+  })
+  local exit_code = vim.v.shell_error
+
+  os.remove(base_file)
+  os.remove(ours_file)
+  os.remove(theirs_file)
+
+  local merged_lines = vim.split(merged, "\n", { plain = true })
+  if #merged_lines > 0 and merged_lines[#merged_lines] == "" then
+    table.remove(merged_lines)
+  end
+
+  return merged_lines, exit_code
+end
+
 --- Set up the human edit keymap on a maximize buffer.
 --- Opens the actual file in an editable floating window.
 ---@param buf number Buffer to bind the keymap on
@@ -485,6 +522,9 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       vim.notify("Failed to load buffer for: " .. filepath, vim.log.levels.ERROR)
       return
     end
+
+    -- Snapshot file content for 3-way merge on close (detects external changes by agents)
+    local original_lines = vim.fn.readfile(filepath)
 
     local width, height, row, col = float_dimensions()
 
@@ -535,8 +575,58 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
     })
 
     local edit_closed = false
+    local merge_attempted = false
+
+    -- Check for external file changes and 3-way merge if needed.
+    -- Returns: "ok" (proceed), "conflict" (user must resolve), "error" (git failed)
+    local function check_merge_external()
+      if not was_ever_modified or merge_attempted then return "ok" end
+      if not vim.api.nvim_buf_is_valid(edit_buf) then return "ok" end
+
+      local disk_ok, current_disk_lines = pcall(vim.fn.readfile, filepath)
+      if not disk_ok then return "ok" end
+      if table.concat(current_disk_lines, "\n") == table.concat(original_lines, "\n") then return "ok" end
+
+      local buffer_lines = vim.api.nvim_buf_get_lines(edit_buf, 0, -1, false)
+      if table.concat(buffer_lines, "\n") == table.concat(current_disk_lines, "\n") then
+        -- Buffer already matches disk (e.g. autoread), just update baseline
+        original_lines = current_disk_lines
+        return "ok"
+      end
+
+      local merged_lines, exit_code = three_way_merge(original_lines, buffer_lines, current_disk_lines)
+      if exit_code < 0 then
+        vim.notify("Merge failed (git error). Save your changes manually.", vim.log.levels.ERROR)
+        return "error"
+      elseif exit_code > 0 then
+        vim.api.nvim_buf_set_lines(edit_buf, 0, -1, false, merged_lines)
+        merge_attempted = true
+        return "conflict", exit_code
+      else
+        vim.api.nvim_buf_set_lines(edit_buf, 0, -1, false, merged_lines)
+        original_lines = current_disk_lines
+        vim.notify("File modified externally — changes merged automatically.", vim.log.levels.INFO)
+        return "ok"
+      end
+    end
+
     local function close_edit()
       if edit_closed then return end
+
+      local status, conflict_count = check_merge_external()
+      if status == "error" then
+        if vim.api.nvim_win_is_valid(edit_win) then return end
+      elseif status == "conflict" then
+        if vim.api.nvim_win_is_valid(edit_win) then
+          vim.notify(
+            string.format("File modified externally. %d conflict(s) — resolve markers and close again.", conflict_count),
+            vim.log.levels.WARN
+          )
+          return
+        end
+        vim.notify("File modified externally with conflicts — saved with conflict markers.", vim.log.levels.WARN)
+      end
+
       edit_closed = true
       local save_ok = false
       if vim.api.nvim_buf_is_valid(edit_buf) then
@@ -583,8 +673,19 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
     local edit_km = { buffer = edit_buf, noremap = true, silent = true }
     if config.is_enabled(shortcuts.comment_save) then
       vim.keymap.set(NORMAL_MODE, shortcuts.comment_save, function()
+        local status, conflict_count = check_merge_external()
+        if status == "error" then return end
+        if status == "conflict" then
+          vim.notify(
+            string.format("File modified externally. %d conflict(s) — resolve markers before saving.", conflict_count),
+            vim.log.levels.WARN
+          )
+          return
+        end
         local ok, err = pcall(vim.cmd, "write")
         if ok then
+          original_lines = vim.api.nvim_buf_get_lines(edit_buf, 0, -1, false)
+          merge_attempted = false
           vim.notify("Saved " .. opts.filename, vim.log.levels.INFO)
         else
           vim.notify("Failed to save " .. opts.filename .. ": " .. tostring(err), vim.log.levels.ERROR)
@@ -2258,5 +2359,6 @@ function M.split_sidebar_cursor_to_index(cursor_line, section1_count)
 end
 
 M.diff_line_to_file_line = diff_line_to_file_line
+M.three_way_merge = three_way_merge
 
 return M
