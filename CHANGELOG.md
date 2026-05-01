@@ -4,13 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
-
-### Changed
-- **BREAKING**: `parallel_agents.shortcut` is deprecated and ignored; use `shortcuts.commit_mode.dispatch_agent` instead.
-- **BREAKING**: `human_edit.shortcut` is deprecated and ignored; use `shortcuts.commit_mode.human_edit` instead.
-- All keybindings are now unified under the `shortcuts` config block. Legacy `*.shortcut` fields emit a one-time deprecation warning per session.
-
 ## [0.12.0] - 2026-05-01
 
 ### Removed
@@ -24,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `:Raccoon config` auto-fix for missing/invalid `shortcuts.close` (writes `<leader>q`).
 
 ### Changed
+- **BREAKING**: `parallel_agents.shortcut` is deprecated and ignored; use `shortcuts.commit_mode.dispatch_agent` instead.
+- **BREAKING**: `human_edit.shortcut` is deprecated and ignored; use `shortcuts.commit_mode.human_edit` instead.
+- All keybindings are now unified under the `shortcuts` config block. Legacy `*.shortcut` fields emit a one-time deprecation warning per session.
 - **BREAKING**: `shortcuts.close` is now mandatory and must be a non-empty string.
 - Most `:Raccoon` subcommands are blocked when `shortcuts.close` is invalid; only `:Raccoon config` and `:Raccoon exit` remain available.
 - `:Raccoon config` now warns when auto-fix cannot be safely applied (e.g. invalid JSON).
