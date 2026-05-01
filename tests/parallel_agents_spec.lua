@@ -537,5 +537,28 @@ describe("raccoon.parallel_agents", function()
       assert.truthy(result.errors[1]:find("job 505", 1, true))
       assert.equals(0, pa.get_running_count())
     end)
+
+    it("always clears in-progress lock when unexpected errors occur", function()
+      local agents = pa._get_agents()
+      table.insert(agents, { job_id = 606, task_name = "a" })
+
+      local original_ipairs = ipairs
+      _G.ipairs = function()
+        error("unexpected ipairs failure")
+      end
+
+      local ok, result = pcall(pa.kill_all)
+      _G.ipairs = original_ipairs
+
+      assert.is_true(ok)
+      assert.equals(1, result.requested)
+      assert.equals(0, result.stopped)
+      assert.equals(1, #result.errors)
+      assert.truthy(result.errors[1]:find("kill_all failed", 1, true))
+
+      local second = pa.kill_all()
+      assert.equals(0, second.requested)
+      assert.is_nil(second.in_progress)
+    end)
   end)
 end)

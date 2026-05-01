@@ -236,19 +236,25 @@ function M.kill_all()
   local stopped = 0
   local errors = {}
 
-  for _, agent in ipairs(running) do
-    local ok, result = pcall(vim.fn.jobstop, agent.job_id)
-    if not ok then
-      table.insert(errors, string.format("job %d: %s", agent.job_id, tostring(result)))
-    elseif result == 1 then
-      stopped = stopped + 1
-    elseif result ~= 0 and result ~= -1 then
-      table.insert(errors, string.format("job %d: unexpected jobstop result %s", agent.job_id, tostring(result)))
+  local ok, err = xpcall(function()
+    for _, agent in ipairs(running) do
+      local stop_ok, result = pcall(vim.fn.jobstop, agent.job_id)
+      if not stop_ok then
+        table.insert(errors, string.format("job %s: %s", tostring(agent.job_id), tostring(result)))
+      elseif result == 1 then
+        stopped = stopped + 1
+      elseif result ~= 0 and result ~= -1 then
+        table.insert(errors, string.format("job %s: unexpected jobstop result %s", tostring(agent.job_id), tostring(result)))
+      end
     end
-  end
+  end, debug.traceback)
 
   suppress_exit_notifications = false
   kill_in_progress = false
+
+  if not ok then
+    table.insert(errors, "kill_all failed: " .. tostring(err))
+  end
 
   return {
     requested = #running,

@@ -309,6 +309,74 @@ describe("raccoon.open", function()
       assert.equals(1, closed_pr)
       assert.equals(1, close_windows_calls)
     end)
+
+    it("resets exit guard when teardown raises", function()
+      local notifications = {}
+      local original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(notifications, { msg = msg, level = level })
+      end
+
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      package.loaded["raccoon.localcommits"] = {
+        is_active = function() return false end,
+        exit_local_mode = function() error("should not be called") end,
+      }
+      package.loaded["raccoon.commits"] = {
+        exit_commit_mode = function() error("should not be called") end,
+      }
+      package.loaded["raccoon.parallel_agents"] = {
+        get_running_count = function() return 0 end,
+        kill_all = function() return { requested = 0, stopped = 0, errors = {} } end,
+      }
+      package.loaded["raccoon.ui"] = {
+        has_open_windows = function() return false end,
+        close_all_windows = function()
+          error("boom")
+        end,
+      }
+
+      local original_close_pr = open.close_pr
+      open.close_pr = function()
+        state.stop()
+        return true
+      end
+
+      local first_exit = open.close_all_sessions()
+      assert.is_false(first_exit)
+
+      package.loaded["raccoon.ui"] = {
+        has_open_windows = function() return false end,
+        close_all_windows = function() end,
+      }
+
+      local second_exit = open.close_all_sessions()
+      open.close_pr = original_close_pr
+      vim.notify = original_notify
+
+      assert.is_false(second_exit)
+
+      local saw_exit_error = false
+      local saw_nothing_warning = false
+      for _, note in ipairs(notifications) do
+        if note.level == vim.log.levels.ERROR and note.msg:find("Raccoon exit failed", 1, true) then
+          saw_exit_error = true
+        end
+        if note.level == vim.log.levels.WARN and note.msg:find("Nothing to exit", 1, true) then
+          saw_nothing_warning = true
+        end
+      end
+
+      assert.is_true(saw_exit_error)
+      assert.is_true(saw_nothing_warning)
+    end)
   end)
 
   describe("sync", function()

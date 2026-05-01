@@ -709,48 +709,55 @@ function M.close_all_sessions()
   end
   exit_in_progress = true
 
-  local commits = require("raccoon.commits")
-  local localcommits = require("raccoon.localcommits")
-  local parallel_agents = require("raccoon.parallel_agents")
-  local ui = require("raccoon.ui")
+  local ok, did_exit_or_err = xpcall(function()
+    local commits = require("raccoon.commits")
+    local localcommits = require("raccoon.localcommits")
+    local parallel_agents = require("raccoon.parallel_agents")
+    local ui = require("raccoon.ui")
 
-  local has_any = state.is_active()
-    or state.is_commit_mode()
-    or localcommits.is_active()
-    or parallel_agents.get_running_count() > 0
-    or ui.has_open_windows()
+    local has_any = state.is_active()
+      or state.is_commit_mode()
+      or localcommits.is_active()
+      or parallel_agents.get_running_count() > 0
+      or ui.has_open_windows()
 
-  if not has_any then
-    vim.notify("Nothing to exit. Use :Raccoon prs or :Raccoon local.", vim.log.levels.WARN)
-    exit_in_progress = false
-    return false
-  end
+    if not has_any then
+      vim.notify("Nothing to exit. Use :Raccoon prs or :Raccoon local.", vim.log.levels.WARN)
+      return false
+    end
 
-  local kill_summary = parallel_agents.kill_all()
+    local kill_summary = parallel_agents.kill_all()
 
-  if localcommits.is_active() then
-    localcommits.exit_local_mode({ resume_pr = false, silent = true })
-  end
+    if localcommits.is_active() then
+      localcommits.exit_local_mode({ resume_pr = false, silent = true })
+    end
 
-  if state.is_commit_mode() then
-    commits.exit_commit_mode({ resume_sync = false, silent = true })
-  end
+    if state.is_commit_mode() then
+      commits.exit_commit_mode({ resume_sync = false, silent = true })
+    end
 
-  if state.is_active() then
-    M.close_pr({ silent_success = true, suppress_empty_warning = true })
-  end
+    if state.is_active() then
+      M.close_pr({ silent_success = true, suppress_empty_warning = true })
+    end
 
-  ui.close_all_windows()
+    ui.close_all_windows()
 
-  if kill_summary and kill_summary.errors and #kill_summary.errors > 0 then
-    vim.notify(
-      "Raccoon exit: some agent jobs could not be stopped:\n" .. table.concat(kill_summary.errors, "\n"),
-      vim.log.levels.WARN
-    )
-  end
+    if kill_summary and kill_summary.errors and #kill_summary.errors > 0 then
+      vim.notify(
+        "Raccoon exit: some agent jobs could not be stopped:\n" .. table.concat(kill_summary.errors, "\n"),
+        vim.log.levels.WARN
+      )
+    end
+
+    return true
+  end, debug.traceback)
 
   exit_in_progress = false
-  return true
+  if not ok then
+    vim.notify("Raccoon exit failed:\n" .. tostring(did_exit_or_err), vim.log.levels.ERROR)
+    return false
+  end
+  return did_exit_or_err
 end
 
 return M
