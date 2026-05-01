@@ -57,11 +57,14 @@ local function create_default_config(config_path)
     }
   }
 }]], clone_root)
-  local file = io.open(config_path, "w")
-  if file then
-    file:write(default_config)
-    file:close()
+  local file, err = io.open(config_path, "w")
+  if not file then
+    vim.notify("Raccoon: failed to create config: " .. (err or "unknown error"), vim.log.levels.ERROR)
+    return false
   end
+  file:write(default_config)
+  file:close()
+  return true
 end
 
 local function open_config_with_autofix()
@@ -73,8 +76,8 @@ local function open_config_with_autofix()
   end
 
   if vim.fn.filereadable(config_path) == 0 then
-    create_default_config(config_path)
-    vim.cmd("edit " .. config_path)
+    if not create_default_config(config_path) then return end
+    vim.cmd("edit " .. vim.fn.fnameescape(config_path))
     return
   end
 
@@ -100,7 +103,7 @@ local function open_config_with_autofix()
     )
   end
 
-  vim.cmd("edit " .. config_path)
+  vim.cmd("edit " .. vim.fn.fnameescape(config_path))
 end
 
 local known_subcommands = {

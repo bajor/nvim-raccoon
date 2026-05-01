@@ -390,6 +390,18 @@ local function diff_line_to_file_line(hl_lines, cursor_line)
   return 1
 end
 
+--- Substitute <FILE> and <TIMESTAMP> placeholders in a command template.
+---@param command string Command template
+---@param filename string Relative file path
+---@return string formatted_command
+function M.format_post_command(command, filename)
+  local escaped_file = vim.fn.shellescape(filename)
+  local cmd = command:gsub("<FILE>", function() return escaped_file end)
+  local timestamp = os.date("%Y-%m-%d_%H:%M:%S")
+  cmd = cmd:gsub("<TIMESTAMP>", function() return timestamp end)
+  return cmd
+end
+
 --- Run the configured post-edit shell command asynchronously.
 ---@param command string|nil Command template with <FILE> and <TIMESTAMP> placeholders; nil or "" to skip
 ---@param filename string Relative file path
@@ -402,10 +414,7 @@ local function run_post_command(command, filename, repo_path)
     return
   end
 
-  local escaped_file = vim.fn.shellescape(filename)
-  local cmd = command:gsub("<FILE>", function() return escaped_file end)
-  local timestamp = os.date("%Y-%m-%d_%H:%M:%S")
-  cmd = cmd:gsub("<TIMESTAMP>", function() return timestamp end)
+  local cmd = M.format_post_command(command, filename)
 
   local stdout_lines = {}
   local stderr_lines = {}
@@ -454,15 +463,21 @@ end
 ---@param ours_lines string[] User's buffer content
 ---@param theirs_lines string[] Current file content on disk (external changes)
 ---@return string[] merged_lines Merged result (may contain conflict markers)
----@return number exit_code 0=clean, >0=conflict count, <0=git error
+---@return number exit_code 0=clean, >0=conflict count, <0=error (write failure or git not found)
 local function three_way_merge(base_lines, ours_lines, theirs_lines)
   local base_file = vim.fn.tempname()
   local ours_file = vim.fn.tempname()
   local theirs_file = vim.fn.tempname()
 
-  vim.fn.writefile(base_lines, base_file)
-  vim.fn.writefile(ours_lines, ours_file)
-  vim.fn.writefile(theirs_lines, theirs_file)
+  if vim.fn.writefile(base_lines, base_file) ~= 0
+    or vim.fn.writefile(ours_lines, ours_file) ~= 0
+    or vim.fn.writefile(theirs_lines, theirs_file) ~= 0
+  then
+    os.remove(base_file)
+    os.remove(ours_file)
+    os.remove(theirs_file)
+    return {}, -1
+  end
 
   local merged = vim.fn.system({
     "git", "merge-file", "--stdout",
@@ -476,6 +491,12 @@ local function three_way_merge(base_lines, ours_lines, theirs_lines)
   os.remove(base_file)
   os.remove(ours_file)
   os.remove(theirs_file)
+
+  -- Exit codes > 100 indicate command execution failure (e.g. 127 = git not found),
+  -- not merge conflict counts.
+  if exit_code > 100 then
+    return {}, -1
+  end
 
   local merged_lines = vim.split(merged, "\n", { plain = true })
   if #merged_lines > 0 and merged_lines[#merged_lines] == "" then
@@ -586,7 +607,10 @@ local function setup_human_edit_keymap(buf, opts, shortcuts)
       if not vim.api.nvim_buf_is_valid(edit_buf) then return "ok" end
 
       local disk_ok, current_disk_lines = pcall(vim.fn.readfile, filepath)
-      if not disk_ok then return "ok" end
+      if not disk_ok then
+        vim.notify("Could not read file for merge check: " .. tostring(current_disk_lines), vim.log.levels.WARN)
+        return "error"
+      end
       if table.concat(current_disk_lines, "\n") == table.concat(original_lines, "\n") then return "ok" end
 
       local buffer_lines = vim.api.nvim_buf_get_lines(edit_buf, 0, -1, false)
@@ -2348,6 +2372,73 @@ function M.split_sidebar_cursor_to_index(cursor_line, section1_count)
   if line_0 <= section1_end + 2 then return nil end -- on separator or header
 
   return line_0 - 2 -- subtract blank + header to get combined index
+end
+
+--- Open a picker list in a floating window (file picker, commit picker).
+---@param opts table {title, items, state, on_select}
+function M.open_maximize_list(opts)
+  local items = opts.items or {}
+  if #items == 0 then return end
+
+  local lines = {}
+  for _, item in ipairs(items) do
+    table.insert(lines, item.display)
+  end
+
+  local width = math.max(1, math.floor(vim.o.columns * 0.6))
+  local height = math.max(1, math.min(#lines, math.floor(vim.o.lines * 0.7)))
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local buf = M.create_scratch_buf()
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  local ok, win = pcall(vim.api.nvim_open_win, buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    zindex = 50,
+  })
+  if not ok then
+    vim.notify("Failed to open picker window: " .. tostring(win), vim.log.levels.WARN)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    return
+  end
+
+  windows.mark(win)
+  opts.state.maximize_win = win
+  opts.state.maximize_buf = buf
+
+  local shortcuts = config.load_shortcuts()
+  vim.wo[win].winbar = " " .. opts.title .. "%=%#Comment# " .. (shortcuts.close or "<leader>q") .. " to exit %*"
+  vim.wo[win].cursorline = true
+
+  M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols, nil, shortcuts)
+
+  local buf_opts = { buffer = buf, noremap = true, silent = true }
+  local function close_fn()
+    M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
+  end
+  local function select_fn()
+    if not vim.api.nvim_win_is_valid(win) then return end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local idx = cursor[1]
+    if idx >= 1 and idx <= #items then
+      close_fn()
+      opts.on_select(items[idx].value)
+    end
+  end
+
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
+  end
+  vim.keymap.set(NORMAL_MODE, "<CR>", select_fn, buf_opts)
 end
 
 M.diff_line_to_file_line = diff_line_to_file_line

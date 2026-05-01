@@ -487,4 +487,38 @@ describe("raccoon.commit_ui", function()
       assert.same({ "new line" }, merged)
     end)
   end)
+
+  describe("format_post_command", function()
+    it("replaces <FILE> with shell-escaped filename", function()
+      local result = commit_ui.format_post_command("git add <FILE>", "src/my file.lua")
+      assert.truthy(result:find("git add"))
+      assert.truthy(result:find("my file"))
+      -- Should not contain raw <FILE> placeholder
+      assert.falsy(result:find("<FILE>"))
+    end)
+
+    it("replaces <TIMESTAMP> with a date string", function()
+      local result = commit_ui.format_post_command("git commit -m '<TIMESTAMP>'", "test.lua")
+      assert.falsy(result:find("<TIMESTAMP>"))
+      -- Timestamp format: YYYY-MM-DD_HH:MM:SS
+      assert.truthy(result:match("%d%d%d%d%-%d%d%-%d%d_%d%d:%d%d:%d%d"))
+    end)
+
+    it("replaces both placeholders in one command", function()
+      local result = commit_ui.format_post_command("git add <FILE> && git commit -m 'edit <TIMESTAMP>'", "foo.lua")
+      assert.falsy(result:find("<FILE>"))
+      assert.falsy(result:find("<TIMESTAMP>"))
+    end)
+
+    it("returns command unchanged when no placeholders present", function()
+      local cmd = "echo hello"
+      assert.equals(cmd, commit_ui.format_post_command(cmd, "test.lua"))
+    end)
+
+    it("handles multiple <FILE> placeholders", function()
+      local result = commit_ui.format_post_command("git add <FILE> && echo <FILE>", "test.lua")
+      -- Both should be replaced
+      assert.falsy(result:find("<FILE>"))
+    end)
+  end)
 end)

@@ -471,11 +471,8 @@ function M.validate_close_shortcut()
   end
 
   if type(parsed.shortcuts) ~= "table" then
-    return {
-      valid = false,
-      reason = "missing shortcuts object",
-      value = nil,
-    }
+    -- No shortcuts object means load_shortcuts() will use defaults (which include a valid close key)
+    return { valid = true }
   end
 
   local close = parsed.shortcuts.close
@@ -520,9 +517,17 @@ local function patch_required_close_shortcut(content, parsed)
   local has_close_key = has_shortcuts and parsed.shortcuts.close ~= nil
 
   if has_close_key then
-    local replaced, count = content:gsub('("close"%s*:%s*)([^,%}%]]+)', "%1" .. desired, 1)
+    -- Scope the replacement to inside the shortcuts object to avoid matching
+    -- a "close" key elsewhere in the config.
+    local sc_start, sc_end = content:find('"shortcuts"%s*:%s*%{')
+    if not sc_start or not sc_end then
+      return nil, "could not locate shortcuts object for close replacement"
+    end
+    local before = content:sub(1, sc_end)
+    local rest = content:sub(sc_end + 1)
+    local replaced, count = rest:gsub('("close"%s*:%s*)([^,%}%]]+)', "%1" .. desired, 1)
     if count == 1 then
-      return replaced, nil
+      return before .. replaced, nil
     end
     return nil, "could not safely patch existing shortcuts.close value"
   end

@@ -747,7 +747,7 @@ describe("raccoon.config", function()
       assert.is_true(result.valid)
     end)
 
-    it("is invalid when shortcuts object is missing", function()
+    it("is valid when shortcuts object is missing (defaults apply)", function()
       local tmpfile = test_tmp_dir .. "/missing_shortcuts_for_close.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
@@ -757,8 +757,7 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local result = config.validate_close_shortcut()
-      assert.is_false(result.valid)
-      assert.truthy(result.reason:find("missing shortcuts object", 1, true))
+      assert.is_true(result.valid)
 
       os.remove(tmpfile)
     end)
@@ -869,7 +868,7 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("adds minimal shortcuts object when missing", function()
+    it("skips when shortcuts object is missing (defaults apply)", function()
       local tmpfile = test_tmp_dir .. "/autofix_add_shortcuts.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
@@ -879,13 +878,9 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local result = config.autofix_close_shortcut()
-      assert.is_true(result.changed)
-
-      local out = io.open(tmpfile, "r")
-      local content = out:read("*a")
-      out:close()
-      assert.truthy(content:find('"shortcuts"%s*:%s*%{'))
-      assert.truthy(content:find('"close"%s*:%s*"<leader>q"'))
+      assert.is_false(result.changed)
+      assert.is_true(result.skipped)
+      assert.equals("already_valid", result.reason)
 
       os.remove(tmpfile)
     end)
