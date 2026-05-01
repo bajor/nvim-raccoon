@@ -468,11 +468,19 @@ local function three_way_merge(base_lines, ours_lines, theirs_lines)
   local base_file = vim.fn.tempname()
   local ours_file = vim.fn.tempname()
   local theirs_file = vim.fn.tempname()
+  local max_conflict_exit = 127
 
   if vim.fn.writefile(base_lines, base_file) ~= 0
     or vim.fn.writefile(ours_lines, ours_file) ~= 0
     or vim.fn.writefile(theirs_lines, theirs_file) ~= 0
   then
+    os.remove(base_file)
+    os.remove(ours_file)
+    os.remove(theirs_file)
+    return {}, -1
+  end
+
+  if vim.fn.executable("git") ~= 1 then
     os.remove(base_file)
     os.remove(ours_file)
     os.remove(theirs_file)
@@ -492,9 +500,9 @@ local function three_way_merge(base_lines, ours_lines, theirs_lines)
   os.remove(ours_file)
   os.remove(theirs_file)
 
-  -- Exit codes > 100 indicate command execution failure (e.g. 127 = git not found),
-  -- not merge conflict counts.
-  if exit_code > 100 then
+  -- git-merge-file returns the number of conflicts (truncated to 127) on success.
+  -- Values outside [0, 127] indicate execution/runtime errors.
+  if exit_code < 0 or exit_code > max_conflict_exit then
     return {}, -1
   end
 

@@ -474,6 +474,33 @@ describe("raccoon.commit_ui", function()
       assert.truthy(content:find(">>>>>>>"))
     end)
 
+    it("treats 127 as a valid conflict count, not an execution error", function()
+      local base = {}
+      local ours = {}
+      local theirs = {}
+
+      for i = 1, 5000 do
+        local line = "line" .. i
+        base[i] = line
+        ours[i] = line
+        theirs[i] = line
+      end
+
+      -- Create 130 isolated conflicts so git-merge-file truncates exit to 127.
+      local pos = 10
+      for _ = 1, 130 do
+        ours[pos] = "ours" .. pos
+        theirs[pos] = "theirs" .. pos
+        pos = pos + 35
+      end
+
+      local merged, exit_code = commit_ui.three_way_merge(base, ours, theirs)
+      assert.equals(127, exit_code)
+      local content = table.concat(merged, "\n")
+      assert.truthy(content:find("<<<<<<<"))
+      assert.truthy(content:find(">>>>>>>"))
+    end)
+
     it("returns identical content when no changes", function()
       local base = { "a", "b", "c" }
       local merged, exit_code = commit_ui.three_way_merge(base, base, base)
