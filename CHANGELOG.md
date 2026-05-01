@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING**: `parallel_agents.shortcut` is deprecated and ignored; use `shortcuts.commit_mode.dispatch_agent` instead.
+- **BREAKING**: `human_edit.shortcut` is deprecated and ignored; use `shortcuts.commit_mode.human_edit` instead.
+- All keybindings are now unified under the `shortcuts` config block. Legacy `*.shortcut` fields emit a one-time deprecation warning per session.
+
 ## [0.12.0] - 2026-05-01
 
 ### Removed

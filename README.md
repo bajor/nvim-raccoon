@@ -95,8 +95,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 | `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (1–500) |
 | `commit_viewer.commit_message_max_lines` | number | `3` | Max lines shown in the commit message header (1–50) |
-| `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized `Current changes` diffs in local commit viewer (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
-| `human_edit.shortcut` | string/false | `"<leader>ee"` | Shortcut to open file for editing from maximized diff view (set to `false` to disable) |
+| `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized `Current changes` diffs in local commit viewer (`enabled`, `command`, `suffix_prompt`, `popup_width`) |
 | `human_edit.command` | string | `"git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"` | Post-edit command template (`<FILE>` = shell-escaped relative path, `<TIMESTAMP>` = current timestamp; set to `""` to disable) |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
@@ -161,7 +160,6 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all confi
     "suffix_prompt": "Commit and push when done."
   },
   "human_edit": {
-    "shortcut": "<leader>ee",
     "command": "git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"
   },
   "shortcuts": {
@@ -188,7 +186,9 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all confi
       "next_page_alt": "<leader>l",
       "exit": "<leader>cm",
       "maximize_prefix": "<leader>m",
-      "browse_files": "<leader>f"
+      "browse_files": "<leader>f",
+      "dispatch_agent": "<leader>aa",
+      "human_edit": "<leader>ee"
     }
   }
 }
@@ -250,7 +250,7 @@ One review session is active at a time. Opening a second PR closes the first.
 
 ## Keymaps
 
-Most keymaps are configurable via the `shortcuts` field in `config.json` (feature-specific shortcuts: `parallel_agents.shortcut`, `human_edit.shortcut`). The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Set any shortcut except `shortcuts.close` to `false` to disable it entirely — the keymap won't be registered. For shortcuts that have command equivalents, the corresponding `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
+Most keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Set any shortcut except `shortcuts.close` to `false` to disable it entirely — the keymap won't be registered. For shortcuts that have command equivalents, the corresponding `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
 
 | Key | Config key | Action |
 |-----|------------|--------|
@@ -287,7 +287,8 @@ Commit mode shortcuts live under `shortcuts.commit_mode` in config:
 | `<leader>l` | `commit_mode.next_page_alt` | Next page of diff hunks (alias) |
 | `<leader>f` | `commit_mode.browse_files` | Toggle focus between commit sidebar and file tree |
 | `<leader>m1`..`m9` | `commit_mode.maximize_prefix` | Maximize a grid cell (full file diff) |
-| `<leader>ee` | `human_edit.shortcut` | Edit the file from maximized view (local mode only) |
+| `<leader>aa` | `commit_mode.dispatch_agent` | Dispatch agent from maximized diff view (requires `parallel_agents.enabled`) |
+| `<leader>ee` | `commit_mode.human_edit` | Edit the file from maximized view (local mode only) |
 | `<leader>q` | `close` | Exit maximized view |
 | `<leader>cm` | `commit_mode.exit` | Exit commit viewer mode |
 
@@ -321,13 +322,13 @@ Local mode works alongside an active PR review — entering `:Raccoon local` pau
 
 ## Parallel Agents
 
-Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. This feature is only available in **local mode** (working-directory diffs) where files exist on disk. Review a diff, optionally select code lines, and press `<leader>aa` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
+Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. This feature is only available in **local mode** (working-directory diffs) where files exist on disk. Review a diff, optionally select code lines, and press `<leader>aa` (default `shortcuts.commit_mode.dispatch_agent`) to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
 
-Configure with the `parallel_agents` block in `config.json`. Set `command` to your CLI agent template (e.g. `claude --dangerously-skip-permissions -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
+Configure the runner with the `parallel_agents` block in `config.json`, and configure the keybinding under `shortcuts.commit_mode.dispatch_agent`. Set `command` to your CLI agent template (e.g. `claude --dangerously-skip-permissions -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
 
 ## Human Edit
 
-Press `<leader>ee` in a maximized diff view to open the actual file in an editable floating window. This feature is only available in **local mode** (working-directory diffs) where the file exists on disk. Unlike the read-only maximize view, this gives you full Vim editing capabilities — insert mode, all editing keys, and undo history. If your LSP is configured to auto-attach, it will work in the edit window since it opens the real file buffer. The cursor maps from your position in the diff to the corresponding line in the real file.
+Press `<leader>ee` (default `shortcuts.commit_mode.human_edit`) in a maximized diff view to open the actual file in an editable floating window. This feature is only available in **local mode** (working-directory diffs) where the file exists on disk. Unlike the read-only maximize view, this gives you full Vim editing capabilities — insert mode, all editing keys, and undo history. If your LSP is configured to auto-attach, it will work in the edit window since it opens the real file buffer. The cursor maps from your position in the diff to the corresponding line in the real file.
 
 Use `<leader>s` to save and `<leader>q` to close (or your configured `shortcuts.close`). Modified files are auto-saved on close. When viewing working-directory changes, the maximize diff refreshes automatically after edits to show your updated diff.
 
@@ -342,7 +343,6 @@ The `<FILE>` placeholder is replaced with the shell-escaped relative file path a
 ```json
 {
   "human_edit": {
-    "shortcut": "<leader>ee",
     "command": "git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"
   }
 }

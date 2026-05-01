@@ -314,9 +314,11 @@ end
 --- Set up the parallel agent dispatch keymap on a maximize buffer.
 ---@param buf number Buffer to bind the keymap on
 ---@param opts table {repo_path, sha, commit_message, filename, state}
-local function setup_parallel_agent_keymap(buf, opts)
+---@param shortcuts table Pre-loaded shortcuts config
+local function setup_parallel_agent_keymap(buf, opts, shortcuts)
+  local dispatch_key = shortcuts.commit_mode and shortcuts.commit_mode.dispatch_agent
   local pa_cfg = config.load_parallel_agents()
-  if not pa_cfg.enabled or not config.is_enabled(pa_cfg.shortcut) then return end
+  if not pa_cfg.enabled or not config.is_enabled(dispatch_key) then return end
   local pa = require("raccoon.parallel_agents")
   local buf_opts = { buffer = buf, noremap = true, silent = true }
   local function dispatch_fn()
@@ -341,7 +343,7 @@ local function setup_parallel_agent_keymap(buf, opts)
       view_state = opts.state,
     })
   end
-  vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
+  vim.keymap.set({ "n", "v" }, dispatch_key, dispatch_fn, buf_opts)
 end
 
 --- Compute centered floating window dimensions.
@@ -520,12 +522,13 @@ end
 ---@param opts table {repo_path, filename, state}
 ---@param shortcuts table Pre-loaded shortcuts config (avoids redundant disk read)
 local function setup_human_edit_keymap(buf, opts, shortcuts)
+  local human_edit_key = shortcuts.commit_mode and shortcuts.commit_mode.human_edit
+  if not config.is_enabled(human_edit_key) then return end
   local he_cfg = config.load_human_edit()
-  if not config.is_enabled(he_cfg.shortcut) then return end
 
   local buf_opts = { buffer = buf, noremap = true, silent = true }
 
-  vim.keymap.set(NORMAL_MODE, he_cfg.shortcut, function()
+  vim.keymap.set(NORMAL_MODE, human_edit_key, function()
     -- Prevent opening multiple edit windows
     if opts.state.popup_win and vim.api.nvim_win_is_valid(opts.state.popup_win) then
       vim.api.nvim_set_current_win(opts.state.popup_win)
@@ -1520,7 +1523,7 @@ function M.open_maximize(opts)
     -- Parallel agents and human edit are only available in local (working-dir) mode
     -- where the files exist on disk and edits/agents are meaningful.
     if opts.is_working_dir then
-      setup_parallel_agent_keymap(buf, opts)
+      setup_parallel_agent_keymap(buf, opts, shortcuts)
       setup_human_edit_keymap(buf, opts, shortcuts)
     end
   end)

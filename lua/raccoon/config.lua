@@ -44,11 +44,9 @@ M.defaults = {
     enabled = false,
     command = "",
     suffix_prompt = "",
-    shortcut = "<leader>aa",
     popup_width = 70,
   },
   human_edit = {
-    shortcut = "<leader>ee",
     command = "git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push",
   },
   shortcuts = {
@@ -82,6 +80,8 @@ M.defaults = {
       exit = "<leader>cm",
       maximize_prefix = "<leader>m",
       browse_files = "<leader>f",
+      dispatch_agent = "<leader>aa",
+      human_edit = "<leader>ee",
     },
   },
 }
@@ -246,6 +246,42 @@ local function read_config_json(opts)
   return parsed, nil
 end
 
+--- Legacy shortcut fields that have moved to shortcuts.commit_mode.
+--- Maps feature block name to the new shortcut key name.
+local legacy_shortcut_migrations = {
+  parallel_agents = "dispatch_agent",
+  human_edit = "human_edit",
+}
+
+--- Track which legacy warnings have already fired this session.
+local warned_legacy_shortcuts = {}
+
+--- Warn once per session when a legacy *.shortcut field is present in the parsed config.
+---@param parsed table
+local function warn_legacy_shortcut(parsed)
+  if type(parsed) ~= "table" then return end
+  for feature, new_key in pairs(legacy_shortcut_migrations) do
+    if warned_legacy_shortcuts[feature] then goto continue end
+    local block = parsed[feature]
+    if type(block) ~= "table" then goto continue end
+    if block.shortcut == nil or block.shortcut == vim.NIL then goto continue end
+    warned_legacy_shortcuts[feature] = true
+    vim.notify(
+      string.format(
+        "Raccoon: %s.shortcut is deprecated and ignored; use shortcuts.commit_mode.%s",
+        feature, new_key
+      ),
+      vim.log.levels.WARN
+    )
+    ::continue::
+  end
+end
+
+--- Reset one-shot warning state for tests.
+function M._reset_warning_state_for_tests()
+  warned_legacy_shortcuts = {}
+end
+
 --- Return val if it is a boolean, otherwise return default.
 ---@param val any
 ---@param default boolean
@@ -291,16 +327,6 @@ local function sanitize_legacy_passthrough_keymaps(val)
   return sanitize_string_list(keys)
 end
 
---- Resolve a shortcut field: false to disable, valid string to override, else default.
----@param user_val any Value from user config
----@param default_val string Default shortcut
----@return string|false
-local function resolve_shortcut(user_val, default_val)
-  if user_val == false then return false end
-  if is_valid_shortcut_string(user_val) then return user_val end
-  return default_val
-end
-
 --- Sanitize merged shortcuts against the defaults structure.
 --- Each leaf must be a non-empty string (valid binding) or false (disabled).
 --- Anything else (vim.NIL, numbers, empty strings, tables at leaf positions) falls back to the default.
@@ -340,6 +366,7 @@ function M.load_shortcuts()
     return vim.deepcopy(M.defaults.shortcuts)
   end
 
+  warn_legacy_shortcut(parsed)
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.shortcuts), parsed.shortcuts or {})
   return sanitize_shortcuts(merged, M.defaults.shortcuts)
 end
@@ -375,6 +402,8 @@ function M.load_parallel_agents()
     return vim.deepcopy(defaults)
   end
 
+  warn_legacy_shortcut(parsed)
+
   local user = parsed.parallel_agents
   if type(user) ~= "table" then
     return vim.deepcopy(defaults)
@@ -384,7 +413,6 @@ function M.load_parallel_agents()
     enabled = bool_field(user.enabled, defaults.enabled),
     command = type(user.command) == "string" and user.command or defaults.command,
     suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
-    shortcut = resolve_shortcut(user.shortcut, defaults.shortcut),
     popup_width = type(user.popup_width) == "number" and user.popup_width > 0
       and math.floor(user.popup_width) or defaults.popup_width,
   }
@@ -400,13 +428,14 @@ function M.load_human_edit()
     return vim.deepcopy(defaults)
   end
 
+  warn_legacy_shortcut(parsed)
+
   local user = parsed.human_edit
   if type(user) ~= "table" then
     return vim.deepcopy(defaults)
   end
 
   return {
-    shortcut = resolve_shortcut(user.shortcut, defaults.shortcut),
     command = user.command == false and ""
       or (type(user.command) == "string" and user.command or defaults.command),
   }

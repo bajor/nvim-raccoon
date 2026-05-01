@@ -53,7 +53,9 @@ local function create_default_config(config_path)
       "next_page_alt": "<leader>l",
       "exit": "<leader>cm",
       "maximize_prefix": "<leader>m",
-      "browse_files": "<leader>f"
+      "browse_files": "<leader>f",
+      "dispatch_agent": "<leader>aa",
+      "human_edit": "<leader>ee"
     }
   }
 }]], clone_root)

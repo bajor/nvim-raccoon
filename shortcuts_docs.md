@@ -1,6 +1,6 @@
 # Keyboard Shortcuts Reference
 
-Most keyboard shortcuts in raccoon.nvim are configurable via the `shortcuts` field in `~/.config/raccoon/config.json` (feature-specific shortcuts: `parallel_agents.shortcut`, `human_edit.shortcut`). You only need to specify the keys you want to change — unspecified keys keep their defaults. Set any shortcut except `shortcuts.close` to `false` to disable it.
+Most keyboard shortcuts in raccoon.nvim are configurable via the `shortcuts` field in `~/.config/raccoon/config.json`. You only need to specify the keys you want to change — unspecified keys keep their defaults. Set any shortcut except `shortcuts.close` to `false` to disable it.
 
 Run `:Raccoon shortcuts` (or press `<leader>?` by default) to see your active bindings in a floating window.
 
@@ -26,6 +26,8 @@ Values are validated on load:
     "...": "...",
     "commit_mode": {
       "next_page": "<leader>j",
+      "dispatch_agent": "<leader>aa",
+      "human_edit": "<leader>ee",
       "...": "..."
     }
   }
@@ -98,24 +100,10 @@ These shortcuts are nested under `shortcuts.commit_mode` in config and are only 
 | `exit` | `<leader>cm` | Exit commit viewer mode and return to the normal PR review view. |
 | `maximize_prefix` | `<leader>m` | Prefix for maximizing a grid cell. Followed by a cell number from `1..rows*cols` (for example `<leader>m1`). In local mode it also supports `<leader>mf` (file picker) and `<leader>mc` (commit picker). Inside maximized view, normal vim navigation works (scrolling, search). Close with `close`. |
 | `browse_files` | `<leader>f` | Toggle focus between the commit sidebar and the file tree. While in file tree mode, navigate with j/k, jump with gg/G, search with `/`, and press Enter to view a file's content at the current commit state. |
-
-## Parallel agents (maximized diff view)
-
-Active inside maximized **`Current changes`** diff floating windows in local mode (`:Raccoon local`) when `parallel_agents.enabled` is `true` in config. Works in both normal and visual mode.
-
-| Config key | Default | Description |
-|------------|---------|-------------|
-| `parallel_agents.shortcut` | `<leader>aa` | Dispatch an agent with commit context. In visual mode, the selected lines are included in the prompt. Set to `false` to disable. See [parallel_agents_docs.md](parallel_agents_docs.md). |
+| `dispatch_agent` | `<leader>aa` | Dispatch an agent with commit context from the maximized diff view. In visual mode, the selected lines are included in the prompt. Only active when `parallel_agents.enabled` is `true`. Set to `false` to disable. See [parallel_agents_docs.md](parallel_agents_docs.md). |
+| `human_edit` | `<leader>ee` | Open the file in an editable floating window from maximized diff view. Full Vim editing capabilities, LSP support, and undo history. Set to `false` to disable. See [Human Edit in README](README.md#human-edit). |
 
 Note: `j`/`k` for navigating commits in the sidebar and `Enter` for selecting a commit are hardcoded and not configurable.
-
-## Human edit (maximized diff view)
-
-Active inside the maximized diff floating window in local mode (`:Raccoon local`). Opens the actual file for editing.
-
-| Config key | Default | Description |
-|------------|---------|-------------|
-| `human_edit.shortcut` | `<leader>ee` | Open the file in an editable floating window from maximized diff view. Full Vim editing capabilities, LSP support, and undo history. Set to `false` to disable. See [Human Edit in README](README.md#human-edit). |
 
 ## Example: custom config
 

@@ -240,7 +240,6 @@ Configure fire-and-forget CLI agent dispatch from maximized `Current changes` di
 | `enabled` | boolean | `false` | Enable the feature |
 | `command` | string | `""` | Shell command template containing `<PROMPT>` placeholder |
 | `suffix_prompt` | string | `""` | Text appended to every agent prompt |
-| `shortcut` | string or false | `"<leader>aa"` | Keymap to trigger dispatch. Set to `false` to disable. |
 | `popup_width` | number | `70` | Width of the task input popup (clamped to terminal width). |
 
 ```json
@@ -248,11 +247,12 @@ Configure fire-and-forget CLI agent dispatch from maximized `Current changes` di
   "parallel_agents": {
     "enabled": true,
     "command": "claude --dangerously-skip-permissions -p <PROMPT>",
-    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request.",
-    "shortcut": "<leader>aa"
+    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request."
   }
 }
 ```
+
+The shortcut for dispatch lives in `shortcuts.commit_mode.dispatch_agent`, not in the `parallel_agents` block.
 
 Agents run in your working directory. This feature is only available in **local commit viewer** mode (`:Raccoon local`) where files exist on disk.
 
@@ -266,17 +266,17 @@ Configure the human edit feature for the commit viewer's maximized diff view. On
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `shortcut` | string or false | `"<leader>ee"` | Keymap to open the file for editing in maximized diff view. Set to `false` to disable. |
 | `command` | string | `"git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"` | Shell command run after saving edits. `<FILE>` is replaced with the shell-escaped relative file path, `<TIMESTAMP>` with the current timestamp (e.g. `2026-03-22_14:30:05`). Set to `""` to disable post-edit execution. |
 
 ```json
 {
   "human_edit": {
-    "shortcut": "<leader>ee",
     "command": "git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push"
   }
 }
 ```
+
+The shortcut for human edit lives in `shortcuts.commit_mode.human_edit`, not in the `human_edit` block.
 
 The edit window provides full Vim editing capabilities — insert mode, all editing keys, undo history, and LSP support. Press `<leader>s` to save and `<leader>q` to close (or your configured `shortcuts.close`). Modified files are auto-saved on close. If the file was modified externally (e.g. by a parallel agent) while editing, a 3-way merge is attempted automatically — clean merges are applied silently, conflicts show standard conflict markers.
 
@@ -296,7 +296,10 @@ Partial overrides are merged with defaults — you only need to specify keys you
 {
   "shortcuts": {
     "pr_list": "<leader>gp",
-    "merge": false
+    "merge": false,
+    "commit_mode": {
+      "dispatch_agent": "<leader>ag"
+    }
   }
 }
 ```
@@ -325,7 +328,10 @@ Partial overrides are merged with defaults — you only need to specify keys you
   "shortcuts": {
     "pr_list": "<leader>pr",
     "next_point": "<C-n>",
-    "prev_point": "<C-p>"
+    "prev_point": "<C-p>",
+    "commit_mode": {
+      "dispatch_agent": "<leader>aa"
+    }
   }
 }
 ```

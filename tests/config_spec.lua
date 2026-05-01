@@ -453,7 +453,11 @@ describe("raccoon.config", function()
 
     it("has commit_mode subsection with expected keys", function()
       assert.is_table(config.defaults.shortcuts.commit_mode)
-      local expected = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" }
+      local expected = {
+        "next_page", "prev_page", "next_page_alt",
+        "exit", "maximize_prefix", "browse_files",
+        "dispatch_agent", "human_edit",
+      }
       for _, key in ipairs(expected) do
         assert.is_string(config.defaults.shortcuts.commit_mode[key],
           "Missing commit_mode shortcut default: " .. key)
@@ -738,6 +742,89 @@ describe("raccoon.config", function()
 
       os.remove(tmpfile)
     end)
+
+    it("warns when legacy parallel_agents.shortcut is present", function()
+      local tmpfile = test_tmp_dir .. "/legacy_pa_shortcut.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "parallel_agents": {
+          "enabled": true,
+          "command": "echo <PROMPT>",
+          "shortcut": "<leader>az"
+        }
+      }]])
+      f:close()
+
+      local original_notify = vim.notify
+      local notifications = {}
+      local ok_case, err_case = pcall(function()
+        config._reset_warning_state_for_tests()
+        config.config_path = tmpfile
+        vim.notify = function(msg, level)
+          table.insert(notifications, { msg = msg, level = level })
+        end
+
+        local shortcuts = config.load_shortcuts()
+        -- Legacy field should NOT affect shortcuts.commit_mode.dispatch_agent
+        assert.equals(config.defaults.shortcuts.commit_mode.dispatch_agent, shortcuts.commit_mode.dispatch_agent)
+      end)
+      vim.notify = original_notify
+      if not ok_case then error(err_case) end
+
+      local warned = false
+      for _, n in ipairs(notifications) do
+        if n.level == vim.log.levels.WARN
+          and n.msg:find("parallel_agents%.shortcut")
+          and n.msg:find("shortcuts%.commit_mode%.dispatch_agent") then
+          warned = true
+          break
+        end
+      end
+      assert.is_true(warned)
+
+      os.remove(tmpfile)
+    end)
+
+    it("warns when legacy human_edit.shortcut is present", function()
+      local tmpfile = test_tmp_dir .. "/legacy_he_shortcut.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "human_edit": {
+          "shortcut": "<leader>he"
+        }
+      }]])
+      f:close()
+
+      local original_notify = vim.notify
+      local notifications = {}
+      local ok_case, err_case = pcall(function()
+        config._reset_warning_state_for_tests()
+        config.config_path = tmpfile
+        vim.notify = function(msg, level)
+          table.insert(notifications, { msg = msg, level = level })
+        end
+
+        local shortcuts = config.load_shortcuts()
+        assert.equals(config.defaults.shortcuts.commit_mode.human_edit, shortcuts.commit_mode.human_edit)
+      end)
+      vim.notify = original_notify
+      if not ok_case then error(err_case) end
+
+      local warned = false
+      for _, n in ipairs(notifications) do
+        if n.level == vim.log.levels.WARN
+          and n.msg:find("human_edit%.shortcut")
+          and n.msg:find("shortcuts%.commit_mode%.human_edit") then
+          warned = true
+          break
+        end
+      end
+      assert.is_true(warned)
+
+      os.remove(tmpfile)
+    end)
   end)
 
   describe("validate_close_shortcut", function()
@@ -908,7 +995,7 @@ describe("raccoon.config", function()
       assert.is_false(pa.enabled)
       assert.equals("", pa.command)
       assert.equals("", pa.suffix_prompt)
-      assert.equals("<leader>aa", pa.shortcut)
+      assert.equals(70, pa.popup_width)
     end)
 
     it("returns defaults for invalid JSON", function()
@@ -920,7 +1007,7 @@ describe("raccoon.config", function()
       config.config_path = tmpfile
       local pa = config.load_parallel_agents()
       assert.is_false(pa.enabled)
-      assert.equals("<leader>aa", pa.shortcut)
+      assert.equals(70, pa.popup_width)
 
       os.remove(tmpfile)
     end)
@@ -942,7 +1029,7 @@ describe("raccoon.config", function()
       assert.is_true(pa.enabled)
       assert.equals('claude -p <PROMPT>', pa.command)
       assert.equals("Always push.", pa.suffix_prompt)
-      assert.equals("<leader>aa", pa.shortcut) -- default kept
+      assert.equals(70, pa.popup_width) -- default kept
 
       os.remove(tmpfile)
     end)
@@ -954,8 +1041,7 @@ describe("raccoon.config", function()
         "parallel_agents": {
           "enabled": "yes",
           "command": 42,
-          "suffix_prompt": true,
-          "shortcut": 99
+          "suffix_prompt": true
         }
       }]])
       f:close()
@@ -965,27 +1051,48 @@ describe("raccoon.config", function()
       assert.is_false(pa.enabled) -- default
       assert.equals("", pa.command) -- default
       assert.equals("", pa.suffix_prompt) -- default
-      assert.equals("<leader>aa", pa.shortcut) -- default
+      assert.equals(70, pa.popup_width) -- default
 
       os.remove(tmpfile)
     end)
 
-    it("shortcut false disables shortcut", function()
+    it("ignores legacy shortcut field and warns", function()
       local tmpfile = test_tmp_dir .. "/pa_no_shortcut.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
         "parallel_agents": {
           "enabled": true,
           "command": "test",
-          "shortcut": false
+          "shortcut": "<leader>az"
         }
       }]])
       f:close()
 
-      config.config_path = tmpfile
-      local pa = config.load_parallel_agents()
-      assert.is_false(pa.shortcut)
-      assert.is_false(config.is_enabled(pa.shortcut))
+      local original_notify = vim.notify
+      local notifications = {}
+      local ok_case, err_case = pcall(function()
+        config._reset_warning_state_for_tests()
+        config.config_path = tmpfile
+        vim.notify = function(msg, level)
+          table.insert(notifications, { msg = msg, level = level })
+        end
+
+        local pa = config.load_parallel_agents()
+        assert.is_true(pa.enabled)
+        assert.equals("test", pa.command)
+        assert.is_nil(pa.shortcut)
+      end)
+      vim.notify = original_notify
+      if not ok_case then error(err_case) end
+
+      local warned = false
+      for _, n in ipairs(notifications) do
+        if n.level == vim.log.levels.WARN and n.msg:find("parallel_agents%.shortcut") then
+          warned = true
+          break
+        end
+      end
+      assert.is_true(warned)
 
       os.remove(tmpfile)
     end)
@@ -1054,7 +1161,6 @@ describe("raccoon.config", function()
       config.config_path = "/nonexistent/path/config.json"
       local he = config.load_human_edit()
       assert.is_table(he)
-      assert.equals("<leader>ee", he.shortcut)
       assert.equals("git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push", he.command)
     end)
 
@@ -1066,7 +1172,7 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local he = config.load_human_edit()
-      assert.equals("<leader>ee", he.shortcut)
+      assert.equals("git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push", he.command)
 
       os.remove(tmpfile)
     end)
@@ -1076,7 +1182,6 @@ describe("raccoon.config", function()
       local f = io.open(tmpfile, "w")
       f:write([[{
         "human_edit": {
-          "shortcut": "<leader>he",
           "command": "git add <FILE>"
         }
       }]])
@@ -1084,7 +1189,6 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local he = config.load_human_edit()
-      assert.equals("<leader>he", he.shortcut)
       assert.equals("git add <FILE>", he.command)
 
       os.remove(tmpfile)
@@ -1095,7 +1199,6 @@ describe("raccoon.config", function()
       local f = io.open(tmpfile, "w")
       f:write([[{
         "human_edit": {
-          "shortcut": 99,
           "command": 42
         }
       }]])
@@ -1103,26 +1206,44 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local he = config.load_human_edit()
-      assert.equals("<leader>ee", he.shortcut)
       assert.equals("git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push", he.command)
 
       os.remove(tmpfile)
     end)
 
-    it("shortcut false disables shortcut", function()
+    it("ignores legacy shortcut field and warns", function()
       local tmpfile = test_tmp_dir .. "/he_no_shortcut.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
         "human_edit": {
-          "shortcut": false
+          "shortcut": "<leader>he"
         }
       }]])
       f:close()
 
-      config.config_path = tmpfile
-      local he = config.load_human_edit()
-      assert.is_false(he.shortcut)
-      assert.is_false(config.is_enabled(he.shortcut))
+      local original_notify = vim.notify
+      local notifications = {}
+      local ok_case, err_case = pcall(function()
+        config._reset_warning_state_for_tests()
+        config.config_path = tmpfile
+        vim.notify = function(msg, level)
+          table.insert(notifications, { msg = msg, level = level })
+        end
+
+        local he = config.load_human_edit()
+        assert.is_nil(he.shortcut)
+      end)
+      vim.notify = original_notify
+      if not ok_case then error(err_case) end
+
+      local warned = false
+      for _, n in ipairs(notifications) do
+        if n.level == vim.log.levels.WARN and n.msg:find("human_edit%.shortcut") then
+          warned = true
+          break
+        end
+      end
+      assert.is_true(warned)
 
       os.remove(tmpfile)
     end)
@@ -1169,7 +1290,7 @@ describe("raccoon.config", function()
 
       config.config_path = tmpfile
       local he = config.load_human_edit()
-      assert.equals("<leader>ee", he.shortcut)
+      assert.equals("git add <FILE> && git commit -m 'human edit <TIMESTAMP>' && git push", he.command)
 
       os.remove(tmpfile)
     end)
