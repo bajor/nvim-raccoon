@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-01
+
 ### Removed
 - **BREAKING**: Removed `:Raccoon close` command alias.
 - **BREAKING**: Removed `Esc` and bare `q` close behavior from raccoon popups/maximized windows. Window close is now only `shortcuts.close` (default `<leader>q`). The `<leader>?` shortcuts help window also no longer closes on any keystroke — use `shortcuts.close` to dismiss.
