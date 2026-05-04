@@ -404,7 +404,7 @@ describe("raccoon.commits keybinding lockdown", function()
       end)
     end)
 
-    it("keeps legacy passthrough_keymaps mappings active", function()
+    it("keeps legacy passthrough_keymaps mappings active (via config_compat)", function()
       with_raccoon_config({
         passthrough_keymaps = {
           { key = "<Space>n" },

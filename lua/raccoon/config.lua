@@ -3,7 +3,9 @@
 ---@field tokens table<string, string|{token:string, host:string}> Per-owner/org tokens
 ---@field repos string[] Optional list of repos to show PRs from ("owner/repo" format)
 ---@field clone_root string Root directory for cloned PR repos
----@field pull_changes_interval number Auto-sync interval in seconds (default: 300)
+---@field sync_interval number Auto-sync interval in seconds (default: 300, minimum: 10)
+
+local compat = require("raccoon.config_compat")
 
 local M = {}
 
@@ -25,7 +27,7 @@ M.defaults = {
   tokens = {},
   repos = {},
   clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-  pull_changes_interval = 300,
+  sync_interval = 300,
   commit_viewer = {
     grid = { rows = 2, cols = 2 },
     base_commits_count = 20,
@@ -49,7 +51,7 @@ M.defaults = {
     description = "<leader>dd",
     list_comments = "<leader>ll",
     merge = "<leader>rr",
-    commit_viewer = "<leader>cm",
+    commit_viewer_toggle = "<leader>cm",
     -- Comment editor
     comment_save = "<leader>s",
     comment_resolve = "<leader>r",
@@ -57,7 +59,7 @@ M.defaults = {
     -- Common
     close = "<leader>q",
     -- Commit viewer mode
-    commit_mode = {
+    commit_viewer = {
       next_page = "<leader>j",
       prev_page = "<leader>k",
       next_page_alt = "<leader>l",
@@ -134,6 +136,10 @@ function M.load()
     return nil, string.format("Invalid JSON in config file: %s", parsed)
   end
 
+  -- Migrate any deprecated keys to their current names so the rest of the
+  -- loader sees only the current schema.
+  parsed = compat.normalize(parsed)
+
   -- Merge with defaults
   local config = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), parsed)
 
@@ -183,7 +189,7 @@ function M.create_default()
     github_host = "github.com",
     tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
     clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-    pull_changes_interval = 300,
+    sync_interval = 300,
     commit_viewer = {
       grid = { rows = 2, cols = 2 },
       base_commits_count = 20,
@@ -221,7 +227,7 @@ local function read_config_json()
     vim.notify("Raccoon: failed to parse config.json, using defaults", vim.log.levels.WARN)
     return nil
   end
-  return parsed
+  return compat.normalize(parsed)
 end
 
 --- Return only non-empty string entries from a list, preserving order and removing duplicates.
@@ -239,25 +245,6 @@ local function sanitize_string_list(val)
     end
   end
   return result
-end
-
---- Return only valid key strings from the legacy top-level passthrough_keymaps list.
---- Supports entries shaped like { key = "<leader>x" } for backward compatibility.
----@param val any
----@return string[]
-local function sanitize_legacy_passthrough_keymaps(val)
-  if type(val) ~= "table" then return {} end
-
-  local keys = {}
-  for _, item in ipairs(val) do
-    if type(item) == "string" then
-      table.insert(keys, item)
-    elseif type(item) == "table" then
-      table.insert(keys, item.key)
-    end
-  end
-
-  return sanitize_string_list(keys)
 end
 
 --- Sanitize merged shortcuts against the defaults structure.
@@ -309,11 +296,7 @@ function M.load_commit_viewer()
 
   local user = type(parsed.commit_viewer) == "table" and parsed.commit_viewer or {}
   local viewer = vim.tbl_deep_extend("force", vim.deepcopy(defaults), user)
-  local passthrough_keys = sanitize_string_list(user.passthrough_keys)
-  for _, lhs in ipairs(sanitize_legacy_passthrough_keymaps(parsed.passthrough_keymaps)) do
-    table.insert(passthrough_keys, lhs)
-  end
-  viewer.passthrough_keys = sanitize_string_list(passthrough_keys)
+  viewer.passthrough_keys = sanitize_string_list(user.passthrough_keys)
   return viewer
 end
 

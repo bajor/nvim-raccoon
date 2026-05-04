@@ -374,12 +374,12 @@ local function setup_keymaps()
 
   local all = {
     {
-      mode = NORMAL_MODE, lhs = shortcuts.commit_mode.exit,
+      mode = NORMAL_MODE, lhs = shortcuts.commit_viewer.exit,
       rhs = function() M.toggle() end, desc = "Exit local commit viewer",
     },
-    { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.next_page, rhs = next_page, desc = "Next page" },
-    { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.prev_page, rhs = prev_page, desc = "Previous page" },
-    { mode = NORMAL_MODE, lhs = shortcuts.commit_mode.next_page_alt, rhs = next_page, desc = "Next page" },
+    { mode = NORMAL_MODE, lhs = shortcuts.commit_viewer.next_page, rhs = next_page, desc = "Next page" },
+    { mode = NORMAL_MODE, lhs = shortcuts.commit_viewer.prev_page, rhs = prev_page, desc = "Previous page" },
+    { mode = NORMAL_MODE, lhs = shortcuts.commit_viewer.next_page_alt, rhs = next_page, desc = "Next page" },
   }
 
   local_mode_keymaps = {}
@@ -395,12 +395,12 @@ local function setup_keymaps()
   end
 
   -- Maximize keymaps
-  if config.is_enabled(shortcuts.commit_mode.maximize_prefix) then
+  if config.is_enabled(shortcuts.commit_viewer.maximize_prefix) then
     local cells = local_state.grid_rows * local_state.grid_cols
     for i = 1, cells do
       table.insert(local_mode_keymaps, {
         mode = NORMAL_MODE,
-        lhs = shortcuts.commit_mode.maximize_prefix .. i,
+        lhs = shortcuts.commit_viewer.maximize_prefix .. i,
         rhs = function() maximize_cell(i) end,
         desc = "Maximize grid cell " .. i,
       })
@@ -409,7 +409,7 @@ local function setup_keymaps()
     -- Maximize file picker
     table.insert(local_mode_keymaps, {
       mode = NORMAL_MODE,
-      lhs = shortcuts.commit_mode.maximize_prefix .. "f",
+      lhs = shortcuts.commit_viewer.maximize_prefix .. "f",
       rhs = function()
         local items = {}
         for path, _ in pairs(local_state.commit_files) do
@@ -439,7 +439,7 @@ local function setup_keymaps()
     -- Maximize commit picker
     table.insert(local_mode_keymaps, {
       mode = NORMAL_MODE,
-      lhs = shortcuts.commit_mode.maximize_prefix .. "c",
+      lhs = shortcuts.commit_viewer.maximize_prefix .. "c",
       rhs = function()
         local items = {}
         for i = 1, total_commits() do
@@ -481,10 +481,10 @@ local function setup_keymaps()
   }
 
   -- Browse files toggle
-  if config.is_enabled(shortcuts.commit_mode.browse_files) then
+  if config.is_enabled(shortcuts.commit_viewer.browse_files) then
     table.insert(local_mode_keymaps, {
       mode = NORMAL_MODE,
-      lhs = shortcuts.commit_mode.browse_files,
+      lhs = shortcuts.commit_viewer.browse_files,
       rhs = function() ui.toggle_filetree_focus(local_state, filetree_opts) end,
       desc = "Toggle file tree browsing",
     })

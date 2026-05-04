@@ -44,7 +44,7 @@ describe("raccoon.keymaps", function()
     it("returns empty list when all shortcuts disabled", function()
       local shortcuts = vim.deepcopy(config.defaults.shortcuts)
       for k, v in pairs(shortcuts) do
-        if k ~= "commit_mode" and type(v) == "string" then
+        if k ~= "commit_viewer" and type(v) == "string" then
           shortcuts[k] = false
         end
       end
