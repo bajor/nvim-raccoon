@@ -33,7 +33,7 @@ end
 --- preserve the original.
 ---
 --- Migrations (each obeys the new-wins conflict rule):
----   * shortcuts.commit_viewer (string)    -> shortcuts.commit_viewer_toggle
+---   * shortcuts.commit_viewer (string|false) -> shortcuts.commit_viewer_toggle
 ---   * shortcuts.commit_mode   (table)     -> shortcuts.commit_viewer
 ---   * passthrough_keymaps     (top-level) -> commit_viewer.passthrough_keys
 ---   * pull_changes_interval               -> sync_interval
@@ -45,9 +45,10 @@ function M.normalize(parsed)
 
   local sc = parsed.shortcuts
   if type(sc) == "table" then
-    -- Migrate shortcuts.commit_viewer (string leaf) -> shortcuts.commit_viewer_toggle.
-    -- Only fires when the leaf is a string; a table value is the new nested schema.
-    if type(sc.commit_viewer) == "string" then
+    -- Migrate shortcuts.commit_viewer (legacy leaf) -> shortcuts.commit_viewer_toggle.
+    -- The current schema uses a table here, so string and false both belong to
+    -- the legacy leaf form. Other scalar types stay invalid and fall back later.
+    if type(sc.commit_viewer) == "string" or sc.commit_viewer == false then
       if sc.commit_viewer_toggle == nil then
         sc.commit_viewer_toggle = sc.commit_viewer
       end
@@ -65,10 +66,10 @@ function M.normalize(parsed)
 
   -- Migrate top-level passthrough_keymaps -> commit_viewer.passthrough_keys.
   if parsed.passthrough_keymaps ~= nil then
-    if parsed.commit_viewer == nil then
+    if type(parsed.commit_viewer) ~= "table" then
       parsed.commit_viewer = {}
     end
-    if type(parsed.commit_viewer) == "table" and parsed.commit_viewer.passthrough_keys == nil then
+    if parsed.commit_viewer.passthrough_keys == nil then
       parsed.commit_viewer.passthrough_keys = extract_legacy_keys(parsed.passthrough_keymaps)
     end
     parsed.passthrough_keymaps = nil

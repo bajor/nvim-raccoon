@@ -935,6 +935,25 @@ describe("raccoon.config", function()
 
       os.remove(tmpfile)
     end)
+
+    it("migrates legacy passthrough_keymaps when commit_viewer is a scalar", function()
+      local tmpfile = test_tmp_dir .. "/legacy_scalar_commit_viewer_passthrough.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "commit_viewer": 42,
+        "passthrough_keymaps": [
+          { "key": "<Space>n" },
+          "x"
+        ]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local viewer = config.load_commit_viewer()
+      assert.same({ "<Space>n", "x" }, viewer.passthrough_keys)
+
+      os.remove(tmpfile)
+    end)
   end)
 
   describe("backward-compat through loaders", function()
@@ -978,6 +997,31 @@ describe("raccoon.config", function()
       -- string was migrated out.
       assert.equals(config.defaults.shortcuts.commit_viewer.next_page,
         shortcuts.commit_viewer.next_page)
+
+      os.remove(tmpfile)
+    end)
+
+    it("load_shortcuts preserves disabled legacy commit_viewer toggle while migrating commit_mode", function()
+      local tmpfile = test_tmp_dir .. "/legacy_disabled_commit_viewer_leaf.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "commit_viewer": false,
+          "commit_mode": {
+            "next_page": "<C-n>",
+            "exit": "<leader>xx"
+          }
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.is_false(shortcuts.commit_viewer_toggle)
+      assert.is_false(config.is_enabled(shortcuts.commit_viewer_toggle))
+      assert.equals("<C-n>", shortcuts.commit_viewer.next_page)
+      assert.equals("<leader>xx", shortcuts.commit_viewer.exit)
 
       os.remove(tmpfile)
     end)

@@ -61,6 +61,42 @@ describe("raccoon.config_compat", function()
       assert.is_nil(result.shortcuts.commit_mode)
     end)
 
+    it("migrates disabled legacy commit_viewer toggle before migrating commit_mode", function()
+      local input = {
+        shortcuts = {
+          commit_viewer = false,
+          commit_mode = {
+            next_page = "<leader>j",
+            exit = "<leader>x",
+          },
+        },
+      }
+
+      local result = compat.normalize(input)
+
+      assert.is_false(result.shortcuts.commit_viewer_toggle)
+      assert.same(
+        { next_page = "<leader>j", exit = "<leader>x" },
+        result.shortcuts.commit_viewer
+      )
+      assert.is_nil(result.shortcuts.commit_mode)
+    end)
+
+    it("coerces invalid commit_viewer values before migrating passthrough_keymaps", function()
+      local input = {
+        commit_viewer = 42,
+        passthrough_keymaps = {
+          "<leader>x",
+          { key = "<leader>y" },
+        },
+      }
+
+      local result = compat.normalize(input)
+
+      assert.same({ "<leader>x", "<leader>y" }, result.commit_viewer.passthrough_keys)
+      assert.is_nil(result.passthrough_keymaps)
+    end)
+
     it("new key wins on conflict; old key is dropped", function()
       local input = {
         pull_changes_interval = 999,
