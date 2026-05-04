@@ -4,6 +4,17 @@ All keyboard shortcuts in raccoon.nvim are configurable via the `shortcuts` fiel
 
 Run `:Raccoon shortcuts` (or press `<leader>?` by default) to see your active bindings in a floating window.
 
+## Terminology
+
+The `commit_viewer` keyword is reused across three different parts of the config tree. They are distinct on purpose:
+
+| Where | What |
+|-------|------|
+| `commit_viewer.*` (top level) | **Layout config** for commit viewer mode (`grid`, `sidebar_width`, `passthrough_keys`, etc.) — see [config_docs.md](config_docs.md). |
+| `shortcuts.commit_viewer_toggle` | **Toggle keymap** that enters and exits commit viewer mode (default `<leader>cm`). |
+| `shortcuts.commit_viewer.*` | **In-mode shortcuts** — keys that are active *inside* commit viewer mode (`next_page`, `maximize_prefix`, `browse_files`, etc.). |
+| `:Raccoon commits` | **Subcommand** equivalent to the toggle keymap. |
+
 ## How it works
 
 Shortcuts are loaded from `config.json` at startup and whenever a floating window opens. The plugin merges your overrides with the built-in defaults using a deep merge, so you can override a single key without affecting the rest.
@@ -24,7 +35,8 @@ Every floating window always responds to `Esc`, so disabling `close` won't lock 
     "show_shortcuts": "<leader>?",
     "next_point": "<leader>j",
     "...": "...",
-    "commit_mode": {
+    "commit_viewer_toggle": "<leader>cm",
+    "commit_viewer": {
       "next_page": "<leader>j",
       "...": "..."
     }
@@ -32,7 +44,7 @@ Every floating window always responds to `Esc`, so disabling `close` won't lock 
 }
 ```
 
-Top-level keys control global and review-session shortcuts. The nested `commit_mode` object controls shortcuts that are only active inside commit viewer mode.
+Top-level keys control global and review-session shortcuts. `commit_viewer_toggle` is the leaf keymap that enters/exits commit viewer mode. The nested `commit_viewer` object controls shortcuts that are only active inside commit viewer mode.
 
 ## Global shortcuts
 
@@ -66,7 +78,7 @@ Active during a PR review session. These open floating windows for specific acti
 | `description` | `<leader>dd` | Toggle the PR description floating window. Shows the PR title, author, labels, and full body text rendered as markdown. |
 | `list_comments` | `<leader>ll` | Open a floating window listing all comments in the PR, grouped by file and line. Press `Enter` on a comment to view its full thread. |
 | `merge` | `<leader>rr` | Open the merge method picker. Shows CI status at the top, then three options: merge, squash, or rebase. Press `1`/`2`/`3` or navigate with `Enter`. |
-| `commit_viewer` | `<leader>cm` | Toggle commit viewer mode. Enters a grid layout showing individual commit diffs with a sidebar listing all commits. Press again to exit back to normal review. |
+| `commit_viewer_toggle` *(formerly `commit_viewer` as a string leaf)* | `<leader>cm` | Toggle commit viewer mode. Enters a grid layout showing individual commit diffs with a sidebar listing all commits. Press again to exit back to normal review. |
 
 ## Comment editor
 
@@ -86,9 +98,9 @@ Used across multiple contexts.
 |------------|---------|-------------|
 | `close` | `<leader>q` | Close the current floating window or exit the review session. Used in the PR list, comment windows, description window, merge picker, and other floating UI. `Esc` always works as a fallback. |
 
-## Commit viewer mode
+## Commit viewer mode *(formerly `shortcuts.commit_mode.*`)*
 
-These shortcuts are nested under `shortcuts.commit_mode` in config and are only active inside commit viewer mode. Normal vim keybindings are mostly disabled in this mode to prevent breaking the grid layout.
+These shortcuts are nested under `shortcuts.commit_viewer` in config and are only active inside commit viewer mode. Normal vim keybindings are mostly disabled in this mode to prevent breaking the grid layout.
 
 | Config key | Default | Description |
 |------------|---------|-------------|
@@ -98,14 +110,6 @@ These shortcuts are nested under `shortcuts.commit_mode` in config and are only 
 | `exit` | `<leader>cm` | Exit commit viewer mode and return to the normal PR review view. |
 | `maximize_prefix` | `<leader>m` | Prefix for maximizing a grid cell. Followed by a cell number (1-9), e.g. `<leader>m1` maximizes cell 1 into a full floating window with the complete file diff. Inside the maximized view, normal vim navigation works (scrolling, search). Close with `q` or the `close` shortcut. |
 | `browse_files` | `<leader>f` | Toggle focus between the commit sidebar and the file tree. While in file tree mode, navigate with j/k, jump with gg/G, search with `/`, and press Enter to view a file's content at the current commit state. |
-
-## Parallel agents (maximized diff view)
-
-Active inside the maximized diff floating window when `parallel_agents.enabled` is `true` in config. Works in both normal and visual mode.
-
-| Config key | Default | Description |
-|------------|---------|-------------|
-| `parallel_agents.shortcut` | `<leader>aa` | Dispatch an agent with commit context. In visual mode, the selected lines are included in the prompt. Set to `false` to disable. See [parallel_agents_docs.md](parallel_agents_docs.md). |
 
 Note: `j`/`k` for navigating commits in the sidebar and `Enter` for selecting a commit are hardcoded and not configurable.
 
@@ -119,7 +123,7 @@ Override only the keys you want to change:
     "next_point": "<C-n>",
     "prev_point": "<C-p>",
     "close": "<leader>x",
-    "commit_mode": {
+    "commit_viewer": {
       "exit": "<leader>ce"
     }
   }
@@ -133,7 +137,7 @@ Override only the keys you want to change:
   "shortcuts": {
     "show_shortcuts": false,
     "merge": false,
-    "commit_mode": {
+    "commit_viewer": {
       "maximize_prefix": false
     }
   }
@@ -153,5 +157,5 @@ Every shortcut has a `:Raccoon` command equivalent that works regardless of whet
 | `description` | `:Raccoon description` |
 | `list_comments` | `:Raccoon list` |
 | `merge` | `:Raccoon merge` / `:Raccoon squash` / `:Raccoon rebase` |
-| `commit_viewer` | `:Raccoon commits` |
+| `commit_viewer_toggle` | `:Raccoon commits` |
 | `close` | `:Raccoon close` |

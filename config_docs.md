@@ -10,7 +10,8 @@ The merge uses a deep merge strategy, so nested objects like `shortcuts` and `co
 
 Validation rules:
 - **`tokens`** is required and must contain at least one entry
-- Unknown fields are silently ignored (including legacy `github_username`)
+- Unknown fields are silently ignored (e.g. legacy `github_username`)
+- Renamed keys are migrated transparently by `lua/raccoon/config_compat.lua` — see the [Migrating from older config keys](#migrating-from-older-config-keys) section at the bottom
 
 ## Minimal config
 
@@ -135,17 +136,17 @@ Supports tilde expansion (`~/...`).
 
 Clones persist on disk, so reopening a PR is fast — it fetches updates instead of cloning from scratch. Delete the directory to free disk space when you no longer need old review clones.
 
-### `pull_changes_interval`
+### `sync_interval` *(formerly `pull_changes_interval`)*
 
 | Type | Default |
 |------|---------|
 | number | `300` |
 
-How often (in seconds) the plugin checks for new commits pushed to the PR branch while a review session is active. Set lower for faster detection, higher to reduce API calls. Minimum value is 10 seconds.
+How often (in seconds) the plugin checks for new commits pushed to the PR branch while a review session is active. Set lower for faster detection, higher to reduce API calls. Minimum value is 10 seconds (anything lower is clamped to 10).
 
 ```json
 {
-  "pull_changes_interval": 120
+  "sync_interval": 120
 }
 ```
 
@@ -227,34 +228,23 @@ Maximum number of lines displayed in the commit message header bar. The header s
 }
 ```
 
-### `parallel_agents`
+#### `commit_viewer.passthrough_keys` *(formerly top-level `passthrough_keymaps`)*
 
 | Type | Default |
 |------|---------|
-| object | see below |
+| array | `[]` |
 
-Configure fire-and-forget CLI agent dispatch from the commit viewer's maximized diff view. See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
+Key sequences (LHS strings) that should *not* be blocked by the commit viewer's keymap lockdown. By default, commit viewer mode replaces most normal-mode keymaps with no-ops to keep the grid layout stable. Add keys here to keep them working — for example, system-wide shortcuts you rely on (`<D-S-e>` for a file picker) or your own leader maps that don't conflict with the built-in commit-viewer keys.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | boolean | `false` | Enable the feature |
-| `command` | string | `""` | Shell command template containing `<PROMPT>` placeholder |
-| `suffix_prompt` | string | `""` | Text appended to every agent prompt |
-| `shortcut` | string or false | `"<leader>aa"` | Keymap to trigger dispatch. Set to `false` to disable. |
-| `popup_width` | number | `70` | Width of the task input popup (clamped to terminal width). |
+Empty strings, duplicates, and non-string entries are silently dropped.
 
 ```json
 {
-  "parallel_agents": {
-    "enabled": true,
-    "command": "claude --dangerously-skip-permissions -p <PROMPT>",
-    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request.",
-    "shortcut": "<leader>aa"
+  "commit_viewer": {
+    "passthrough_keys": ["<D-S-e>", "<leader>p"]
   }
 }
 ```
-
-In **PR commit viewer** mode, agents run inside the shallow clone checked out to the PR branch (`{clone_root}/{owner}/{repo}/pr-{number}`), so "commit and push" pushes directly to the PR. In **local commit viewer** mode, agents run in your working directory.
 
 ### `shortcuts`
 
@@ -286,15 +276,10 @@ Partial overrides are merged with defaults — you only need to specify keys you
   },
   "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
-  "pull_changes_interval": 120,
+  "sync_interval": 120,
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
-  },
-  "parallel_agents": {
-    "enabled": true,
-    "command": "claude --dangerously-skip-permissions -p <PROMPT>",
-    "suffix_prompt": "When done, create a commit with a description of the changes and how they address the original request."
   },
   "shortcuts": {
     "pr_list": "<leader>pr",
@@ -328,3 +313,18 @@ The config file is always at `~/.config/raccoon/config.json`. This path is not c
 | `:Raccoon config` | Creates the file with defaults (if missing) and opens it in a buffer |
 
 The file is plain JSON — edit it with any editor. Changes take effect on the next PR operation (no restart needed).
+
+## Migrating from older config keys
+
+Several keys were renamed in `0.12.0`. Old keys still work — they are migrated transparently at load time by `lua/raccoon/config_compat.lua` — but you should rename them on your own schedule because the compat layer is intended to be removed in a future major release.
+
+| Old key | New key | Notes |
+|---------|---------|-------|
+| `pull_changes_interval` | `sync_interval` | Same semantics; same minimum (10 s). |
+| `passthrough_keymaps` (top-level array of strings or `{key: ...}` objects) | `commit_viewer.passthrough_keys` (array of strings) | Object-shape entries are flattened to their `key` field during migration. |
+| `shortcuts.commit_viewer` (string toggle keymap) | `shortcuts.commit_viewer_toggle` | The string leaf moved to a sibling so the `commit_viewer` name can hold the in-mode shortcut block. |
+| `shortcuts.commit_mode.*` (in-mode shortcuts block) | `shortcuts.commit_viewer.*` | Identical inner schema; only the parent key name changes. |
+
+**Conflict rule.** If both the old and new key are present in your config, the new key wins and the old key is silently dropped. So you can flip atomically by writing the new key — anything still in the old key is ignored.
+
+**Removed in 0.12.0 (no migration).** The `parallel_agents` config block is no longer recognized at all. Configs that still contain it are silently ignored as unknown fields.

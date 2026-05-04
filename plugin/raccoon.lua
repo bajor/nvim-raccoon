@@ -10,7 +10,10 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   local subcommand = args[1]
 
   if not subcommand then
-    vim.notify("Usage: :Raccoon <prs|list|description|sync|merge|local|close>", vim.log.levels.WARN)
+    vim.notify(
+      "Usage: :Raccoon <prs|list|description|sync|merge|squash|rebase|commits|local|shortcuts|close|config>",
+      vim.log.levels.WARN
+    )
     return
   end
 
