@@ -310,40 +310,6 @@ function M.lock_buf(buf)
   end
 end
 
---- Set up the parallel agent dispatch keymap on a maximize buffer.
----@param buf number Buffer to bind the keymap on
----@param opts table {repo_path, sha, commit_message, filename, state}
----@param pa_cfg? table Pre-loaded parallel_agents config (avoids re-reading disk)
-local function setup_parallel_agent_keymap(buf, opts, pa_cfg)
-  pa_cfg = pa_cfg or config.load_parallel_agents()
-  if not pa_cfg.enabled or not config.is_enabled(pa_cfg.shortcut) then return end
-  local pa = require("raccoon.parallel_agents")
-  local buf_opts = { buffer = buf, noremap = true, silent = true }
-  local function dispatch_fn()
-    local visual_lines, line_start, line_end
-    local mode = vim.fn.mode()
-    if mode == "v" or mode == "V" or mode == "\22" then
-      vim.api.nvim_feedkeys(
-        vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false
-      )
-      line_start = vim.fn.line("'<")
-      line_end = vim.fn.line("'>")
-      visual_lines = vim.api.nvim_buf_get_lines(buf, line_start - 1, line_end, false)
-    end
-    pa.dispatch({
-      repo_path = opts.repo_path,
-      commit_sha = opts.sha,
-      commit_message = opts.commit_message or "",
-      filename = opts.filename,
-      visual_lines = visual_lines,
-      line_start = line_start,
-      line_end = line_end,
-      view_state = opts.state,
-    })
-  end
-  vim.keymap.set({ "n", "v" }, pa_cfg.shortcut, dispatch_fn, buf_opts)
-end
-
 --- Block editing and commit-mode navigation keys in a maximize floating window.
 --- Global normal-mode mappings are shadowed so only explicit maximize bindings remain active.
 ---@param buf number Buffer ID
@@ -1097,7 +1063,6 @@ function M.open_maximize(opts)
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
 
-    local pa_cfg = config.load_parallel_agents()
     local skip_keys
     if #change_starts > 0 then
       skip_keys = {
@@ -1138,8 +1103,6 @@ function M.open_maximize(opts)
         end
       end, buf_opts)
     end
-
-    setup_parallel_agent_keymap(buf, opts, pa_cfg)
   end)
 end
 
@@ -1358,7 +1321,6 @@ function M.open_file_content(opts)
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
     vim.wo[win].wrap = true
 
-    local pa_cfg = config.load_parallel_agents()
     M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
 
     local buf_opts = { buffer = buf, noremap = true, silent = true }
@@ -1369,8 +1331,6 @@ function M.open_file_content(opts)
       vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
     end
     vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
-
-    setup_parallel_agent_keymap(buf, opts, pa_cfg)
   end)
 end
 

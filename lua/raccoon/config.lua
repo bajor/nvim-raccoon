@@ -33,13 +33,6 @@ M.defaults = {
     commit_message_max_lines = 3,
     passthrough_keys = {},
   },
-  parallel_agents = {
-    enabled = false,
-    command = "",
-    suffix_prompt = "",
-    shortcut = "<leader>aa",
-    popup_width = 70,
-  },
   shortcuts = {
     -- Global
     pr_list = "<leader>pr",
@@ -231,15 +224,6 @@ local function read_config_json()
   return parsed
 end
 
---- Return val if it is a boolean, otherwise return default.
----@param val any
----@param default boolean
----@return boolean
-local function bool_field(val, default)
-  if type(val) == "boolean" then return val end
-  return default
-end
-
 --- Return only non-empty string entries from a list, preserving order and removing duplicates.
 ---@param val any
 ---@return string[]
@@ -331,41 +315,6 @@ function M.load_commit_viewer()
   end
   viewer.passthrough_keys = sanitize_string_list(passthrough_keys)
   return viewer
-end
-
---- Load parallel_agents config, falling back to defaults gracefully.
---- Unlike load(), this does not require valid tokens.
----@return table parallel_agents
-function M.load_parallel_agents()
-  local defaults = M.defaults.parallel_agents
-
-  local parsed = read_config_json()
-  if not parsed then
-    return vim.deepcopy(defaults)
-  end
-
-  local user = parsed.parallel_agents
-  if type(user) ~= "table" then
-    return vim.deepcopy(defaults)
-  end
-
-  local shortcut
-  if user.shortcut == false then
-    shortcut = false
-  elseif type(user.shortcut) == "string" and user.shortcut ~= "" then
-    shortcut = user.shortcut
-  else
-    shortcut = defaults.shortcut
-  end
-
-  return {
-    enabled = bool_field(user.enabled, defaults.enabled),
-    command = type(user.command) == "string" and user.command or defaults.command,
-    suffix_prompt = type(user.suffix_prompt) == "string" and user.suffix_prompt or defaults.suffix_prompt,
-    shortcut = shortcut,
-    popup_width = type(user.popup_width) == "number" and user.popup_width > 0
-      and math.floor(user.popup_width) or defaults.popup_width,
-  }
 end
 
 --- Get the token and host for a given owner/org from the tokens table
