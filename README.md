@@ -40,12 +40,11 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 - Merge, squash, or rebase PRs
 - Auto-sync to detect new commits pushed to the branch
 - Local commit viewer (`:Raccoon local`) for browsing any git repo's history with live "Current changes" view
-- Dispatch CLI agents (claude, amp, aider) from commit viewer diffs with context injection
 - Statusline integration showing file position and sync status
 
 ## Requirements
 
-- Neovim 0.9+
+- Neovim 0.10+ (uses `vim.uv`)
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
 - A GitHub personal access token — either:
   - **Classic token** ([create here](https://github.com/settings/tokens)): with `repo` scope
@@ -88,14 +87,14 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `tokens` | object | `{}` | Token per owner/org — string or `{"token": "...", "host": "..."}` for multi-host |
 | `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
-| `pull_changes_interval` | number | `300` | How often (in seconds) to auto-sync with remote |
+| `sync_interval` | number | `300` | How often (in seconds) to auto-sync with remote (minimum 10) *(formerly `pull_changes_interval`)* |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
 | `commit_viewer.grid.rows` | number | `2` | Rows in the commit viewer diff grid |
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
 | `commit_viewer.base_commits_count` | number | `20` | Number of recent base branch commits shown in the sidebar |
 | `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (1–500) |
 | `commit_viewer.commit_message_max_lines` | number | `3` | Max lines shown in the commit message header (1–50) |
-| `parallel_agents` | object | see [docs](parallel_agents_docs.md) | Dispatch CLI agents from maximized diff view (`enabled`, `command`, `suffix_prompt`, `shortcut`) |
+| `commit_viewer.passthrough_keys` | array | `[]` | Key sequences to leave unblocked in commit viewer mode (e.g. `["<leader>p"]`) *(formerly top-level `passthrough_keymaps`)* |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
 
@@ -148,15 +147,10 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
   },
   "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
-  "pull_changes_interval": 120,
+  "sync_interval": 120,
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
-  },
-  "parallel_agents": {
-    "enabled": true,
-    "command": "claude -p <PROMPT>",
-    "suffix_prompt": "Commit and push when done."
   },
   "shortcuts": {
     "pr_list": "<leader>pr",
@@ -171,12 +165,12 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
     "description": "<leader>dd",
     "list_comments": "<leader>ll",
     "merge": "<leader>rr",
-    "commit_viewer": "<leader>cm",
+    "commit_viewer_toggle": "<leader>cm",
     "comment_save": "<leader>s",
     "comment_resolve": "<leader>r",
     "comment_unresolve": "<leader>u",
     "close": "<leader>q",
-    "commit_mode": {
+    "commit_viewer": {
       "next_page": "<leader>j",
       "prev_page": "<leader>k",
       "next_page_alt": "<leader>l",
@@ -197,7 +191,7 @@ Set any shortcut to `false` to prevent it from being registered as a keymap. The
   "shortcuts": {
     "show_shortcuts": false,
     "merge": false,
-    "commit_mode": {
+    "commit_viewer": {
       "maximize_prefix": false
     }
   }
@@ -242,24 +236,18 @@ One review session is active at a time. Opening a second PR closes the first.
 
 ## Keymaps
 
-All keymaps are configurable via the `shortcuts` field in `config.json`. The values below are the defaults. Override any key by adding it to your config — only the keys you specify are changed, the rest keep their defaults. Set any shortcut to `false` to disable it entirely — the keymap won't be registered, but the underlying `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
+All keymaps are configurable via the `shortcuts` field in `config.json`. Override any key by adding it to your config — unspecified keys keep their defaults. Set any shortcut to `false` to disable it; the underlying `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
+
+The most-used defaults at a glance:
 
 | Key | Config key | Action |
 |-----|------------|--------|
-| `<leader>j` | `next_point` | Next diff/comment |
-| `<leader>k` | `prev_point` | Previous diff/comment |
-| `<leader>nf` | `next_file` | Next file |
-| `<leader>pf` | `prev_file` | Previous file |
-| `<leader>nt` | `next_thread` | Next comment thread |
-| `<leader>pt` | `prev_thread` | Previous comment thread |
-| `<leader>c` | `comment` | Comment at cursor position |
-| `<leader>dd` | `description` | Show PR description |
-| `<leader>ll` | `list_comments` | List all comments |
 | `<leader>pr` | `pr_list` | Open PR list picker |
-| `<leader>?` | `show_shortcuts` | Show shortcuts help |
-| `<leader>rr` | `merge` | Merge PR (pick method) |
-| `<leader>cm` | `commit_viewer` | Toggle commit viewer mode |
+| `<leader>cm` | `commit_viewer_toggle` | Toggle commit viewer mode |
+| `<leader>?` | `show_shortcuts` | Show all configured shortcuts |
 | `<leader>q` | `close` | Close window / exit session |
+
+For the full reference of all 23 configurable shortcuts (review navigation, comment editor, commit viewer, etc.), see [shortcuts_docs.md](shortcuts_docs.md).
 
 ## Commit Viewer Mode
 
@@ -269,18 +257,18 @@ Press `<leader>cm` during a PR review to enter commit viewer mode. A file tree o
 
 ### Commit viewer keymaps
 
-Commit mode shortcuts live under `shortcuts.commit_mode` in config:
+In-mode shortcuts live under `shortcuts.commit_viewer` in config:
 
 | Key | Config key | Action |
 |-----|------------|--------|
 | `j` / `k` | — | Navigate commits in sidebar (auto-loads diffs) |
-| `<leader>j` | `commit_mode.next_page` | Next page of diff hunks |
-| `<leader>k` | `commit_mode.prev_page` | Previous page of diff hunks |
-| `<leader>l` | `commit_mode.next_page_alt` | Next page of diff hunks (alias) |
-| `<leader>f` | `commit_mode.browse_files` | Toggle focus between commit sidebar and file tree |
-| `<leader>m1`..`m9` | `commit_mode.maximize_prefix` | Maximize a grid cell (full file diff) |
+| `<leader>j` | `commit_viewer.next_page` | Next page of diff hunks |
+| `<leader>k` | `commit_viewer.prev_page` | Previous page of diff hunks |
+| `<leader>l` | `commit_viewer.next_page_alt` | Next page of diff hunks (alias) |
+| `<leader>f` | `commit_viewer.browse_files` | Toggle focus between commit sidebar and file tree |
+| `<leader>m1`..`m9` | `commit_viewer.maximize_prefix` | Maximize a grid cell (full file diff) |
 | `<leader>q` / `q` | `close` | Exit maximized view |
-| `<leader>cm` | `commit_mode.exit` | Exit commit viewer mode |
+| `<leader>cm` | `commit_viewer.exit` | Exit commit viewer mode |
 
 Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number are shown in the winbar. A header bar displays the current commit message and page indicator. Navigation crosses seamlessly from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
 
@@ -309,12 +297,6 @@ The first entry in the sidebar is **"Current changes"** — a live view of all u
 When a new commit is made (e.g. by an AI agent in another terminal), it appears in the sidebar automatically (10-second HEAD poll). Your selection stays on whatever commit you were viewing — new commits just shift the list without stealing focus.
 
 Local mode works alongside an active PR review — entering `:Raccoon local` pauses the PR session, and exiting resumes it.
-
-## Parallel Agents
-
-Dispatch fire-and-forget CLI agents directly from the commit viewer's maximized diff view. Review a commit, optionally select code lines, and press `<leader>aa` to send an agent off with your task description, visual selection, and commit context automatically injected. Multiple agents can run simultaneously — the statusline shows a running count.
-
-Configure with the `parallel_agents` block in `config.json`. Set `command` to your CLI agent template (e.g. `claude --dangerously-skip-permissions -p <PROMPT>`, `amp -x <PROMPT>`). See [parallel_agents_docs.md](parallel_agents_docs.md) for the full reference.
 
 ## Statusline
 

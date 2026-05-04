@@ -484,7 +484,7 @@ function M.build_keymaps(shortcuts)
     { mode = n, lhs = shortcuts.description, rhs = function() M.show_description() end, desc = "Show PR description" },
     { mode = n, lhs = shortcuts.list_comments, rhs = function() M.list_comments() end, desc = "List all PR comments" },
     { mode = n, lhs = shortcuts.merge, rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
-    { mode = n, lhs = shortcuts.commit_viewer, rhs = function()
+    { mode = n, lhs = shortcuts.commit_viewer_toggle, rhs = function()
       require("raccoon.commits").toggle()
     end, desc = "Toggle commit viewer" },
   }

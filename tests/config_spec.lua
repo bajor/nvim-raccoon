@@ -23,8 +23,8 @@ describe("raccoon.config", function()
       assert.is_table(config.defaults.tokens)
       assert.is_table(config.defaults.repos)
       assert.is_string(config.defaults.clone_root)
-      assert.is_number(config.defaults.pull_changes_interval)
-      assert.equals(300, config.defaults.pull_changes_interval)
+      assert.is_number(config.defaults.sync_interval)
+      assert.equals(300, config.defaults.sync_interval)
     end)
 
     it("repos defaults to empty table", function()
@@ -440,7 +440,7 @@ describe("raccoon.config", function()
         "pr_list", "show_shortcuts",
         "next_point", "prev_point", "next_file", "prev_file",
         "next_thread", "prev_thread",
-        "comment", "description", "list_comments", "merge", "commit_viewer",
+        "comment", "description", "list_comments", "merge", "commit_viewer_toggle",
         "comment_save", "comment_resolve", "comment_unresolve",
         "close",
       }
@@ -450,25 +450,25 @@ describe("raccoon.config", function()
       end
     end)
 
-    it("has commit_mode subsection with expected keys", function()
-      assert.is_table(config.defaults.shortcuts.commit_mode)
+    it("has commit_viewer subsection with expected keys", function()
+      assert.is_table(config.defaults.shortcuts.commit_viewer)
       local expected = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix" }
       for _, key in ipairs(expected) do
-        assert.is_string(config.defaults.shortcuts.commit_mode[key],
-          "Missing commit_mode shortcut default: " .. key)
+        assert.is_string(config.defaults.shortcuts.commit_viewer[key],
+          "Missing commit_viewer shortcut default: " .. key)
       end
     end)
 
     it("default shortcuts are non-empty strings", function()
       for key, val in pairs(config.defaults.shortcuts) do
-        if key ~= "commit_mode" then
+        if key ~= "commit_viewer" then
           assert.is_string(val, "Shortcut " .. key .. " should be a string")
           assert.is_true(#val > 0, "Shortcut " .. key .. " should not be empty")
         end
       end
-      for key, val in pairs(config.defaults.shortcuts.commit_mode) do
-        assert.is_string(val, "commit_mode." .. key .. " should be a string")
-        assert.is_true(#val > 0, "commit_mode." .. key .. " should not be empty")
+      for key, val in pairs(config.defaults.shortcuts.commit_viewer) do
+        assert.is_string(val, "commit_viewer." .. key .. " should be a string")
+        assert.is_true(#val > 0, "commit_viewer." .. key .. " should not be empty")
       end
     end)
   end)
@@ -532,7 +532,7 @@ describe("raccoon.config", function()
         "shortcuts": {
           "pr_list": "<leader>pp",
           "close": "<leader>x",
-          "commit_mode": {
+          "commit_viewer": {
             "exit": "<leader>xx"
           }
         }
@@ -547,10 +547,10 @@ describe("raccoon.config", function()
       -- Non-overridden values get defaults
       assert.equals(config.defaults.shortcuts.next_point, shortcuts.next_point)
       assert.equals(config.defaults.shortcuts.description, shortcuts.description)
-      -- Nested commit_mode: overridden key
-      assert.equals("<leader>xx", shortcuts.commit_mode.exit)
-      -- Nested commit_mode: non-overridden keys keep defaults
-      assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
+      -- Nested commit_viewer: overridden key
+      assert.equals("<leader>xx", shortcuts.commit_viewer.exit)
+      -- Nested commit_viewer: non-overridden keys keep defaults
+      assert.equals(config.defaults.shortcuts.commit_viewer.next_page, shortcuts.commit_viewer.next_page)
 
       os.remove(tmpfile)
     end)
@@ -588,7 +588,7 @@ describe("raccoon.config", function()
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "pr_list": false,
-          "commit_mode": {
+          "commit_viewer": {
             "exit": false
           }
         }
@@ -602,9 +602,9 @@ describe("raccoon.config", function()
       -- Non-overridden keys keep defaults
       assert.equals(config.defaults.shortcuts.close, shortcuts.close)
       -- Nested: overridden
-      assert.is_false(shortcuts.commit_mode.exit)
+      assert.is_false(shortcuts.commit_viewer.exit)
       -- Nested: non-overridden keep defaults
-      assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
+      assert.equals(config.defaults.shortcuts.commit_viewer.next_page, shortcuts.commit_viewer.next_page)
 
       os.remove(tmpfile)
     end)
@@ -617,7 +617,7 @@ describe("raccoon.config", function()
         "shortcuts": {
           "pr_list": null,
           "close": null,
-          "commit_mode": {
+          "commit_viewer": {
             "exit": null
           }
         }
@@ -629,7 +629,7 @@ describe("raccoon.config", function()
       -- null should fall back to defaults, not vim.NIL
       assert.equals(config.defaults.shortcuts.pr_list, shortcuts.pr_list)
       assert.equals(config.defaults.shortcuts.close, shortcuts.close)
-      assert.equals(config.defaults.shortcuts.commit_mode.exit, shortcuts.commit_mode.exit)
+      assert.equals(config.defaults.shortcuts.commit_viewer.exit, shortcuts.commit_viewer.exit)
 
       os.remove(tmpfile)
     end)
@@ -641,7 +641,7 @@ describe("raccoon.config", function()
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
           "pr_list": 42,
-          "commit_mode": {
+          "commit_viewer": {
             "next_page": 99
           }
         }
@@ -651,7 +651,7 @@ describe("raccoon.config", function()
       config.config_path = tmpfile
       local shortcuts = config.load_shortcuts()
       assert.equals(config.defaults.shortcuts.pr_list, shortcuts.pr_list)
-      assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
+      assert.equals(config.defaults.shortcuts.commit_viewer.next_page, shortcuts.commit_viewer.next_page)
 
       os.remove(tmpfile)
     end)
@@ -674,23 +674,23 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("recovers when commit_mode is replaced with a scalar", function()
-      local tmpfile = test_tmp_dir .. "/scalar_commit_mode.json"
+    it("recovers when commit_viewer block is replaced with a non-string scalar", function()
+      local tmpfile = test_tmp_dir .. "/scalar_commit_viewer.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
         "tokens": {"user": "ghp_xxx"},
         "shortcuts": {
-          "commit_mode": "oops"
+          "commit_viewer": 42
         }
       }]])
       f:close()
 
       config.config_path = tmpfile
       local shortcuts = config.load_shortcuts()
-      -- commit_mode should be restored to defaults
-      assert.is_table(shortcuts.commit_mode)
-      assert.equals(config.defaults.shortcuts.commit_mode.next_page, shortcuts.commit_mode.next_page)
-      assert.equals(config.defaults.shortcuts.commit_mode.exit, shortcuts.commit_mode.exit)
+      -- commit_viewer block should be restored to defaults
+      assert.is_table(shortcuts.commit_viewer)
+      assert.equals(config.defaults.shortcuts.commit_viewer.next_page, shortcuts.commit_viewer.next_page)
+      assert.equals(config.defaults.shortcuts.commit_viewer.exit, shortcuts.commit_viewer.exit)
 
       os.remove(tmpfile)
     end)
@@ -713,155 +713,6 @@ describe("raccoon.config", function()
       assert.equals("<leader>pp", shortcuts.pr_list)
 
       os.remove(tmpfile)
-    end)
-  end)
-
-  describe("load_parallel_agents", function()
-    it("returns defaults when config file does not exist", function()
-      config.config_path = "/nonexistent/path/config.json"
-      local pa = config.load_parallel_agents()
-      assert.is_table(pa)
-      assert.is_false(pa.enabled)
-      assert.equals("", pa.command)
-      assert.equals("", pa.suffix_prompt)
-      assert.equals("<leader>aa", pa.shortcut)
-    end)
-
-    it("returns defaults for invalid JSON", function()
-      local tmpfile = test_tmp_dir .. "/pa_invalid.json"
-      local f = io.open(tmpfile, "w")
-      f:write("{ bad json }")
-      f:close()
-
-      config.config_path = tmpfile
-      local pa = config.load_parallel_agents()
-      assert.is_false(pa.enabled)
-      assert.equals("<leader>aa", pa.shortcut)
-
-      os.remove(tmpfile)
-    end)
-
-    it("merges user overrides correctly", function()
-      local tmpfile = test_tmp_dir .. "/pa_override.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "parallel_agents": {
-          "enabled": true,
-          "command": "claude -p <PROMPT>",
-          "suffix_prompt": "Always push."
-        }
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local pa = config.load_parallel_agents()
-      assert.is_true(pa.enabled)
-      assert.equals('claude -p <PROMPT>', pa.command)
-      assert.equals("Always push.", pa.suffix_prompt)
-      assert.equals("<leader>aa", pa.shortcut) -- default kept
-
-      os.remove(tmpfile)
-    end)
-
-    it("handles invalid types gracefully", function()
-      local tmpfile = test_tmp_dir .. "/pa_bad_types.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "parallel_agents": {
-          "enabled": "yes",
-          "command": 42,
-          "suffix_prompt": true,
-          "shortcut": 99
-        }
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local pa = config.load_parallel_agents()
-      assert.is_false(pa.enabled) -- default
-      assert.equals("", pa.command) -- default
-      assert.equals("", pa.suffix_prompt) -- default
-      assert.equals("<leader>aa", pa.shortcut) -- default
-
-      os.remove(tmpfile)
-    end)
-
-    it("shortcut false disables shortcut", function()
-      local tmpfile = test_tmp_dir .. "/pa_no_shortcut.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "parallel_agents": {
-          "enabled": true,
-          "command": "test",
-          "shortcut": false
-        }
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local pa = config.load_parallel_agents()
-      assert.is_false(pa.shortcut)
-      assert.is_false(config.is_enabled(pa.shortcut))
-
-      os.remove(tmpfile)
-    end)
-
-    it("empty suffix_prompt is valid", function()
-      local tmpfile = test_tmp_dir .. "/pa_empty_suffix.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "parallel_agents": {
-          "enabled": true,
-          "command": "test",
-          "suffix_prompt": ""
-        }
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local pa = config.load_parallel_agents()
-      assert.equals("", pa.suffix_prompt)
-
-      os.remove(tmpfile)
-    end)
-
-    it("returns defaults when parallel_agents is not a table", function()
-      local tmpfile = test_tmp_dir .. "/pa_scalar.json"
-      local f = io.open(tmpfile, "w")
-      f:write('{"parallel_agents": "invalid"}')
-      f:close()
-
-      config.config_path = tmpfile
-      local pa = config.load_parallel_agents()
-      assert.is_false(pa.enabled)
-      assert.equals("", pa.command)
-
-      os.remove(tmpfile)
-    end)
-
-    it("returns independent copies (no mutation)", function()
-      config.config_path = "/nonexistent/path/config.json"
-      local p1 = config.load_parallel_agents()
-      local p2 = config.load_parallel_agents()
-      p1.command = "MUTATED"
-      assert.is_not_equal("MUTATED", p2.command)
-    end)
-
-    it("respects enabled=false even when default is true", function()
-      local original_default = config.defaults.parallel_agents.enabled
-      config.defaults.parallel_agents.enabled = true
-
-      local tmpfile = test_tmp_dir .. "/pa_enabled_false.json"
-      local f = io.open(tmpfile, "w")
-      f:write('{"parallel_agents": {"enabled": false}}')
-      f:close()
-
-      config.config_path = tmpfile
-      local pa = config.load_parallel_agents()
-      assert.is_false(pa.enabled)
-
-      os.remove(tmpfile)
-      config.defaults.parallel_agents.enabled = original_default
     end)
   end)
 
@@ -1063,7 +914,7 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
-    it("accepts legacy passthrough_keymaps entries", function()
+    it("migrates legacy passthrough_keymaps via config_compat", function()
       local tmpfile = test_tmp_dir .. "/legacy_commit_viewer_passthrough.json"
       local f = io.open(tmpfile, "w")
       f:write([[{
@@ -1081,6 +932,114 @@ describe("raccoon.config", function()
       config.config_path = tmpfile
       local viewer = config.load_commit_viewer()
       assert.same({ "<Space>n", "x" }, viewer.passthrough_keys)
+
+      os.remove(tmpfile)
+    end)
+
+    it("migrates legacy passthrough_keymaps when commit_viewer is a scalar", function()
+      local tmpfile = test_tmp_dir .. "/legacy_scalar_commit_viewer_passthrough.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "commit_viewer": 42,
+        "passthrough_keymaps": [
+          { "key": "<Space>n" },
+          "x"
+        ]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local viewer = config.load_commit_viewer()
+      assert.same({ "<Space>n", "x" }, viewer.passthrough_keys)
+
+      os.remove(tmpfile)
+    end)
+  end)
+
+  describe("backward-compat through loaders", function()
+    it("load_shortcuts migrates legacy shortcuts.commit_mode to shortcuts.commit_viewer", function()
+      local tmpfile = test_tmp_dir .. "/legacy_commit_mode.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "commit_mode": {
+            "next_page": "<C-n>",
+            "exit": "<leader>xx"
+          }
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.equals("<C-n>", shortcuts.commit_viewer.next_page)
+      assert.equals("<leader>xx", shortcuts.commit_viewer.exit)
+
+      os.remove(tmpfile)
+    end)
+
+    it("load_shortcuts migrates legacy shortcuts.commit_viewer (string) to commit_viewer_toggle", function()
+      local tmpfile = test_tmp_dir .. "/legacy_commit_viewer_leaf.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "commit_viewer": "<leader>oo"
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.equals("<leader>oo", shortcuts.commit_viewer_toggle)
+      -- The nested commit_viewer block falls back to defaults since the legacy
+      -- string was migrated out.
+      assert.equals(config.defaults.shortcuts.commit_viewer.next_page,
+        shortcuts.commit_viewer.next_page)
+
+      os.remove(tmpfile)
+    end)
+
+    it("load_shortcuts preserves disabled legacy commit_viewer toggle while migrating commit_mode", function()
+      local tmpfile = test_tmp_dir .. "/legacy_disabled_commit_viewer_leaf.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "shortcuts": {
+          "commit_viewer": false,
+          "commit_mode": {
+            "next_page": "<C-n>",
+            "exit": "<leader>xx"
+          }
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local shortcuts = config.load_shortcuts()
+      assert.is_false(shortcuts.commit_viewer_toggle)
+      assert.is_false(config.is_enabled(shortcuts.commit_viewer_toggle))
+      assert.equals("<C-n>", shortcuts.commit_viewer.next_page)
+      assert.equals("<leader>xx", shortcuts.commit_viewer.exit)
+
+      os.remove(tmpfile)
+    end)
+
+    it("load migrates legacy pull_changes_interval to sync_interval", function()
+      local tmpfile = test_tmp_dir .. "/legacy_pull_changes_interval.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"user": "ghp_xxx"},
+        "pull_changes_interval": 120
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.equals(120, cfg.sync_interval)
+      assert.is_nil(cfg.pull_changes_interval)
 
       os.remove(tmpfile)
     end)

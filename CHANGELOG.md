@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12.0] - 2026-05-04
+
+### Removed
+- **Parallel agents feature** — `lua/raccoon/parallel_agents.lua` module, the `parallel_agents` config block and its loader in `config.lua`, the `<leader>aa` dispatch keymap in `commit_ui.lua`'s maximize windows, the `[N agent(s)]` statusline counter in `init.lua`, the parallel-agents check in `is_active()`, all `tests/parallel_agents_spec.lua` and the `load_parallel_agents` block in `tests/config_spec.lua`, and `parallel_agents_docs.md`. User configs that still contain a `parallel_agents` block are silently ignored as unknown fields — there is no migration path because the feature is gone.
+- Legacy `sanitize_legacy_passthrough_keymaps` shim in `config.lua` (its job is now done centrally by `config_compat.lua`).
+- Unused `bool_field` helper in `config.lua` (was only used by the deleted parallel_agents loader).
+- Two duplicate keymap reference tables in `README.md` (replaced by a 4-row cheatsheet + link to `shortcuts_docs.md`).
+
+### Changed (renamed config keys — backward compatible via `config_compat.lua`)
+- `pull_changes_interval` → `sync_interval`. Same semantics; same 10 s minimum.
+- `passthrough_keymaps` (top-level array, accepted strings or `{key: ...}` objects) → `commit_viewer.passthrough_keys` (top-level nested array of strings). Object-shape entries are flattened to their `key` field during migration.
+- `shortcuts.commit_viewer` (string toggle keymap) → `shortcuts.commit_viewer_toggle`. The string leaf moved aside so the `commit_viewer` name can hold the in-mode shortcut block.
+- `shortcuts.commit_mode.*` (in-mode shortcuts block) → `shortcuts.commit_viewer.*`. Same inner schema; only the parent key name changes.
+
+The compat module migrates legacy keys to their new names at load time, with new-key-wins on conflict. Old configs keep working — users should rename on their own schedule because the compat layer is intended to be removed in a future major release.
+
+### Added
+- `lua/raccoon/config_compat.lua` — isolated module exporting a single pure function `compat.normalize(parsed)` that applies the four renames above. Wired into both `config.read_config_json()` and `config.load()` so every loader sees only the current schema. Designed to be deletable as one file plus one `require` line later.
+- `tests/config_compat_spec.lua` — 4 unit tests covering clean configs, every-key migration, new-wins conflict resolution, and non-table input.
+- 3 backward-compat integration tests in `tests/config_spec.lua` exercising the migration through `load`, `load_shortcuts`, and `load_commit_viewer`.
+- `commit_viewer.passthrough_keys` is now properly documented in `config_docs.md` (it was loaded but undocumented in earlier versions).
+- "Terminology" section in `shortcuts_docs.md` disambiguating the four contexts where `commit_viewer` appears (top-level config block, toggle leaf, nested in-mode shortcut block, `:Raccoon commits` subcommand).
+- "Migrating from older config keys" section at the bottom of `config_docs.md` listing every rename.
+- `ARCHITECTURE_DIFF.md` showing the before/after module graph and the config load flow.
+
+### Fixed
+- `README.md` Neovim version requirement is now `0.10+` (matches the actual `vim.uv` usage); previously claimed `0.9+`.
+- `:Raccoon` usage hint in `plugin/raccoon.lua` now lists every subcommand the `complete` callback supports (was missing `commits`, `shortcuts`, `config`, `open`, `squash`, `rebase`).
+- Added inline `(formerly X)` cross-references on every renamed field in `config_docs.md` and `shortcuts_docs.md` so users searching for old key names land on the new ones.
+
 ## [0.11.1] - 2026-03-26
 
 ### Added

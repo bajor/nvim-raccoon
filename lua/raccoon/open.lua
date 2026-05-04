@@ -564,7 +564,7 @@ function M.open_pr(url)
   api.init(url_host)
 
   -- Set sync interval from config (clamped to 10s minimum)
-  local interval_s = math.max(10, cfg.pull_changes_interval or 300)
+  local interval_s = math.max(10, cfg.sync_interval or 300)
   sync_interval_ms = interval_s * 1000
 
   -- Build clone path

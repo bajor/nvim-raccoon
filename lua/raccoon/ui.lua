@@ -726,15 +726,15 @@ local shortcut_descriptions = {
   description = "Show PR description",
   list_comments = "List all PR comments",
   merge = "Merge PR (pick method)",
-  commit_viewer = "Toggle commit viewer",
+  commit_viewer_toggle = "Toggle commit viewer",
   comment_save = "Save comment",
   comment_resolve = "Resolve thread",
   comment_unresolve = "Unresolve thread",
   close = "Close/dismiss",
 }
 
---- Commit mode shortcut descriptions (nested under shortcuts.commit_mode)
-local commit_mode_descriptions = {
+--- Commit viewer shortcut descriptions (nested under shortcuts.commit_viewer)
+local commit_viewer_descriptions = {
   next_page = "Next page of hunks",
   prev_page = "Previous page of hunks",
   next_page_alt = "Next page (alt)",
@@ -752,11 +752,11 @@ local shortcut_groups = {
   },
   {
     title = "Review Actions",
-    keys = { "comment", "description", "list_comments", "merge", "commit_viewer" },
+    keys = { "comment", "description", "list_comments", "merge", "commit_viewer_toggle" },
   },
   { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
   {
-    title = "Commit Viewer", nested = "commit_mode",
+    title = "Commit Viewer", nested = "commit_viewer",
     keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix", "browse_files" },
   },
   { title = "Common", keys = { "close" } },
@@ -777,7 +777,7 @@ function M.show_shortcuts()
     table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
     local source = group.nested and shortcuts[group.nested] or shortcuts
-    local descs = group.nested and commit_mode_descriptions or shortcut_descriptions
+    local descs = group.nested and commit_viewer_descriptions or shortcut_descriptions
     for _, key in ipairs(group.keys) do
       local binding = source and source[key]
       local desc = descs[key] or key
