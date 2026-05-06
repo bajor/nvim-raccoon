@@ -37,12 +37,16 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          # Patch versions have two dots (e.g., 0.9.1), major/minor have one (e.g., 0.9)
-          if echo "$version" | grep -q '^[0-9]\+\.[0-9]\+$'; then
+          # Release versions are X.Y and X.Y.0 (e.g., 0.11, 0.12.0).
+          # Patch versions are X.Y.Z where Z > 0 (e.g., 0.11.1).
+          if echo "$version" | grep -Eq '^[0-9]+\.[0-9]+(\.0)?$'; then
             echo "is_release=true" >> "$GITHUB_OUTPUT"
-          else
+          elif echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "is_release=false" >> "$GITHUB_OUTPUT"
             echo "Patch version detected — will tag but skip GitHub Release."
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Unrecognized version format '$version' — will skip GitHub Release."
           fi
           echo "Extracted version: $version (tag: v$version)"
 
