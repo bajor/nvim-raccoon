@@ -88,6 +88,10 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `sync_interval` | number | `300` | How often (in seconds) to auto-sync with remote (minimum 10) *(formerly `pull_changes_interval`)* |
+| `ui.glyphs` | string | `"auto"` | UI glyph mode: `"auto"` (ASCII on Windows), `"unicode"`, or `"ascii"` |
+| `ui.diff_markers` | string | `"auto"` | Diff marker mode: `"sign"`, `"prefix"`, `"both"`, or `"auto"` (`"both"` on Windows) |
+| `ui.safe_highlights` | boolean | `true` | Link Raccoon highlights to theme groups instead of hardcoded RGB colors |
+| `ui.normalize_float_background` | boolean | `true` | Force float `NormalFloat` to inherit `Normal` to avoid black float backgrounds in some terminals |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
 | `commit_viewer.grid.rows` | number | `2` | Rows in the commit viewer diff grid |
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |

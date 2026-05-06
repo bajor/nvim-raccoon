@@ -4,6 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local display = require("raccoon.display")
 local NORMAL_MODE = config.NORMAL
 local state = require("raccoon.state")
 
@@ -71,27 +72,35 @@ local sign_group = "RaccoonComment"
 
 --- Define signs and highlight groups for comments
 local function setup_highlights()
-  -- Bright yellow/orange background for comment lines - very visible
-  vim.api.nvim_set_hl(0, "RaccoonCommentLine", { bg = "#4a3d00", fg = "#ffcc00", bold = true })
-  vim.api.nvim_set_hl(0, "RaccoonCommentLineResolved", { bg = "#1a3d1a", fg = "#88cc88" })
-  vim.api.nvim_set_hl(0, "RaccoonCommentLinePending", { bg = "#4a2800", fg = "#ffaa00", bold = true })
-  vim.api.nvim_set_hl(0, "RaccoonCommentSign", { fg = "#ffcc00", bold = true })
+  local glyphs = display.glyphs()
+  if display.use_safe_highlights() then
+    vim.api.nvim_set_hl(0, "RaccoonCommentLine", { link = "DiffChange", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonCommentLineResolved", { link = "DiffAdd", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonCommentLinePending", { link = "WarningMsg", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonCommentSign", { link = "WarningMsg", default = true })
+  else
+    -- Bright yellow/orange background for comment lines - very visible
+    vim.api.nvim_set_hl(0, "RaccoonCommentLine", { bg = "#4a3d00", fg = "#ffcc00", bold = true })
+    vim.api.nvim_set_hl(0, "RaccoonCommentLineResolved", { bg = "#1a3d1a", fg = "#88cc88" })
+    vim.api.nvim_set_hl(0, "RaccoonCommentLinePending", { bg = "#4a2800", fg = "#ffaa00", bold = true })
+    vim.api.nvim_set_hl(0, "RaccoonCommentSign", { fg = "#ffcc00", bold = true })
+  end
 
   -- Sign highlights with line highlighting
   vim.fn.sign_define("RaccoonComment", {
-    text = "💬",
+    text = glyphs.comment,
     texthl = "RaccoonCommentSign",
     linehl = "RaccoonCommentLine",
     numhl = "RaccoonCommentSign",
   })
   vim.fn.sign_define("RaccoonCommentResolved", {
-    text = "✓",
+    text = glyphs.resolved,
     texthl = "DiagnosticOk",
     linehl = "RaccoonCommentLineResolved",
     numhl = "DiagnosticOk",
   })
   vim.fn.sign_define("RaccoonCommentPending", {
-    text = "○",
+    text = glyphs.pending,
     texthl = "RaccoonCommentSign",
     linehl = "RaccoonCommentLinePending",
     numhl = "RaccoonCommentSign",
@@ -157,8 +166,9 @@ function M.show_comments(buf, comments)
         preview = preview .. "..."
       end
 
+      local glyphs = display.glyphs()
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line - 1, 0, {
-        virt_text = { { "  💬 " .. preview, "RaccoonCommentSign" } },
+        virt_text = { { "  " .. glyphs.comment .. " " .. preview, "RaccoonCommentSign" } },
         virt_text_pos = "eol",
       })
     end
@@ -301,6 +311,7 @@ function M.show_comment_popup(comment)
     title = " Comment ",
     title_pos = "center",
   })
+  display.apply_float_winhl(win)
 
   -- Close keymaps
   local shortcuts = config.load_shortcuts()
@@ -316,8 +327,13 @@ function M.show_comment_popup(comment)
 end
 
 --- Divider line for separating comments in thread view
-local COMMENT_DIVIDER = "────────────────────────────────────────────────"
-local NEW_COMMENT_HEADER = "── New Comment ──────────────────────────────────"
+local function comment_divider()
+  return display.separator(48)
+end
+
+local function new_comment_header()
+  return display.section_header("New Comment")
+end
 
 --- Show a read-only thread view in a floating window
 --- Displays all comments for a given thread, or a single review body
@@ -349,7 +365,7 @@ function M.show_readonly_thread(opts)
 
     if i < #thread_comments then
       table.insert(lines, "")
-      table.insert(lines, COMMENT_DIVIDER)
+      table.insert(lines, comment_divider())
       table.insert(lines, "")
     end
   end
@@ -373,6 +389,7 @@ function M.show_readonly_thread(opts)
     title = opts.title or " Thread ",
     title_pos = "center",
   })
+  display.apply_float_winhl(win)
 
   vim.wo[win].wrap = true
 
@@ -445,7 +462,7 @@ function M.show_comment_thread()
     -- Add divider if not last comment
     if i < #line_comments then
       table.insert(lines, "")
-      table.insert(lines, COMMENT_DIVIDER)
+      table.insert(lines, comment_divider())
       table.insert(lines, "")
     end
   end
@@ -453,7 +470,7 @@ function M.show_comment_thread()
   -- Add section for new comment
   if #line_comments > 0 then
     table.insert(lines, "")
-    table.insert(lines, NEW_COMMENT_HEADER)
+    table.insert(lines, new_comment_header())
   else
     table.insert(lines, "@ New Comment")
   end
@@ -484,6 +501,7 @@ function M.show_comment_thread()
     title = M._build_thread_title(current_line, shortcuts),
     title_pos = "center",
   })
+  display.apply_float_winhl(win)
 
   -- Helper to find which comment section cursor is in
   local function get_cursor_section()
@@ -852,6 +870,7 @@ function M.create_comment()
     title = M._build_comment_title("New Comment", shortcuts),
     title_pos = "center",
   })
+  display.apply_float_winhl(win)
 
   -- Start in insert mode
   vim.cmd("startinsert")
@@ -1063,7 +1082,7 @@ function M.list_comments()
       if current_file ~= nil then
         table.insert(lines, "") -- Blank line between files
       end
-      table.insert(lines, "── " .. entry.file .. " ──")
+      table.insert(lines, display.section_header(entry.file))
       current_file = entry.file
     end
 
@@ -1082,7 +1101,7 @@ function M.list_comments()
     if #lines > 0 then
       table.insert(lines, "")
     end
-    table.insert(lines, "── Reviews ──")
+    table.insert(lines, display.section_header("Reviews"))
     for _, review in ipairs(reviews) do
       local author = review.user and review.user.login or "unknown"
       local state_str = review.state and string.format(" [%s]", review.state:lower()) or ""
@@ -1113,13 +1132,15 @@ function M.list_comments()
     title = " All PR Comments (" .. total_count .. ") ",
     title_pos = "center",
   })
+  display.apply_float_winhl(win)
 
   -- Track window for toggle behavior
   comment_list_win = win
 
   -- Add syntax highlighting for file headers
   vim.api.nvim_buf_call(buf, function()
-    vim.fn.matchadd("Title", "^── .* ──$")
+    local header_pattern = display.use_ascii_glyphs() and "^%-%- .+ %-%-$" or "^── .* ──$"
+    vim.fn.matchadd("Title", header_pattern)
     vim.fn.matchadd("Number", "L%d\\+")
     vim.fn.matchadd("Comment", "\\[pending\\]")
     vim.fn.matchadd("DiagnosticOk", "\\[resolved\\]")

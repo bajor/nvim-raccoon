@@ -4,6 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local display = require("raccoon.display")
 local NORMAL_MODE = config.NORMAL
 local state = require("raccoon.state")
 local localcommits = require("raccoon.localcommits")
@@ -61,6 +62,7 @@ function M.create_floating_window(opts)
   -- Create window
   local enter = opts.enter ~= false
   local win = vim.api.nvim_open_win(buf, enter, win_opts)
+  display.apply_float_winhl(win)
 
   -- Set window options
   vim.wo[win].cursorline = true
@@ -148,6 +150,7 @@ end
 local function render_pr_list(prs, buf_width, shortcuts)
   local lines = {}
   local highlights = {}
+  local glyphs = display.glyphs()
   buf_width = buf_width or 60
 
   if #prs == 0 then
@@ -175,7 +178,7 @@ local function render_pr_list(prs, buf_width, shortcuts)
 
       -- Separator line before each repo (except first)
       if i > 1 then
-        table.insert(lines, string.rep("─", buf_width - 4))
+        table.insert(lines, display.separator(buf_width - 4))
         line_idx = line_idx + 1
       end
 
@@ -198,7 +201,7 @@ local function render_pr_list(prs, buf_width, shortcuts)
         -- Info line: author and relative time (not bold)
         local author = pr.user and pr.user.login or "unknown"
         local updated = M.relative_time(pr.updated_at)
-        local info_line = string.format("       by %s • %s", author, updated)
+        local info_line = string.format("       by %s %s %s", author, glyphs.bullet, updated)
         table.insert(lines, info_line)
         line_idx = line_idx + 1
 
@@ -210,9 +213,10 @@ local function render_pr_list(prs, buf_width, shortcuts)
   end
 
   -- Footer separator
-  table.insert(lines, string.rep("─", buf_width - 4))
+  table.insert(lines, display.separator(buf_width - 4))
   local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", close_key))
+  table.insert(lines, string.format(" Enter: open%s%s: close%sr: refresh%sj/k: navigate",
+    glyphs.pipe_sep, close_key, glyphs.pipe_sep, glyphs.pipe_sep))
 
   return lines, highlights
 end
@@ -661,12 +665,13 @@ function M.show_description()
   local desc_lines = vim.split(body, "\n", { plain = true })
 
   -- Build content
+  local glyphs = display.glyphs()
   local lines = {
     string.format("PR #%d: %s", pr.number, pr.title),
     string.format("Author: %s", pr.user and pr.user.login or "unknown"),
-    string.format("Branch: %s → %s", pr.head.ref, pr.base.ref),
+    string.format("Branch: %s %s %s", pr.head.ref, glyphs.arrow, pr.base.ref),
     "",
-    "─────────────────────────────────────────────────────────",
+    display.separator(57),
     "",
   }
 
@@ -772,7 +777,7 @@ function M.show_shortcuts()
   local highlights = {}
 
   for _, group in ipairs(shortcut_groups) do
-    local header = "── " .. group.title .. " ──"
+    local header = display.section_header(group.title)
     table.insert(lines, header)
     table.insert(highlights, { line = #lines - 1, hl = "Title" })
 

@@ -5,6 +5,7 @@ local M = {}
 local api = require("raccoon.api")
 local comments = require("raccoon.comments")
 local config = require("raccoon.config")
+local display = require("raccoon.display")
 local diff = require("raccoon.diff")
 local git = require("raccoon.git")
 local keymaps = require("raccoon.keymaps")
@@ -35,6 +36,13 @@ end
 
 --- Setup the statusline highlight groups
 local function setup_statusline_highlight()
+  if display.use_safe_highlights() then
+    vim.api.nvim_set_hl(0, "RaccoonWarning", { link = "WarningMsg", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonConflict", { link = "ErrorMsg", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonOk", { link = "DiffAdd", default = true })
+    return
+  end
+
   -- Yellow/orange for out of sync (same as comment highlight)
   vim.api.nvim_set_hl(0, "RaccoonWarning", { fg = "#ffcc00", bg = "#4a3d00", bold = true })
   -- Red for conflicts
@@ -50,6 +58,7 @@ local function update_statusline()
   if not pr then return end
 
   local parts = {}
+  local glyphs = display.glyphs()
 
   -- File count indicator
   local files = state.get_files()
@@ -59,13 +68,14 @@ local function update_statusline()
 
   -- Conflict warning (highest priority - red)
   if has_conflicts then
-    table.insert(parts, "%#RaccoonConflict# ⛔ MERGE CONFLICTS %*")
+    table.insert(parts, string.format("%%#RaccoonConflict# %s MERGE CONFLICTS %%*", glyphs.conflict))
   end
 
   -- Behind warning (yellow)
   if commits_behind > 0 then
     local plural = commits_behind == 1 and "commit" or "commits"
-    table.insert(parts, string.format("%%#RaccoonWarning# ⚠ %d %s behind %s %%*",
+    table.insert(parts, string.format("%%#RaccoonWarning# %s %d %s behind %s %%*",
+      glyphs.warning,
       commits_behind, plural, pr.base.ref))
   end
 
@@ -74,7 +84,7 @@ local function update_statusline()
   if #parts > 0 then
     status_str = table.concat(parts, " ")
   elseif commits_behind == 0 and not has_conflicts then
-    status_str = "%#RaccoonOk# ✓ In sync with " .. pr.base.ref .. " %*"
+    status_str = string.format("%%#RaccoonOk# %s In sync with %s %%*", glyphs.ok, pr.base.ref)
   else
     return -- No status to show
   end
@@ -93,6 +103,7 @@ function M.statusline()
 
   local pr = state.get_pr()
   if not pr then return "" end
+  local glyphs = display.glyphs()
 
   -- File count prefix
   local files = state.get_files()
@@ -102,12 +113,12 @@ function M.statusline()
   end
 
   if has_conflicts then
-    return file_part .. "⛔ CONFLICTS"
+    return file_part .. glyphs.conflict .. " CONFLICTS"
   elseif commits_behind > 0 then
     local plural = commits_behind == 1 and "commit" or "commits"
-    return file_part .. string.format("⚠ %d %s behind %s", commits_behind, plural, pr.base.ref)
+    return file_part .. string.format("%s %d %s behind %s", glyphs.warning, commits_behind, plural, pr.base.ref)
   else
-    return file_part .. "✓ In sync"
+    return file_part .. glyphs.ok .. " In sync"
   end
 end
 

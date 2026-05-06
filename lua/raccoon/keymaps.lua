@@ -6,6 +6,7 @@ local M = {}
 local api = require("raccoon.api")
 local comments = require("raccoon.comments")
 local config = require("raccoon.config")
+local display = require("raccoon.display")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 local state = require("raccoon.state")
@@ -420,6 +421,7 @@ function M.merge_picker()
         title = " Merge PR ",
         title_pos = "center",
       })
+      display.apply_float_winhl(win)
 
       -- Highlight the title and CI status
       vim.api.nvim_buf_call(buf, function()

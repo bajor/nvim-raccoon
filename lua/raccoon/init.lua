@@ -2,6 +2,7 @@
 ---@field config table Configuration options
 ---@field state table Current review session state
 local M = {}
+local display = require("raccoon.display")
 
 --- Default configuration
 M.config = {
@@ -11,6 +12,17 @@ M.config = {
 --- Setup highlight groups for diff display
 --- Uses dark green/red backgrounds for added/deleted lines
 local function setup_highlights()
+  if display.use_safe_highlights() then
+    vim.api.nvim_set_hl(0, "RaccoonAdd", { link = "DiffAdd", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonDelete", { link = "DiffDelete", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonAddSign", { link = "DiffAdd", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonDeleteSign", { link = "DiffDelete", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonFileNormal", { link = "Comment", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonFileInCommit", { link = "Comment", default = true })
+    vim.api.nvim_set_hl(0, "RaccoonFileVisible", { link = "Title", default = true })
+    return
+  end
+
   -- Green background for added lines (high contrast)
   vim.api.nvim_set_hl(0, "RaccoonAdd", {
     bg = "#2d5a2d",

@@ -35,6 +35,12 @@ M.defaults = {
     commit_message_max_lines = 3,
     passthrough_keys = {},
   },
+  ui = {
+    glyphs = "auto", -- "auto" | "unicode" | "ascii"
+    diff_markers = "auto", -- "auto" | "sign" | "prefix" | "both"
+    safe_highlights = true,
+    normalize_float_background = true,
+  },
   shortcuts = {
     -- Global
     pr_list = "<leader>pr",
@@ -298,6 +304,38 @@ function M.load_commit_viewer()
   local viewer = vim.tbl_deep_extend("force", vim.deepcopy(defaults), user)
   viewer.passthrough_keys = sanitize_string_list(user.passthrough_keys)
   return viewer
+end
+
+--- Load UI compatibility config, falling back to defaults gracefully.
+--- Unlike load(), this does not require valid tokens.
+---@return table ui
+function M.load_ui()
+  local defaults = M.defaults.ui
+  local parsed = read_config_json()
+  if not parsed then
+    return vim.deepcopy(defaults)
+  end
+
+  local user = type(parsed.ui) == "table" and parsed.ui or {}
+  local ui = vim.tbl_deep_extend("force", vim.deepcopy(defaults), user)
+
+  if ui.glyphs ~= "auto" and ui.glyphs ~= "unicode" and ui.glyphs ~= "ascii" then
+    ui.glyphs = defaults.glyphs
+  end
+
+  if ui.diff_markers ~= "auto" and ui.diff_markers ~= "sign" and ui.diff_markers ~= "prefix" and ui.diff_markers ~= "both" then
+    ui.diff_markers = defaults.diff_markers
+  end
+
+  if type(ui.safe_highlights) ~= "boolean" then
+    ui.safe_highlights = defaults.safe_highlights
+  end
+
+  if type(ui.normalize_float_background) ~= "boolean" then
+    ui.normalize_float_background = defaults.normalize_float_background
+  end
+
+  return ui
 end
 
 --- Get the token and host for a given owner/org from the tokens table

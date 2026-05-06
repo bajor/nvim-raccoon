@@ -152,6 +152,67 @@ How often (in seconds) the plugin checks for new commits pushed to the PR branch
 
 The sync check compares the HEAD SHA — if nothing changed, no further API calls are made. Auto-sync is paused while commit viewer mode is active and resumes when you exit. You can also manually sync with `:Raccoon sync` at any time.
 
+### `ui`
+
+Optional nested object for terminal/display compatibility.
+
+#### `ui.glyphs`
+
+| Type | Default |
+|------|---------|
+| string | `"auto"` |
+
+Controls which glyph set is used for tree lines, separators, and status symbols.
+
+- `"auto"`: uses ASCII on Windows, Unicode elsewhere
+- `"unicode"`: always use Unicode symbols
+- `"ascii"`: always use ASCII fallbacks
+
+```json
+{
+  "ui": {
+    "glyphs": "ascii"
+  }
+}
+```
+
+#### `ui.diff_markers`
+
+| Type | Default |
+|------|---------|
+| string | `"auto"` |
+
+Controls how add/delete markers are rendered in diffs.
+
+- `"sign"`: sign column only
+- `"prefix"`: text prefix only (`+ ` / `- `)
+- `"both"`: sign column + text prefix
+- `"auto"`: `"both"` on Windows, `"sign"` elsewhere
+
+```json
+{
+  "ui": {
+    "diff_markers": "both"
+  }
+}
+```
+
+#### `ui.safe_highlights`
+
+| Type | Default |
+|------|---------|
+| boolean | `true` |
+
+When enabled, raccoon highlight groups link to theme-native groups (`DiffAdd`, `DiffDelete`, `WarningMsg`, etc.) instead of forcing hardcoded RGB values. This avoids black or mismatched backgrounds in some terminals.
+
+#### `ui.normalize_float_background`
+
+| Type | Default |
+|------|---------|
+| boolean | `true` |
+
+When enabled, floating windows use `winhl=Normal:Normal,NormalFloat:Normal,FloatBorder:FloatBorder` to keep float backgrounds consistent with your terminal theme.
+
 ### `commit_viewer`
 
 Nested object controlling the commit viewer grid layout.

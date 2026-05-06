@@ -36,6 +36,14 @@ describe("raccoon.config", function()
       assert.equals(50, config.defaults.commit_viewer.sidebar_width)
     end)
 
+    it("has ui defaults", function()
+      assert.is_table(config.defaults.ui)
+      assert.equals("auto", config.defaults.ui.glyphs)
+      assert.equals("auto", config.defaults.ui.diff_markers)
+      assert.is_true(config.defaults.ui.safe_highlights)
+      assert.is_true(config.defaults.ui.normalize_float_background)
+    end)
+
     it("does not contain dead config fields", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
@@ -951,6 +959,61 @@ describe("raccoon.config", function()
       config.config_path = tmpfile
       local viewer = config.load_commit_viewer()
       assert.same({ "<Space>n", "x" }, viewer.passthrough_keys)
+
+      os.remove(tmpfile)
+    end)
+  end)
+
+  describe("load_ui", function()
+    it("returns defaults when config file does not exist", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local ui = config.load_ui()
+      assert.is_table(ui)
+      assert.same(config.defaults.ui, ui)
+    end)
+
+    it("sanitizes invalid UI values", function()
+      local tmpfile = test_tmp_dir .. "/invalid_ui_values.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "ui": {
+          "glyphs": "invalid",
+          "diff_markers": "bad",
+          "safe_highlights": "yes",
+          "normalize_float_background": 1
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local ui = config.load_ui()
+      assert.equals(config.defaults.ui.glyphs, ui.glyphs)
+      assert.equals(config.defaults.ui.diff_markers, ui.diff_markers)
+      assert.equals(config.defaults.ui.safe_highlights, ui.safe_highlights)
+      assert.equals(config.defaults.ui.normalize_float_background, ui.normalize_float_background)
+
+      os.remove(tmpfile)
+    end)
+
+    it("keeps valid UI overrides", function()
+      local tmpfile = test_tmp_dir .. "/valid_ui_values.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "ui": {
+          "glyphs": "ascii",
+          "diff_markers": "both",
+          "safe_highlights": false,
+          "normalize_float_background": false
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local ui = config.load_ui()
+      assert.equals("ascii", ui.glyphs)
+      assert.equals("both", ui.diff_markers)
+      assert.is_false(ui.safe_highlights)
+      assert.is_false(ui.normalize_float_background)
 
       os.remove(tmpfile)
     end)

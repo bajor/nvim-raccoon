@@ -1,6 +1,7 @@
 ---@class RaccoonState
 ---Session state for the current PR review
 local M = {}
+local display = require("raccoon.display")
 
 --- Current review session state
 M.session = {
@@ -239,6 +240,7 @@ function M.get_statusline_component()
   end
 
   local parts = {}
+  local glyphs = display.glyphs()
 
   -- File count indicator
   local files = M.session.files
@@ -248,14 +250,14 @@ function M.get_statusline_component()
 
   -- Show sync status
   if sync.has_conflicts then
-    table.insert(parts, "⛔ CONFLICTS")
+    table.insert(parts, glyphs.conflict .. " CONFLICTS")
   elseif sync.behind > 0 then
-    table.insert(parts, string.format("⚠ %d behind", sync.behind))
+    table.insert(parts, string.format("%s %d behind", glyphs.warning, sync.behind))
   else
-    table.insert(parts, "✓ In sync")
+    table.insert(parts, glyphs.ok .. " In sync")
   end
 
-  return table.concat(parts, " │ ")
+  return table.concat(parts, glyphs.pipe_sep)
 end
 
 --- Check if commit viewer mode is active

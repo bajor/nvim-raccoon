@@ -3,6 +3,7 @@
 local M = {}
 
 local config = require("raccoon.config")
+local display = require("raccoon.display")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 local git = require("raccoon.git")
@@ -255,9 +256,9 @@ local function render_sidebar()
     -- Branch mode: two-section sidebar using shared function
     local branch_label = local_state.current_branch or "branch"
     ui.render_split_sidebar(buf, {
-      section1_header = "── " .. branch_label .. " ──",
+      section1_header = display.section_header(branch_label),
       section1_commits = local_state.branch_commits,
-      section2_header = "── " .. local_state.base_branch .. " ──",
+      section2_header = display.section_header(local_state.base_branch),
       section2_commits = local_state.base_commits,
       commit_hl_fn = function(commit)
         if commit.sha == nil then return "DiagnosticInfo" end
@@ -272,7 +273,7 @@ local function render_sidebar()
     local sidebar_width = local_state.sidebar_width or ui.SIDEBAR_WIDTH
 
     local commit_count = math.max(0, total_commits() - 1)
-    table.insert(lines, "── Commits (" .. commit_count .. ") ──")
+    table.insert(lines, display.section_header("Commits (" .. commit_count .. ")"))
     table.insert(highlights, { line = #lines - 1, hl = "Title" })
 
     for i, commit in ipairs(local_state.branch_commits) do

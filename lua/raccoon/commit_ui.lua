@@ -3,6 +3,7 @@
 local M = {}
 
 local config = require("raccoon.config")
+local display = require("raccoon.display")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 
@@ -358,7 +359,7 @@ end
 function M.render_hunk_to_buffer(ns_id, buf, hunk, filename)
   local lines = {}
   for _, line_data in ipairs(hunk.lines) do
-    table.insert(lines, line_data.content or "")
+    table.insert(lines, M.format_diff_line(line_data))
   end
 
   vim.bo[buf].modifiable = true
@@ -373,25 +374,45 @@ function M.render_hunk_to_buffer(ns_id, buf, hunk, filename)
   M.apply_diff_highlights(ns_id, buf, hunk.lines)
 end
 
+--- Format one parsed diff line for display, optionally prefixing add/delete markers.
+---@param line_data table
+---@return string
+function M.format_diff_line(line_data)
+  local content = line_data.content or ""
+  if not display.use_prefix_markers() then
+    return content
+  end
+  if line_data.type == "add" then
+    return "+ " .. content
+  end
+  if line_data.type == "del" then
+    return "- " .. content
+  end
+  return content
+end
+
 --- Apply add/del diff highlights to buffer lines
 ---@param ns_id number Namespace ID for extmarks
 ---@param buf number Buffer ID
 ---@param line_list table[] Array of {type, content} entries
 function M.apply_diff_highlights(ns_id, buf, line_list)
+  local use_sign_markers = display.use_sign_markers()
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
   for idx, line_data in ipairs(line_list) do
     if line_data.type == "add" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
+      local opts = { line_hl_group = "RaccoonAdd" }
+      if use_sign_markers then
+        opts.sign_text = "+"
+        opts.sign_hl_group = "RaccoonAddSign"
+      end
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, opts)
     elseif line_data.type == "del" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonDelete",
-        sign_text = "-",
-        sign_hl_group = "RaccoonDeleteSign",
-      })
+      local opts = { line_hl_group = "RaccoonDelete" }
+      if use_sign_markers then
+        opts.sign_text = "-"
+        opts.sign_hl_group = "RaccoonDeleteSign"
+      end
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, opts)
     end
   end
 end
@@ -448,6 +469,7 @@ end
 ---@param file_stats? table<string, {additions: number, deletions: number}> Per-file diff stats
 ---@param stat_lines? table<number, table> Output stat line metadata (mutated)
 function M.render_tree_node(node, prefix, lines, line_paths, file_stats, stat_lines)
+  local glyphs = display.glyphs()
   local dirs = {}
   local files = {}
   for _, child in ipairs(node.children) do
@@ -466,16 +488,16 @@ function M.render_tree_node(node, prefix, lines, line_paths, file_stats, stat_li
 
   for i, child in ipairs(sorted) do
     local is_last = (i == #sorted)
-    local connector = is_last and "└ " or "├ "
-    local display = child.children and (child.name .. "/") or child.name
-    table.insert(lines, prefix .. connector .. display)
+    local connector = is_last and glyphs.tree_last or glyphs.tree_mid
+    local label = child.children and (child.name .. "/") or child.name
+    table.insert(lines, prefix .. connector .. label)
     if child.path then
       line_paths[#lines - 1] = child.path
       -- Insert stat bar below changed files
       if file_stats and stat_lines then
         local stat = file_stats[child.path]
         if stat and (stat.additions > 0 or stat.deletions > 0) then
-          local bar_prefix = prefix .. (is_last and "   " or "│  ")
+          local bar_prefix = prefix .. (is_last and glyphs.tree_space or glyphs.tree_branch)
           local bar, add_chars, del_chars = M.format_stat_bar(stat.additions, stat.deletions)
           table.insert(lines, bar_prefix .. bar)
           stat_lines[#lines - 1] = { prefix_len = #bar_prefix, add_chars = add_chars, del_chars = del_chars }
@@ -483,7 +505,7 @@ function M.render_tree_node(node, prefix, lines, line_paths, file_stats, stat_li
       end
     end
     if child.children then
-      local next_prefix = prefix .. (is_last and "   " or "│  ")
+      local next_prefix = prefix .. (is_last and glyphs.tree_space or glyphs.tree_branch)
       M.render_tree_node(child, next_prefix, lines, line_paths, file_stats, stat_lines)
     end
   end
@@ -910,7 +932,7 @@ function M.render_file_preview(s, opts)
       local hl_lines = {}
       for _, hunk in ipairs(hunks) do
         for _, line_data in ipairs(hunk.lines) do
-          table.insert(lines, line_data.content or "")
+          table.insert(lines, M.format_diff_line(line_data))
           table.insert(hl_lines, { type = line_data.type })
         end
       end
@@ -995,7 +1017,7 @@ function M.open_maximize(opts)
     local hl_lines = {}
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
-        table.insert(lines, line_data.content or "")
+        table.insert(lines, M.format_diff_line(line_data))
         table.insert(hl_lines, { type = line_data.type })
       end
     end
@@ -1040,6 +1062,7 @@ function M.open_maximize(opts)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return
     end
+    display.apply_float_winhl(win)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
@@ -1251,7 +1274,7 @@ function M.refresh_maximize(s)
     local hl_lines = {}
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
-        table.insert(lines, line_data.content or "")
+        table.insert(lines, M.format_diff_line(line_data))
         table.insert(hl_lines, { type = line_data.type })
       end
     end

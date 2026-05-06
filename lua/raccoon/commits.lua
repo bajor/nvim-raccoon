@@ -3,6 +3,7 @@
 local M = {}
 
 local config = require("raccoon.config")
+local display = require("raccoon.display")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 local git = require("raccoon.git")
@@ -263,9 +264,9 @@ end
 --- Render the sidebar with commit lists
 local function render_sidebar()
   ui.render_split_sidebar(commit_state.sidebar_buf, {
-    section1_header = "── PR Branch ──",
+    section1_header = display.section_header("PR Branch"),
     section1_commits = commit_state.pr_commits,
-    section2_header = "── Base Branch ──",
+    section2_header = display.section_header("Base Branch"),
     section2_commits = commit_state.base_commits,
     sidebar_width = commit_state.sidebar_width,
   })

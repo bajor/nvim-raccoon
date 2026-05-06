@@ -5,6 +5,7 @@ local M = {}
 local api = require("raccoon.api")
 local comments = require("raccoon.comments")
 local config = require("raccoon.config")
+local display = require("raccoon.display")
 local NORMAL_MODE = config.NORMAL
 local INSERT_MODE = config.INSERT
 local state = require("raccoon.state")
@@ -108,6 +109,7 @@ function M.show_submit_ui()
     title = " Submit Review ",
     title_pos = "center",
   })
+  display.apply_float_winhl(win)
 
   -- Handle key presses
   local function handle_selection(event)
@@ -178,6 +180,7 @@ function M.prompt_review_body(event)
     title = string.format(" %s (Ctrl-S to submit, q to cancel) ", event_name),
     title_pos = "center",
   })
+  display.apply_float_winhl(win)
 
   -- Move cursor to empty line and start insert
   vim.api.nvim_win_set_cursor(win, { 5, 0 })
@@ -310,6 +313,7 @@ function M.show_status()
     title = " Review Status ",
     title_pos = "center",
   })
+  display.apply_float_winhl(win)
 
   local shortcuts = config.load_shortcuts()
   if config.is_enabled(shortcuts.close) then

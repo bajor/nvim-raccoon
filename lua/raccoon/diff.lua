@@ -2,6 +2,7 @@
 ---Diff parsing and display functionality
 local M = {}
 
+local display = require("raccoon.display")
 local state = require("raccoon.state")
 
 --- Namespace for diff highlights
@@ -115,16 +116,25 @@ function M.apply_highlights(buf, patch)
 
   local changes = M.get_changed_lines(patch)
   local line_count = vim.api.nvim_buf_line_count(buf)
+  local use_sign_markers = display.use_sign_markers()
+  local use_prefix_markers = display.use_prefix_markers()
 
   -- Apply green highlight to added lines
   for _, line_num in ipairs(changes.added) do
     local line_idx = line_num - 1
     if line_idx >= 0 and line_idx < line_count then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+      local opts = {
         line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
+      }
+      if use_sign_markers then
+        opts.sign_text = "+"
+        opts.sign_hl_group = "RaccoonAddSign"
+      end
+      if use_prefix_markers then
+        opts.virt_text = { { "+ ", "RaccoonAddSign" } }
+        opts.virt_text_pos = "inline"
+      end
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, opts)
     end
   end
 
@@ -161,8 +171,8 @@ function M.apply_highlights(buf, patch)
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target_line, 0, {
         virt_lines = virt_lines,
         virt_lines_above = true,
-        sign_text = "-",
-        sign_hl_group = "RaccoonDeleteSign",
+        sign_text = use_sign_markers and "-" or nil,
+        sign_hl_group = use_sign_markers and "RaccoonDeleteSign" or nil,
       })
     end
   end
@@ -212,6 +222,10 @@ function M.open_file(file)
     -- File may still be open despite the error, continue if buffer exists
   end
   local buf = vim.api.nvim_get_current_buf()
+  local win = vim.api.nvim_get_current_win()
+
+  -- Always reserve one sign column so diff markers are consistently visible.
+  vim.wo[win].signcolumn = "yes:1"
 
   -- Track buffer in session
   state.add_buffer(buf)
