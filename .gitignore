@@ -12,6 +12,8 @@ luac.out
 .testenv/
 luacov.stats.out
 luacov.report.out
+__pycache__/
+*.pyc
 
 # OS
 .DS_Store
