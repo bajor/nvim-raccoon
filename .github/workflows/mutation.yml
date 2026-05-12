@@ -1,0 +1,129 @@
+name: Mutation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+jobs:
+  plan:
+    if: ${{ !github.event.pull_request.draft || github.event.action == 'ready_for_review' }}
+    name: Mutation Plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install plenary.nvim
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/vendor/start
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
+            ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
+
+      - name: Generate mutation plan
+        run: |
+          mkdir -p .mutation-plan
+          python3 -m scripts.mutation.run plan \
+            --output .mutation-plan/plan.json \
+            --preflight-output .mutation-plan/preflight.json
+
+      - name: Upload mutation plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-plan
+          path: .mutation-plan
+          retention-days: 10
+
+  shard:
+    if: ${{ !github.event.pull_request.draft || github.event.action == 'ready_for_review' }}
+    name: Mutation Shard ${{ matrix.shard_index }}
+    runs-on: ubuntu-latest
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install plenary.nvim
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/vendor/start
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
+            ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
+
+      - name: Download mutation plan
+        uses: actions/download-artifact@v4
+        with:
+          name: mutation-plan
+          path: .mutation-plan
+
+      - name: Run mutation shard
+        run: |
+          mkdir -p ".mutation-shards/shard-${{ matrix.shard_index }}"
+          python3 -m scripts.mutation.run shard \
+            --ci \
+            --plan .mutation-plan/plan.json \
+            --shard-index "${{ matrix.shard_index }}" \
+            --shard-count 4 \
+            --artifact-dir ".mutation-shards/shard-${{ matrix.shard_index }}/artifacts" \
+            --output ".mutation-shards/shard-${{ matrix.shard_index }}/report.json"
+
+      - name: Upload mutation shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-shard-${{ matrix.shard_index }}
+          path: .mutation-shards/shard-${{ matrix.shard_index }}
+          retention-days: 10
+
+  aggregate:
+    if: ${{ !github.event.pull_request.draft || github.event.action == 'ready_for_review' }}
+    name: Mutation Aggregate
+    runs-on: ubuntu-latest
+    needs: shard
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download mutation plan
+        uses: actions/download-artifact@v4
+        with:
+          name: mutation-plan
+          path: .mutation-plan
+
+      - name: Download mutation shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mutation-shard-*
+          path: .mutation-shards
+
+      - name: Aggregate mutation reports
+        run: |
+          mkdir -p .mutation-aggregate
+          python3 -m scripts.mutation.run aggregate \
+            --plan .mutation-plan/plan.json \
+            --reports $(find .mutation-shards -path '*/report.json' | sort) \
+            --output .mutation-aggregate/report.json
+
+      - name: Upload aggregate report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-aggregate
+          path: .mutation-aggregate
+          retention-days: 10

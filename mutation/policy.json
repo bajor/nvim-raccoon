@@ -1,0 +1,63 @@
+{
+  "artifact_retention_days": 10,
+  "default_ci_shards": 4,
+  "default_local_shards": 1,
+  "excluded_paths": [
+    {
+      "path": "lua/raccoon/comments.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    },
+    {
+      "path": "lua/raccoon/commit_ui.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    },
+    {
+      "path": "lua/raccoon/commits.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    },
+    {
+      "path": "lua/raccoon/diff.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    },
+    {
+      "path": "lua/raccoon/keymaps.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    },
+    {
+      "path": "lua/raccoon/localcommits.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    },
+    {
+      "path": "lua/raccoon/open.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    },
+    {
+      "path": "lua/raccoon/review.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    },
+    {
+      "path": "lua/raccoon/ui.lua",
+      "reason": "ui-heavy module pending mutation-specific hardening"
+    }
+  ],
+  "included_roots": [
+    "lua",
+    "plugin"
+  ],
+  "invalid_percent_limit": 1,
+  "max_mutants_per_file": 16,
+  "max_summary_entries": 20,
+  "operators": [
+    "comparison_equality",
+    "comparison_bounds",
+    "logical_connector",
+    "boolean_literal",
+    "nil_guard_invert",
+    "arithmetic_simple",
+    "delete_local",
+    "delete_assignment",
+    "delete_call"
+  ],
+  "threshold_percent": 80,
+  "timeout_seconds": 60
+}
