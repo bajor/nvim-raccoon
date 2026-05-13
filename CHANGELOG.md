@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12.2] - 2026-05-13
+
+### Added
+- Automatic publish pipeline from `source` to `main`, with a generated `publish/main` PR that strips developer-only files before updating the install branch.
+- Dedicated `main` guard and smoke validation workflows for the generated publish branch.
+- `.github/publish-allowlist.txt` and source-side publish tooling for the stripped install tree.
+
+### Changed
+- `source` is now the human development branch, while `main` is generated from `source` as the stripped install and documentation branch.
+- Source-only assets such as `scripts/` and `mutation/` remain on `source`, while `tests/` now stay on `main` so the generated install branch can still run its regression suite.
+- Changelog enforcement on `source` now only requires a `CHANGELOG.md` update when a PR changes files that are published to `main`.
+
 ## [0.12.1] - 2026-05-13
 
 ### Fixed

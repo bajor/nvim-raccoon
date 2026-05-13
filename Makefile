@@ -1,4 +1,4 @@
-.PHONY: install uninstall test test-lua lint mutation mutation-unit
+.PHONY: install uninstall test test-lua test-python lint mutation mutation-unit
 
 PACK_DIR := $(HOME)/.config/nvim/pack/local/start
 PLUGIN_NAME := nvim-raccoon
@@ -24,12 +24,16 @@ uninstall:
 test:
 	@echo "Running test suite (mutation: $(if $(filter 1,$(MUTATION)),enabled,disabled))"
 	@$(MAKE) test-lua
+	@$(MAKE) test-python
 	@if [ "$(MUTATION)" = "1" ]; then \
 		$(MAKE) mutation MUTATION_SHARDS="$(MUTATION_SHARDS)" MUTATION_OPERATORS="$(MUTATION_OPERATORS)"; \
 	fi
 
 test-lua:
 	nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"
+
+test-python:
+	$(PYTHON) -m unittest discover -s tests/publish -p 'test_*.py'
 
 lint:
 	luacheck lua/ plugin/

@@ -1,0 +1,35 @@
+name: Main CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Main CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.ref }}
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install plenary.nvim
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/vendor/start
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
+            ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
+
+      - name: Run main-branch tests
+        run: |
+          nvim --headless -u tests/minimal_init.lua \
+            -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"

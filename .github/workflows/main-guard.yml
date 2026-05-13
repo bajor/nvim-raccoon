@@ -1,0 +1,75 @@
+name: Main Guard
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+
+jobs:
+  guard:
+    name: Main Guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.ref }}
+          fetch-depth: 0
+
+      - name: Require generated publish branch
+        env:
+          ACTUAL_BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+        run: |
+          if [ "$ACTUAL_BRANCH" != "publish/main" ]; then
+            echo "::error::PRs to main must come from publish/main, got $ACTUAL_BRANCH."
+            exit 1
+          fi
+
+      - name: Compare publish tree to source projection
+        env:
+          EXPECTED_ROOT: ${{ runner.temp }}/expected-main
+        run: |
+          set -euo pipefail
+          git fetch origin source --depth=1
+          mkdir -p "$EXPECTED_ROOT"
+          mapfile -t allowlist < <(grep -vE '^\s*(#|$)' .github/publish-allowlist.txt)
+          git archive --format=tar origin/source "${allowlist[@]}" | tar -xf - -C "$EXPECTED_ROOT"
+          python3 <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          expected_root = Path(os.environ["EXPECTED_ROOT"])
+          actual_root = Path(".")
+
+          def collect_files(root: Path) -> list[str]:
+              files: list[str] = []
+              for path in root.rglob("*"):
+                  if not path.is_file():
+                      continue
+                  relative = path.relative_to(root).as_posix()
+                  if relative.startswith(".git/"):
+                      continue
+                  files.append(relative)
+              return sorted(files)
+
+          actual_files = collect_files(actual_root)
+          expected_files = collect_files(expected_root)
+          if actual_files != expected_files:
+              missing = sorted(set(expected_files) - set(actual_files))
+              unexpected = sorted(set(actual_files) - set(expected_files))
+              if missing:
+                  print("Missing files:", file=sys.stderr)
+                  for path in missing:
+                      print(path, file=sys.stderr)
+              if unexpected:
+                  print("Unexpected files:", file=sys.stderr)
+                  for path in unexpected:
+                      print(path, file=sys.stderr)
+              raise SystemExit(1)
+
+          for relative in actual_files:
+              if (actual_root / relative).read_bytes() != (expected_root / relative).read_bytes():
+                  print(f"Content mismatch for {relative}", file=sys.stderr)
+                  raise SystemExit(1)
+          PY

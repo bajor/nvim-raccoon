@@ -1,0 +1,13 @@
+# Files and directories that stay on the generated main branch.
+plugin
+lua
+tests
+README.md
+CHANGELOG.md
+config_docs.md
+shortcuts_docs.md
+LICENSE
+.github/publish-allowlist.txt
+.github/workflows/main-guard.yml
+.github/workflows/main-ci.yml
+.github/workflows/release.yml

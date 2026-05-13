@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [source]
   pull_request:
-    branches: [main]
+    branches: [source]
 
 jobs:
   lint:
@@ -23,7 +23,7 @@ jobs:
         run: luacheck lua/ plugin/ --config .luacheckrc
 
   test:
-    name: Tests
+    name: Lua Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -45,7 +45,14 @@ jobs:
           git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
             ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
 
-      - name: Run tests
-        run: |
-          nvim --headless -u tests/minimal_init.lua \
-            -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"
+      - name: Run Lua tests
+        run: make test-lua
+
+  publish_tools:
+    name: Publish Tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run publish tooling tests
+        run: make test-python

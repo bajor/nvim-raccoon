@@ -65,6 +65,13 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 }
 ```
 
+## Branch Model
+
+- `main` is the install and documentation branch. It keeps the runtime plugin files, regression tests, and user-facing docs, but not source-only developer assets such as mutation tooling or maintenance scripts.
+- `source` is the development branch. Contributor PRs should target `source`.
+- After a PR merges into `source`, GitHub Actions publishes a stripped `publish/main` branch and opens or updates the automation PR to `main`.
+- If publish fails, `source` can temporarily be ahead of `main` until the publish workflow is rerun or fixed.
+
 ## Configuration
 
 Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/config.json`. A minimal config looks like this:
