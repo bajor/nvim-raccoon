@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12.1] - 2026-05-13
+
+### Fixed
+- The `:Raccoon` command metadata check in CI now works across Neovim stable and nightly, which expose callback command descriptions through different `nvim_get_commands()` fields.
+
 ## [0.12.0] - 2026-05-04
 
 ### Removed

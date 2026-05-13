@@ -45,7 +45,11 @@ describe("plugin.raccoon", function()
     load_plugin()
     local commands = vim.api.nvim_get_commands({})
     assert.is_table(commands.Raccoon)
-    assert.equals("Raccoon commands", commands.Raccoon.definition)
+    local description = commands.Raccoon.desc
+    if not description or description == "" then
+      description = commands.Raccoon.definition
+    end
+    assert.equals("Raccoon commands", description)
   end)
 
   it("warns when no subcommand is provided", function()
