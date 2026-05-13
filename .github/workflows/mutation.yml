@@ -126,7 +126,21 @@ jobs:
             --reports $(find "$MUTATION_SHARDS_DIR" -path '*/report.json' | sort) \
             --output "$MUTATION_AGGREGATE_DIR/report.json"
 
-      - name: Upload aggregate report
+      - name: Render Full Mutation Report For Review
+        if: always()
+        run: |
+          python3 -m scripts.mutation.render_report \
+            --plan "$MUTATION_PLAN_DIR/plan.json" \
+            --aggregate "$MUTATION_AGGREGATE_DIR/report.json" \
+            --reports $(find "$MUTATION_SHARDS_DIR" -path '*/report.json' | sort) \
+            --preflight "$MUTATION_PLAN_DIR/preflight.json" \
+            | tee "$MUTATION_AGGREGATE_DIR/full-report.md"
+          {
+            echo ""
+            cat "$MUTATION_AGGREGATE_DIR/full-report.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Aggregate JSON And Full Mutation Markdown
         uses: actions/upload-artifact@v4
         with:
           name: mutation-aggregate

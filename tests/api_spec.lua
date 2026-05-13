@@ -343,6 +343,22 @@ describe("raccoon.api", function()
       assert.truthy(requests[1].url:find("https://ghe.example.com/api/v3/search/issues", 1, true))
     end)
 
+    it("search_repo_prs forwards search errors to the callback", function()
+      mocks.mock_curl({
+        ["search/issues"] = mocks.api_error(500, "search failed"),
+      })
+
+      local prs, err
+      api.search_repo_prs("acme", "widgets", "token", "alice", function(result, api_err)
+        prs = result
+        err = api_err
+      end)
+      wait_for(function() return err ~= nil end)
+
+      assert.is_nil(prs)
+      assert.truthy(err:find("search failed"))
+    end)
+
     it("list_prs follows pagination links", function()
       mocks.mock_curl({
         [".*"] = function(opts)
@@ -389,6 +405,38 @@ describe("raccoon.api", function()
       assert.is_nil(result)
       assert.truthy(err:find("404"))
       assert.truthy(err:find("missing"))
+    end)
+
+    it("treats REST 400 responses as errors", function()
+      mocks.mock_curl({
+        ["/pulls/42$"] = mocks.api_error(400, "bad request"),
+      })
+
+      local result, err
+      api.get_pr("acme", "widgets", 42, "token", function(pr, api_err)
+        result = pr
+        err = api_err
+      end)
+      wait_for(function() return err ~= nil end)
+
+      assert.is_nil(result)
+      assert.truthy(err:find("400"))
+      assert.truthy(err:find("bad request"))
+    end)
+
+    it("adds the GHES version hint only for enterprise 404 responses", function()
+      api.init("ghe.example.com")
+      mocks.mock_curl({
+        ["/pulls/42$"] = mocks.api_error(404, "missing"),
+      })
+
+      local err
+      api.get_pr("acme", "widgets", 42, "token", function(_, api_err)
+        err = api_err
+      end)
+      wait_for(function() return err ~= nil end)
+
+      assert.truthy(err:find("GHES 3.9%+"))
     end)
 
     it("get_pr returns PR data from the expected endpoint", function()
