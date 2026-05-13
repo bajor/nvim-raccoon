@@ -37,12 +37,7 @@ jobs:
           git fetch origin publish/main || true
 
           publish_worktree="${{ runner.temp }}/publish-main-worktree"
-          base_ref="origin/main"
-          if git show-ref --verify --quiet refs/remotes/origin/publish/main; then
-            base_ref="origin/publish/main"
-          fi
-
-          git worktree add --force -B publish/main "$publish_worktree" "$base_ref"
+          git worktree add --force -B publish/main "$publish_worktree" origin/main
           find "$publish_worktree" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           cp -R "${{ runner.temp }}/publish-tree"/. "$publish_worktree"/
 

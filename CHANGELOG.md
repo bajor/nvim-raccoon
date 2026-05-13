@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - `source` is now the human development branch, while `main` is generated from `source` as the stripped install and documentation branch.
-- Source-only assets such as `scripts/` and `mutation/` remain on `source`, while `tests/` now stay on `main` so the generated install branch can still run its regression suite.
+- Source-only assets such as `scripts/` and `mutation/` remain on `source`, while `main` now keeps only the Lua test subset required by the generated branch's regression suite.
 - Changelog enforcement on `source` now only requires a `CHANGELOG.md` update when a PR changes files that are published to `main`.
 
 ## [0.12.1] - 2026-05-13

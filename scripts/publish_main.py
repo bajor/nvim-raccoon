@@ -63,6 +63,14 @@ def build_publish_tree(
 
 
 def validate_publish_tree(root: Path, entries: list[str]) -> None:
+    if not root.exists():
+        raise PublishError(f"Publish tree root does not exist: {root}")
+
+    missing = []
+    for entry in entries:
+        if not (root / entry).exists():
+            missing.append(entry)
+
     unexpected = []
     for path in root.rglob("*"):
         if not path.is_file():
@@ -70,9 +78,14 @@ def validate_publish_tree(root: Path, entries: list[str]) -> None:
         relative = path.relative_to(root).as_posix()
         if not is_allowed_path(relative, entries):
             unexpected.append(relative)
+
+    errors = []
+    if missing:
+        errors.append(f"Missing allowlisted paths in publish tree: {', '.join(sorted(missing))}")
     if unexpected:
-        joined = ", ".join(sorted(unexpected))
-        raise PublishError(f"Unexpected files in publish tree: {joined}")
+        errors.append(f"Unexpected files in publish tree: {', '.join(sorted(unexpected))}")
+    if errors:
+        raise PublishError("; ".join(errors))
 
 
 def command_build(args: argparse.Namespace) -> int:

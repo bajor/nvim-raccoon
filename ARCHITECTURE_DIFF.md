@@ -1,6 +1,6 @@
 # Architecture Diff
 ## Summary
-Move the repository to a `source` -> `publish/main` -> `main` branch model where human development happens on `source`, GitHub Actions generates a stripped install tree for `main`, and `main` keeps runtime files, regression tests, user-facing docs, and the minimal workflows needed to validate and release that tree.
+Move the repository to a `source` -> `publish/main` -> `main` branch model where human development happens on `source`, GitHub Actions generates a stripped install tree for `main`, and `main` keeps runtime files, the Lua regression subset, user-facing docs, and the minimal workflows needed to validate and release that tree.
 
 ## Diagram(s)
 ```mermaid
@@ -27,7 +27,7 @@ flowchart TD
 ### Modified
 - `.github/workflows/ci.yml`, `.github/workflows/changelog-check.yml`, and `.github/workflows/mutation.yml`: Retargeted development checks to `source`.
 - `Makefile`: Adds `test-python` and includes publish-tool tests in `make test`.
-- `README.md`: Documents the `source`/`main` branch model, including the fact that `tests/` remain on `main`, and the publish failure behavior.
+- `README.md`: Documents the `source`/`main` branch model, including the published Lua-only test subset and the publish failure behavior.
 - `CHANGELOG.md`: Records the branch-model migration and the stripped `main` surface.
 
 ### Removed

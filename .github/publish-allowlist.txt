@@ -1,7 +1,25 @@
 # Files and directories that stay on the generated main branch.
 plugin
 lua
-tests
+tests/api_spec.lua
+tests/comments_spec.lua
+tests/commit_ui_spec.lua
+tests/commits_spec.lua
+tests/config_compat_spec.lua
+tests/config_spec.lua
+tests/diff_spec.lua
+tests/e2e
+tests/git_spec.lua
+tests/helpers
+tests/init_spec.lua
+tests/keymaps_spec.lua
+tests/localcommits_spec.lua
+tests/minimal_init.lua
+tests/open_spec.lua
+tests/plugin_spec.lua
+tests/review_spec.lua
+tests/state_spec.lua
+tests/ui_spec.lua
 README.md
 CHANGELOG.md
 config_docs.md

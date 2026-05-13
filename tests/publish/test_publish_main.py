@@ -2,7 +2,14 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from scripts.publish_main import PublishError, build_publish_tree, load_allowlist, validate_publish_tree
+from scripts.publish_main import (
+    DEFAULT_ALLOWLIST_PATH,
+    PublishError,
+    build_publish_tree,
+    is_allowed_path,
+    load_allowlist,
+    validate_publish_tree,
+)
 
 
 class PublishMainTests(unittest.TestCase):
@@ -50,6 +57,25 @@ class PublishMainTests(unittest.TestCase):
 
             with self.assertRaises(PublishError):
                 validate_publish_tree(publish_root, ["README.md"])
+
+    def test_validate_publish_tree_rejects_missing_allowlisted_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            publish_root = root / "publish"
+            publish_root.mkdir(parents=True, exist_ok=True)
+            (publish_root / "plugin").mkdir(parents=True, exist_ok=True)
+
+            with self.assertRaisesRegex(PublishError, "Missing allowlisted paths"):
+                validate_publish_tree(publish_root, ["README.md", "plugin"])
+
+    def test_default_allowlist_keeps_lua_tests_and_excludes_python_publish_helpers(self) -> None:
+        entries = load_allowlist(DEFAULT_ALLOWLIST_PATH)
+
+        self.assertTrue(is_allowed_path("tests/api_spec.lua", entries))
+        self.assertTrue(is_allowed_path("tests/e2e/workflow_spec.lua", entries))
+        self.assertTrue(is_allowed_path("tests/helpers/mocks.lua", entries))
+        self.assertFalse(is_allowed_path("tests/publish/test_publish_main.py", entries))
+        self.assertFalse(is_allowed_path("tests/mutation/test_core.py", entries))
 
 
 if __name__ == "__main__":
