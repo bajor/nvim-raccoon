@@ -17,6 +17,7 @@ jobs:
           fetch-depth: 0
 
       - name: Require generated publish branch
+        if: ${{ github.event_name == 'pull_request' }}
         env:
           ACTUAL_BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         run: |
