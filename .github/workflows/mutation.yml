@@ -1,5 +1,10 @@
 name: Mutation
 
+env:
+  MUTATION_PLAN_DIR: mutation-plan
+  MUTATION_SHARDS_DIR: mutation-shards
+  MUTATION_AGGREGATE_DIR: mutation-aggregate
+
 on:
   pull_request:
     branches: [main]
@@ -29,16 +34,16 @@ jobs:
 
       - name: Generate mutation plan
         run: |
-          mkdir -p .mutation-plan
+          mkdir -p "$MUTATION_PLAN_DIR"
           python3 -m scripts.mutation.run plan \
-            --output .mutation-plan/plan.json \
-            --preflight-output .mutation-plan/preflight.json
+            --output "$MUTATION_PLAN_DIR/plan.json" \
+            --preflight-output "$MUTATION_PLAN_DIR/preflight.json"
 
       - name: Upload mutation plan
         uses: actions/upload-artifact@v4
         with:
           name: mutation-plan
-          path: .mutation-plan
+          path: ${{ env.MUTATION_PLAN_DIR }}
           retention-days: 10
 
   shard:
@@ -71,24 +76,24 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mutation-plan
-          path: .mutation-plan
+          path: ${{ env.MUTATION_PLAN_DIR }}
 
       - name: Run mutation shard
         run: |
-          mkdir -p ".mutation-shards/shard-${{ matrix.shard_index }}"
+          mkdir -p "$MUTATION_SHARDS_DIR/shard-${{ matrix.shard_index }}"
           python3 -m scripts.mutation.run shard \
             --ci \
-            --plan .mutation-plan/plan.json \
+            --plan "$MUTATION_PLAN_DIR/plan.json" \
             --shard-index "${{ matrix.shard_index }}" \
             --shard-count 4 \
-            --artifact-dir ".mutation-shards/shard-${{ matrix.shard_index }}/artifacts" \
-            --output ".mutation-shards/shard-${{ matrix.shard_index }}/report.json"
+            --artifact-dir "$MUTATION_SHARDS_DIR/shard-${{ matrix.shard_index }}/artifacts" \
+            --output "$MUTATION_SHARDS_DIR/shard-${{ matrix.shard_index }}/report.json"
 
       - name: Upload mutation shard
         uses: actions/upload-artifact@v4
         with:
           name: mutation-shard-${{ matrix.shard_index }}
-          path: .mutation-shards/shard-${{ matrix.shard_index }}
+          path: ${{ env.MUTATION_SHARDS_DIR }}/shard-${{ matrix.shard_index }}
           retention-days: 10
 
   aggregate:
@@ -105,25 +110,25 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mutation-plan
-          path: .mutation-plan
+          path: ${{ env.MUTATION_PLAN_DIR }}
 
       - name: Download mutation shard reports
         uses: actions/download-artifact@v4
         with:
           pattern: mutation-shard-*
-          path: .mutation-shards
+          path: ${{ env.MUTATION_SHARDS_DIR }}
 
       - name: Aggregate mutation reports
         run: |
-          mkdir -p .mutation-aggregate
+          mkdir -p "$MUTATION_AGGREGATE_DIR"
           python3 -m scripts.mutation.run aggregate \
-            --plan .mutation-plan/plan.json \
-            --reports $(find .mutation-shards -path '*/report.json' | sort) \
-            --output .mutation-aggregate/report.json
+            --plan "$MUTATION_PLAN_DIR/plan.json" \
+            --reports $(find "$MUTATION_SHARDS_DIR" -path '*/report.json' | sort) \
+            --output "$MUTATION_AGGREGATE_DIR/report.json"
 
       - name: Upload aggregate report
         uses: actions/upload-artifact@v4
         with:
           name: mutation-aggregate
-          path: .mutation-aggregate
+          path: ${{ env.MUTATION_AGGREGATE_DIR }}
           retention-days: 10

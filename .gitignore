@@ -10,6 +10,10 @@ luac.out
 
 # Testing
 .testenv/
+.mutation-preflight/
+mutation-plan/
+mutation-shards/
+mutation-aggregate/
 luacov.stats.out
 luacov.report.out
 __pycache__/

@@ -43,6 +43,13 @@ INVALID_OUTPUT_PATTERNS = (
     "expected near",
 )
 
+DEFAULT_OVERLAY_EXCLUDED_PREFIXES = (
+    ".mutation-",
+    "mutation-plan",
+    "mutation-shards",
+    "mutation-aggregate",
+)
+
 OPERATOR_PRIORITY = {
     "nil_guard_invert": 0,
     "comparison_equality": 1,
@@ -867,8 +874,34 @@ def save_failure_artifact(
     )
 
 
-def add_worktree(base_dir: Path) -> Path:
-    worktree_dir = Path(tempfile.mkdtemp(prefix="raccoon-mutation-worktree-", dir=base_dir))
+def repo_relative_prefix(path: Path) -> str | None:
+    absolute_path = path if path.is_absolute() else REPO_ROOT / path
+    try:
+        relative_path = absolute_path.relative_to(REPO_ROOT)
+    except ValueError:
+        return None
+    relative = relative_path.as_posix()
+    return relative or None
+
+
+def build_overlay_excluded_prefixes(artifact_root: Path) -> list[str]:
+    prefixes = list(DEFAULT_OVERLAY_EXCLUDED_PREFIXES)
+    output_root = artifact_root.parent.parent if len(artifact_root.parents) >= 2 else artifact_root.parent
+    relative_output_root = repo_relative_prefix(output_root)
+    if relative_output_root and relative_output_root not in prefixes:
+        prefixes.append(relative_output_root)
+    return prefixes
+
+
+def is_overlay_excluded_path(relative_path: str, excluded_prefixes: list[str]) -> bool:
+    return any(
+        relative_path == prefix or relative_path.startswith(f"{prefix}/")
+        for prefix in excluded_prefixes
+    )
+
+
+def add_worktree() -> Path:
+    worktree_dir = Path(tempfile.mkdtemp(prefix="raccoon-mutation-worktree-"))
     subprocess.run(
         ["git", "worktree", "add", "--force", "--detach", str(worktree_dir), "HEAD"],
         cwd=REPO_ROOT,
@@ -879,7 +912,7 @@ def add_worktree(base_dir: Path) -> Path:
     return worktree_dir
 
 
-def overlay_workspace(worktree_dir: Path) -> None:
+def overlay_workspace(worktree_dir: Path, excluded_prefixes: list[str]) -> None:
     tracked = subprocess.run(
         ["git", "ls-files", "-co", "--exclude-standard", "-z"],
         cwd=REPO_ROOT,
@@ -891,6 +924,8 @@ def overlay_workspace(worktree_dir: Path) -> None:
         if not raw_path:
             continue
         relative = raw_path.decode("utf-8")
+        if is_overlay_excluded_path(relative, excluded_prefixes):
+            continue
         source = REPO_ROOT / relative
         target = worktree_dir / relative
         if not source.exists() or source.is_dir():
@@ -908,7 +943,10 @@ def overlay_workspace(worktree_dir: Path) -> None:
     for raw_path in deleted.stdout.split(b"\0"):
         if not raw_path:
             continue
-        target = worktree_dir / raw_path.decode("utf-8")
+        relative = raw_path.decode("utf-8")
+        if is_overlay_excluded_path(relative, excluded_prefixes):
+            continue
+        target = worktree_dir / relative
         if target.exists():
             target.unlink()
 
@@ -938,10 +976,9 @@ def execute_shard(
     mutants = select_shard_mutants(plan["mutants"], shard_index, shard_count)
     log(f"assigned {len(mutants)} mutants to shard {shard_index + 1}/{shard_count}")
 
-    temp_root = artifact_root.parent / f"worktrees-shard-{shard_index}"
-    temp_root.mkdir(parents=True, exist_ok=True)
-    worktree_dir = add_worktree(temp_root)
-    overlay_workspace(worktree_dir)
+    excluded_prefixes = build_overlay_excluded_prefixes(artifact_root)
+    worktree_dir = add_worktree()
+    overlay_workspace(worktree_dir, excluded_prefixes)
     bundle_root = worktree_dir / ".mutation-bundles"
     bundle_cache: dict[str, Path] = {}
     results: list[dict[str, Any]] = []
