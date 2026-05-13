@@ -1,0 +1,150 @@
+{
+  "groups": {
+    "api_core": [
+      "tests/api_spec.lua"
+    ],
+    "comments_core": [
+      "tests/comments_spec.lua",
+      "tests/e2e/workflow_spec.lua"
+    ],
+    "commit_ui_shared": [
+      "tests/commit_ui_spec.lua",
+      "tests/commits_spec.lua",
+      "tests/localcommits_spec.lua",
+      "tests/ui_spec.lua"
+    ],
+    "commits_core": [
+      "tests/commits_spec.lua"
+    ],
+    "config_core": [
+      "tests/config_compat_spec.lua",
+      "tests/config_spec.lua",
+      "tests/keymaps_spec.lua"
+    ],
+    "diff_core": [
+      "tests/diff_spec.lua",
+      "tests/e2e/workflow_spec.lua",
+      "tests/keymaps_spec.lua"
+    ],
+    "git_shared": [
+      "tests/commits_spec.lua",
+      "tests/git_spec.lua",
+      "tests/localcommits_spec.lua"
+    ],
+    "init_direct": [
+      "tests/init_spec.lua"
+    ],
+    "keymaps_core": [
+      "tests/keymaps_spec.lua"
+    ],
+    "localcommits_shared": [
+      "tests/localcommits_spec.lua",
+      "tests/ui_spec.lua"
+    ],
+    "open_core": [
+      "tests/open_spec.lua"
+    ],
+    "plugin_direct": [
+      "tests/plugin_spec.lua"
+    ],
+    "review_core": [
+      "tests/review_spec.lua"
+    ],
+    "state_shared": [
+      "tests/comments_spec.lua",
+      "tests/commits_spec.lua",
+      "tests/diff_spec.lua",
+      "tests/e2e/workflow_spec.lua",
+      "tests/localcommits_spec.lua",
+      "tests/open_spec.lua",
+      "tests/review_spec.lua",
+      "tests/state_spec.lua",
+      "tests/ui_spec.lua"
+    ],
+    "ui_core": [
+      "tests/ui_spec.lua"
+    ]
+  },
+  "modules": {
+    "lua/raccoon/api.lua": {
+      "groups": [
+        "api_core"
+      ]
+    },
+    "lua/raccoon/comments.lua": {
+      "groups": [
+        "comments_core"
+      ]
+    },
+    "lua/raccoon/commit_ui.lua": {
+      "groups": [
+        "commit_ui_shared"
+      ]
+    },
+    "lua/raccoon/commits.lua": {
+      "groups": [
+        "commits_core"
+      ]
+    },
+    "lua/raccoon/config.lua": {
+      "groups": [
+        "config_core"
+      ]
+    },
+    "lua/raccoon/config_compat.lua": {
+      "groups": [
+        "config_core"
+      ]
+    },
+    "lua/raccoon/diff.lua": {
+      "groups": [
+        "diff_core"
+      ]
+    },
+    "lua/raccoon/git.lua": {
+      "groups": [
+        "git_shared"
+      ]
+    },
+    "lua/raccoon/init.lua": {
+      "groups": [
+        "init_direct"
+      ]
+    },
+    "lua/raccoon/keymaps.lua": {
+      "groups": [
+        "keymaps_core"
+      ]
+    },
+    "lua/raccoon/localcommits.lua": {
+      "groups": [
+        "localcommits_shared"
+      ]
+    },
+    "lua/raccoon/open.lua": {
+      "groups": [
+        "open_core"
+      ]
+    },
+    "lua/raccoon/review.lua": {
+      "groups": [
+        "review_core"
+      ]
+    },
+    "lua/raccoon/state.lua": {
+      "groups": [
+        "state_shared"
+      ]
+    },
+    "lua/raccoon/ui.lua": {
+      "groups": [
+        "ui_core"
+      ]
+    },
+    "plugin/raccoon.lua": {
+      "groups": [
+        "plugin_direct"
+      ]
+    }
+  }
+}

@@ -18,6 +18,7 @@ function M.mock_curl(responses)
   -- Store original if we have plenary
   local ok, curl = pcall(require, "plenary.curl")
   if ok then
+    originals.curl_request = curl.request
     originals.curl_get = curl.get
     originals.curl_post = curl.post
     originals.curl_patch = curl.patch
@@ -55,6 +56,10 @@ function M.mock_curl(responses)
   end
 
   if ok then
+    curl.request = function(opts)
+      local method = opts.method or "GET"
+      return make_mock_request(method)(opts)
+    end
     curl.get = make_mock_request("GET")
     curl.post = make_mock_request("POST")
     curl.patch = make_mock_request("PATCH")
@@ -162,6 +167,9 @@ function M.restore()
   -- Restore curl if mocked
   local ok, curl = pcall(require, "plenary.curl")
   if ok then
+    if originals.curl_request then
+      curl.request = originals.curl_request
+    end
     if originals.curl_get then
       curl.get = originals.curl_get
     end

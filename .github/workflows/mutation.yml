@@ -1,0 +1,148 @@
+name: Mutation
+
+env:
+  MUTATION_PLAN_DIR: mutation-plan
+  MUTATION_SHARDS_DIR: mutation-shards
+  MUTATION_AGGREGATE_DIR: mutation-aggregate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+jobs:
+  plan:
+    if: ${{ !github.event.pull_request.draft || github.event.action == 'ready_for_review' }}
+    name: Mutation Plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install plenary.nvim
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/vendor/start
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
+            ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
+
+      - name: Generate mutation plan
+        run: |
+          mkdir -p "$MUTATION_PLAN_DIR"
+          python3 -m scripts.mutation.run plan \
+            --output "$MUTATION_PLAN_DIR/plan.json" \
+            --preflight-output "$MUTATION_PLAN_DIR/preflight.json"
+
+      - name: Upload mutation plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-plan
+          path: ${{ env.MUTATION_PLAN_DIR }}
+          retention-days: 10
+
+  shard:
+    if: ${{ !github.event.pull_request.draft || github.event.action == 'ready_for_review' }}
+    name: Mutation Shard ${{ matrix.shard_index }}
+    runs-on: ubuntu-latest
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install plenary.nvim
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/vendor/start
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
+            ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
+
+      - name: Download mutation plan
+        uses: actions/download-artifact@v4
+        with:
+          name: mutation-plan
+          path: ${{ env.MUTATION_PLAN_DIR }}
+
+      - name: Run mutation shard
+        run: |
+          mkdir -p "$MUTATION_SHARDS_DIR/shard-${{ matrix.shard_index }}"
+          python3 -m scripts.mutation.run shard \
+            --ci \
+            --plan "$MUTATION_PLAN_DIR/plan.json" \
+            --shard-index "${{ matrix.shard_index }}" \
+            --shard-count 4 \
+            --artifact-dir "$MUTATION_SHARDS_DIR/shard-${{ matrix.shard_index }}/artifacts" \
+            --output "$MUTATION_SHARDS_DIR/shard-${{ matrix.shard_index }}/report.json"
+
+      - name: Upload mutation shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-shard-${{ matrix.shard_index }}
+          path: ${{ env.MUTATION_SHARDS_DIR }}/shard-${{ matrix.shard_index }}
+          retention-days: 10
+
+  aggregate:
+    if: ${{ !github.event.pull_request.draft || github.event.action == 'ready_for_review' }}
+    name: Mutation Aggregate
+    runs-on: ubuntu-latest
+    needs: shard
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download mutation plan
+        uses: actions/download-artifact@v4
+        with:
+          name: mutation-plan
+          path: ${{ env.MUTATION_PLAN_DIR }}
+
+      - name: Download mutation shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mutation-shard-*
+          path: ${{ env.MUTATION_SHARDS_DIR }}
+
+      - name: Aggregate mutation reports
+        run: |
+          mkdir -p "$MUTATION_AGGREGATE_DIR"
+          python3 -m scripts.mutation.run aggregate \
+            --plan "$MUTATION_PLAN_DIR/plan.json" \
+            --reports $(find "$MUTATION_SHARDS_DIR" -path '*/report.json' | sort) \
+            --output "$MUTATION_AGGREGATE_DIR/report.json"
+
+      - name: Render Full Mutation Report For Review
+        if: always()
+        run: |
+          python3 -m scripts.mutation.render_report \
+            --plan "$MUTATION_PLAN_DIR/plan.json" \
+            --aggregate "$MUTATION_AGGREGATE_DIR/report.json" \
+            --reports $(find "$MUTATION_SHARDS_DIR" -path '*/report.json' | sort) \
+            --preflight "$MUTATION_PLAN_DIR/preflight.json" \
+            | tee "$MUTATION_AGGREGATE_DIR/full-report.md"
+          {
+            echo ""
+            cat "$MUTATION_AGGREGATE_DIR/full-report.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Aggregate JSON And Full Mutation Markdown
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-aggregate
+          path: ${{ env.MUTATION_AGGREGATE_DIR }}
+          retention-days: 10

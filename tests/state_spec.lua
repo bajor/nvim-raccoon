@@ -78,6 +78,17 @@ describe("raccoon.state", function()
       assert.is_not_nil(file)
       assert.equals("first.lua", file.filename)
     end)
+
+    it("get_current_file returns the only file at index one", function()
+      state.set_files({
+        { filename = "only.lua" },
+      })
+
+      local file = state.get_current_file()
+
+      assert.is_not_nil(file)
+      assert.equals("only.lua", file.filename)
+    end)
   end)
 
   describe("navigation", function()
@@ -111,6 +122,24 @@ describe("raccoon.state", function()
       assert.equals(1, state.get_current_file_index())
       assert.is_false(state.prev_file())
       assert.equals(1, state.get_current_file_index())
+    end)
+
+    it("goto_file jumps to a valid index", function()
+      assert.is_true(state.goto_file(1))
+      assert.equals(1, state.get_current_file_index())
+      assert.is_true(state.goto_file(3))
+      assert.equals(3, state.get_current_file_index())
+      assert.equals("c.lua", state.get_current_file().filename)
+    end)
+
+    it("goto_file rejects invalid indices and keeps the current file", function()
+      state.goto_file(2)
+
+      assert.is_false(state.goto_file(0))
+      assert.equals(2, state.get_current_file_index())
+      assert.is_false(state.goto_file(4))
+      assert.equals(2, state.get_current_file_index())
+      assert.equals("b.lua", state.get_current_file().filename)
     end)
   end)
 
@@ -350,6 +379,15 @@ describe("raccoon.state", function()
     it("get_current_file returns nil for zero index", function()
       state.set_files({ { filename = "test.lua" } })
       state.session.current_file = 0
+      assert.is_nil(state.get_current_file())
+    end)
+
+    it("get_current_file ignores accidental zero-index table entries", function()
+      local files = { { filename = "test.lua" } }
+      files[0] = { filename = "sentinel.lua" }
+      state.set_files(files)
+      state.session.current_file = 0
+
       assert.is_nil(state.get_current_file())
     end)
 
