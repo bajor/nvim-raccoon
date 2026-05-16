@@ -376,6 +376,26 @@ local function stop_sync_timer()
   end
 end
 
+---@param snapshot table|nil
+local function restore_overlay_snapshot(snapshot)
+  if snapshot then
+    comments.restore_ui_state(snapshot)
+  end
+end
+
+---@param clone_path string
+---@param filename string
+---@return number|nil
+local function find_review_file_buffer(clone_path, filename)
+  local target_path = vim.fs.joinpath(clone_path, filename)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf) == target_path then
+      return buf
+    end
+  end
+  return nil
+end
+
 --- Sync the PR with remote (fetch latest, update files/comments)
 ---@param silent boolean If true, don't show notifications unless something changed
 ---@param force boolean If true, bypass SHA cache and always re-fetch
@@ -389,12 +409,16 @@ local function sync_pr(silent, force)
   end
 
   local overlay_snapshot = force and comments.capture_ui_state() or nil
+  if overlay_snapshot then
+    comments.close_overlays(true)
+  end
 
   local cfg, cfg_err = config.load()
   if cfg_err then
     if not silent then
       notify_error("Config error: " .. cfg_err)
     end
+    restore_overlay_snapshot(overlay_snapshot)
     return
   end
 
@@ -416,6 +440,7 @@ local function sync_pr(silent, force)
   local token_entry = config.get_token_entry(cfg, owner)
   if not token_entry then
     vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+    restore_overlay_snapshot(overlay_snapshot)
     return
   end
   local token = token_entry.token
@@ -427,6 +452,7 @@ local function sync_pr(silent, force)
       if not silent then
         notify_error("Sync failed: " .. pr_err)
       end
+      restore_overlay_snapshot(overlay_snapshot)
       return
     end
 
@@ -437,6 +463,7 @@ local function sync_pr(silent, force)
       if not silent then
         vim.notify("PR is up to date", vim.log.levels.INFO)
       end
+      restore_overlay_snapshot(overlay_snapshot)
       return
     end
 
@@ -453,6 +480,7 @@ local function sync_pr(silent, force)
     git.fetch_reset(clone_path, branch, repo_url, function(success, err)
       if not success then
         notify_error("Sync failed: " .. (err or "git error"))
+        restore_overlay_snapshot(overlay_snapshot)
         return
       end
 
@@ -473,12 +501,14 @@ local function sync_pr(silent, force)
       api.get_pr_files(owner, repo, number, token, function(files, files_err)
         if files_err then
           notify_error("Failed to fetch files: " .. files_err)
+          restore_overlay_snapshot(overlay_snapshot)
           return
         end
 
         build_review_payload(owner, repo, number, token, function(payload, payload_err)
           if payload_err then
             notify_error("Sync failed: " .. payload_err)
+            restore_overlay_snapshot(overlay_snapshot)
             return
           end
 
@@ -491,18 +521,18 @@ local function sync_pr(silent, force)
           -- Refresh current file display
           local current_file = state.get_current_file()
           if current_file and not state.is_commit_mode() and not require("raccoon.localcommits").is_active() then
-            local buf = vim.api.nvim_get_current_buf()
-            diff.apply_highlights(buf, current_file.patch)
-            comments.show_comments(buf, state.get_comments(current_file.filename))
+            local buf = find_review_file_buffer(clone_path, current_file.filename)
+            if buf then
+              diff.apply_highlights(buf, current_file.patch)
+              comments.show_comments(buf, state.get_comments(current_file.filename))
+            end
           end
 
           if state.is_commit_mode() then
             require("raccoon.commits").refresh_after_sync()
           end
 
-          if overlay_snapshot then
-            comments.restore_ui_state(overlay_snapshot)
-          end
+          restore_overlay_snapshot(overlay_snapshot)
           vim.notify("PR synced - new commits loaded", vim.log.levels.INFO)
         end)
       end)

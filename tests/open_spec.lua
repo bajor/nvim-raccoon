@@ -1,7 +1,10 @@
 local open = require("raccoon.open")
 local state = require("raccoon.state")
 local config = require("raccoon.config")
+local api = require("raccoon.api")
+local comments = require("raccoon.comments")
 local commits = require("raccoon.commits")
+local git = require("raccoon.git")
 
 describe("raccoon.open", function()
   -- Reset state before each test
@@ -119,7 +122,7 @@ describe("raccoon.open", function()
       local notify_called = false
       local notify_level = nil
       local original_notify = vim.notify
-      vim.notify = function(msg, level)
+      vim.notify = function(_msg, level)
         notify_called = true
         notify_level = level
       end
@@ -213,6 +216,137 @@ describe("raccoon.open", function()
     it("does nothing when no active session", function()
       -- Should not error
       open.sync()
+    end)
+
+    it("closes and restores a new-thread draft during manual sync without sending it", function()
+      local clone_path = "/tmp/raccoon-open-sync"
+      state.start({
+        owner = "test",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/test/repo/pull/1",
+        clone_path = clone_path,
+      })
+      state.set_pr({
+        number = 1,
+        title = "Test PR",
+        head = { ref = "feature", sha = "oldsha" },
+        base = { ref = "main" },
+      })
+      state.set_files({
+        {
+          filename = "lua/a.lua",
+          patch = "@@ -1,2 +1,3 @@\n line 1\n+line 2\n line 3",
+        },
+      })
+
+      local file_buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(file_buf, clone_path .. "/lua/a.lua")
+      vim.api.nvim_buf_set_lines(file_buf, 0, -1, false, {
+        "line 1",
+        "line 2",
+        "line 3",
+      })
+      vim.api.nvim_set_current_buf(file_buf)
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+      comments.show_comment_thread()
+      local editor_buf = vim.api.nvim_get_current_buf()
+      local line_count = vim.api.nvim_buf_line_count(editor_buf)
+      vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "draft new thread" })
+
+      local original_notify = vim.notify
+      local original_config_load = config.load
+      local original_get_token_entry = config.get_token_entry
+      local original_api_init = api.init
+      local original_get_pr = api.get_pr
+      local original_get_pr_files = api.get_pr_files
+      local original_get_pr_comments = api.get_pr_comments
+      local original_get_issue_comments = api.get_issue_comments
+      local original_get_pr_reviews = api.get_pr_reviews
+      local original_get_pr_review_threads = api.get_pr_review_threads
+      local original_create_comment = api.create_comment
+      local original_fetch_reset = git.fetch_reset
+      local original_update_base_branch = git.update_base_branch
+
+      local saw_unsent_text_during_fetch = nil
+      local create_comment_called = false
+
+      vim.notify = function() end
+      config.load = function()
+        return {
+          github_host = "github.com",
+          tokens = {
+            test = "ghp_fake",
+          },
+        }, nil
+      end
+      config.get_token_entry = function()
+        return { token = "ghp_fake" }
+      end
+      api.init = function() end
+      api.get_pr = function(_owner, _repo, _number, _token, callback)
+        callback({
+          number = 1,
+          title = "Test PR",
+          head = { ref = "feature", sha = "newsha" },
+          base = { ref = "main" },
+        }, nil)
+      end
+      api.get_pr_files = function(_owner, _repo, _number, _token, callback)
+        callback({
+          {
+            filename = "lua/a.lua",
+            patch = "@@ -1,2 +1,3 @@\n line 1\n+line 2\n line 3",
+          },
+        }, nil)
+      end
+      api.get_pr_comments = function(_owner, _repo, _number, _token, callback)
+        callback({}, nil)
+      end
+      api.get_issue_comments = function(_owner, _repo, _number, _token, callback)
+        callback({}, nil)
+      end
+      api.get_pr_reviews = function(_owner, _repo, _number, _token, callback)
+        callback({}, nil)
+      end
+      api.get_pr_review_threads = function(_owner, _repo, _number, _token, callback)
+        callback({}, nil)
+      end
+      api.create_comment = function()
+        create_comment_called = true
+      end
+      git.fetch_reset = function(_clone_path, _branch, _repo_url, callback)
+        saw_unsent_text_during_fetch = comments.has_unsent_text()
+        callback(true, nil)
+      end
+      git.update_base_branch = function(_clone_path, _base_branch, callback)
+        callback(true, nil)
+      end
+
+      open.sync()
+
+      vim.notify = original_notify
+      config.load = original_config_load
+      config.get_token_entry = original_get_token_entry
+      api.init = original_api_init
+      api.get_pr = original_get_pr
+      api.get_pr_files = original_get_pr_files
+      api.get_pr_comments = original_get_pr_comments
+      api.get_issue_comments = original_get_issue_comments
+      api.get_pr_reviews = original_get_pr_reviews
+      api.get_pr_review_threads = original_get_pr_review_threads
+      api.create_comment = original_create_comment
+      git.fetch_reset = original_fetch_reset
+      git.update_base_branch = original_update_base_branch
+
+      assert.is_false(saw_unsent_text_during_fetch)
+      assert.is_false(create_comment_called)
+
+      local snapshot = comments.capture_ui_state()
+      assert.equals("editor", snapshot.kind)
+      assert.equals("new_thread", snapshot.editor_kind)
+      assert.same({ "draft new thread" }, snapshot.input_lines)
     end)
   end)
 end)
