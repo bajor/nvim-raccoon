@@ -22,10 +22,10 @@ function M.show_readonly_thread(opts)
   end
 
   local shortcuts = config.load_shortcuts()
-  local title = opts.title or "Thread"
-  if config.is_enabled(shortcuts.close) then
-    title = string.format("%s (%s=close)", title, shortcuts.close)
-  end
+  local ui = require("raccoon.ui")
+  local title = ui.decorate_popup_title(opts.title or "Thread", {
+    { key = "close", label = "close" },
+  }, shortcuts)
 
   local lines = {}
   for i, comment in ipairs(thread_comments) do
@@ -73,17 +73,13 @@ function M.show_readonly_thread(opts)
 
   vim.wo[win].wrap = true
 
-  local keymap_opts = { buffer = buf, noremap = true, silent = true }
   local function close_window()
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
     end
   end
 
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_window, keymap_opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", close_window, keymap_opts)
+  ui.bind_popup_close_keys(buf, close_window, { shortcuts = shortcuts })
 end
 
 local thread_index = require("raccoon.thread_index")
@@ -375,34 +371,26 @@ local function render_thread_lines(thread, include_reply, reply_label)
 end
 
 local function build_editor_title(label, shortcuts, allow_send, allow_resolve, allow_unresolve)
-  local hints = {}
+  local hint_specs = {}
   if allow_send and config.is_enabled(shortcuts.comment_send) then
-    table.insert(hints, shortcuts.comment_send .. "=send")
+    table.insert(hint_specs, { key = "comment_send", label = "send" })
   end
   if allow_resolve and config.is_enabled(shortcuts.comment_resolve) then
-    table.insert(hints, shortcuts.comment_resolve .. "=resolve")
+    table.insert(hint_specs, { key = "comment_resolve", label = "resolve" })
   end
   if allow_unresolve and config.is_enabled(shortcuts.comment_unresolve) then
-    table.insert(hints, shortcuts.comment_unresolve .. "=unresolve")
+    table.insert(hint_specs, { key = "comment_unresolve", label = "unresolve" })
   end
-  if config.is_enabled(shortcuts.sync) then
-    table.insert(hints, shortcuts.sync .. "=sync")
-  end
-  if config.is_enabled(shortcuts.close) then
-    table.insert(hints, shortcuts.close .. "=close")
-  end
-  return string.format(" %s (%s) ", label, table.concat(hints, ", "))
+  table.insert(hint_specs, { key = "sync", label = "sync" })
+  table.insert(hint_specs, { key = "close", label = "close" })
+  return require("raccoon.ui").decorate_popup_title(label, hint_specs, shortcuts)
 end
 
 local function open_editor_window(opts)
   close_picker()
-  local ok_ui, ui = pcall(require, "raccoon.ui")
-  if ok_ui and ui.close_description then
-    ui.close_description()
-  end
-  if ok_ui and ui.close_pr_list then
-    ui.close_pr_list()
-  end
+  local ui = require("raccoon.ui")
+  ui.close_description()
+  ui.close_pr_list()
 
   local width = math.min(140, vim.o.columns - 6)
   local height = math.min(math.max(#opts.lines + 2, 10), vim.o.lines - 6)
@@ -421,7 +409,7 @@ local function open_editor_window(opts)
     height = height,
     style = "minimal",
     border = "rounded",
-    title = opts.title,
+    title = " " .. opts.title .. " ",
     title_pos = "center",
   })
 
@@ -461,10 +449,10 @@ local function open_editor_window(opts)
       require("raccoon.open").sync()
     end, km_opts)
   end
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_current, km_opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", close_current, km_opts)
+  ui.bind_popup_close_keys(buf, close_current, {
+    shortcuts = shortcuts,
+    keymap_opts = km_opts,
+  })
 
   if opts.input_start then
     vim.api.nvim_win_set_cursor(win, { opts.input_start, 0 })
@@ -850,19 +838,20 @@ local function open_picker(opts)
   for _, row in ipairs(opts.rows) do
     table.insert(lines, row.text)
   end
-  table.insert(lines, string.rep("─", math.min(120, vim.o.columns - 6)))
   local shortcuts = config.load_shortcuts()
-  local footer_parts = { "Enter: open", "j/k: navigate" }
-  if opts.refreshable and config.is_enabled(shortcuts.sync) then
-    table.insert(footer_parts, shortcuts.sync .. ": sync")
+  local footer_specs = {
+    { literal = "Enter", label = "open" },
+    { literal = "j/k", label = "navigate" },
+    { key = "close", label = "close" },
+  }
+  if opts.refreshable then
+    table.insert(footer_specs, 3, { key = "sync", label = "sync" })
   end
-  local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-  table.insert(footer_parts, close_key .. ": close")
-  table.insert(lines, " " .. table.concat(footer_parts, " │ "))
+  local ui_mod = require("raccoon.ui")
+  ui_mod.append_popup_footer(lines, footer_specs, shortcuts)
 
   local width = math.min(160, vim.o.columns - 6)
   local height = math.min(#lines + 2, vim.o.lines - 6)
-  local ui_mod = require("raccoon.ui")
   local win, buf = ui_mod.create_floating_window({
     width = width,
     height = height,
@@ -915,10 +904,10 @@ local function open_picker(opts)
       )
     end, km_opts)
   end
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_picker, km_opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", close_picker, km_opts)
+  ui_mod.bind_popup_close_keys(buf, close_picker, {
+    shortcuts = shortcuts,
+    keymap_opts = km_opts,
+  })
 end
 
 function M.capture_ui_state()

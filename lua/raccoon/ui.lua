@@ -74,6 +74,117 @@ function M.create_floating_window(opts)
   return win, buf
 end
 
+---@param shortcuts table
+---@param spec table
+---@return string|nil
+local function resolve_popup_hint_binding(shortcuts, spec)
+  if type(spec.literal) == "string" and spec.literal ~= "" then
+    return spec.literal
+  end
+
+  local source = shortcuts
+  if type(spec.group) == "string" then
+    source = shortcuts and shortcuts[spec.group] or nil
+  end
+
+  local binding = source and source[spec.key] or nil
+  if config.is_enabled(binding) then
+    return binding
+  end
+  return nil
+end
+
+---@param hints table[]
+---@param pair_separator string
+---@param item_separator string
+---@return string
+local function format_popup_hints(hints, pair_separator, item_separator)
+  local parts = {}
+  for _, hint in ipairs(hints) do
+    table.insert(parts, hint.binding .. pair_separator .. hint.label)
+  end
+  return table.concat(parts, item_separator)
+end
+
+---@param specs table[]?
+---@param shortcuts table?
+---@return table[]
+function M.collect_popup_hints(specs, shortcuts)
+  local resolved = {}
+  local active_shortcuts = shortcuts or config.load_shortcuts()
+  for _, spec in ipairs(specs or {}) do
+    local binding = resolve_popup_hint_binding(active_shortcuts, spec)
+    if binding then
+      table.insert(resolved, {
+        binding = binding,
+        label = spec.label,
+      })
+    end
+  end
+  return resolved
+end
+
+---@param title string
+---@param specs table[]?
+---@param shortcuts table?
+---@return string
+function M.decorate_popup_title(title, specs, shortcuts)
+  local hints = M.collect_popup_hints(specs, shortcuts)
+  if #hints == 0 then
+    return title
+  end
+  return string.format("%s (%s)", title, format_popup_hints(hints, "=", ", "))
+end
+
+---@param specs table[]?
+---@param shortcuts table?
+---@param opts table?
+---@return string
+function M.popup_hint_text(specs, shortcuts, opts)
+  local hints = M.collect_popup_hints(specs, shortcuts)
+  if #hints == 0 then
+    return ""
+  end
+  opts = opts or {}
+  return format_popup_hints(
+    hints,
+    opts.pair_separator or "=",
+    opts.item_separator or ", "
+  )
+end
+
+---@param lines string[]
+---@param specs table[]?
+---@param shortcuts table?
+function M.append_popup_footer(lines, specs, shortcuts)
+  local hints = M.collect_popup_hints(specs, shortcuts)
+  if #hints == 0 then
+    return
+  end
+  table.insert(lines, string.rep("─", math.min(120, vim.o.columns - 6)))
+  table.insert(lines, " " .. format_popup_hints(hints, ": ", " │ "))
+end
+
+---@param buf number
+---@param close_fn function
+---@param opts table?
+function M.bind_popup_close_keys(buf, close_fn, opts)
+  opts = opts or {}
+  local shortcuts = opts.shortcuts or config.load_shortcuts()
+  local keymap_opts = vim.tbl_extend(
+    "force",
+    { buffer = buf, noremap = true, silent = true },
+    opts.keymap_opts or {}
+  )
+
+  if config.is_enabled(shortcuts.close) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, keymap_opts)
+  end
+  if opts.allow_escape ~= false then
+    vim.keymap.set(NORMAL_MODE, "<Esc>", close_fn, keymap_opts)
+  end
+end
+
 --- Close the PR list window
 function M.close_pr_list()
   if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
@@ -165,9 +276,10 @@ local function render_pr_list(prs, buf_width, shortcuts)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-    local sync_key = config.is_enabled(shortcuts.sync) and shortcuts.sync or "sync"
-    table.insert(lines, string.format("  Press %s to refresh, %s to close", sync_key, close_key))
+    M.append_popup_footer(lines, {
+      { key = "sync", label = "refresh" },
+      { key = "close", label = "close" },
+    }, shortcuts)
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -219,13 +331,13 @@ local function render_pr_list(prs, buf_width, shortcuts)
         line_idx = line_idx + 1
       end
     end
+    M.append_popup_footer(lines, {
+      { literal = "Enter", label = "open" },
+      { key = "close", label = "close" },
+      { key = "sync", label = "refresh" },
+      { literal = "j/k", label = "navigate" },
+    }, shortcuts)
   end
-
-  -- Footer separator
-  table.insert(lines, string.rep("─", buf_width - 4))
-  local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-  local sync_key = config.is_enabled(shortcuts.sync) and shortcuts.sync or "sync"
-  table.insert(lines, string.format(" Enter: open │ %s: close │ %s: refresh │ j/k: navigate", close_key, sync_key))
 
   return lines, highlights
 end
@@ -419,10 +531,12 @@ function M.show_pr_list()
   end, opts)
 
   -- Close keymaps
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function() M.close_pr_list() end, opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function() M.close_pr_list() end, opts)
+  M.bind_popup_close_keys(buf, function()
+    M.close_pr_list()
+  end, {
+    shortcuts = shortcuts,
+    keymap_opts = opts,
+  })
 
   if config.is_enabled(shortcuts.sync) then
     vim.keymap.set(NORMAL_MODE, shortcuts.sync, function() M.refresh_pr_list() end, opts)
@@ -729,10 +843,13 @@ function M.show_description()
   local height = math.min(#lines + 2, vim.o.lines - 10)
 
   -- Create floating window
+  local shortcuts = config.load_shortcuts()
   local win, buf = M.create_floating_window({
     width = width,
     height = height,
-    title = "PR Description",
+    title = M.decorate_popup_title("PR Description", {
+      { key = "close", label = "close" },
+    }, shortcuts),
     border = "rounded",
   })
 
@@ -747,16 +864,13 @@ function M.show_description()
   vim.wo[win].wrap = true
 
   -- Close keymaps (also clear state)
-  local shortcuts = config.load_shortcuts()
   local opts = { buffer = buf, noremap = true, silent = true }
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      M.close_description()
-    end, opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  M.bind_popup_close_keys(buf, function()
     M.close_description()
-  end, opts)
+  end, {
+    shortcuts = shortcuts,
+    keymap_opts = opts,
+  })
 end
 
 --- Shortcut descriptions keyed by config shortcut name
@@ -877,7 +991,9 @@ function M.show_shortcuts()
   local win, buf = M.create_floating_window({
     width = width,
     height = height,
-    title = "Raccoon Shortcuts",
+    title = M.decorate_popup_title("Raccoon Shortcuts", {
+      { key = "close", label = "close" },
+    }, shortcuts),
     border = "rounded",
   })
 
@@ -893,23 +1009,13 @@ function M.show_shortcuts()
     pcall(vim.api.nvim_buf_add_highlight, buf, ns, hl.hl, hl.line, 0, -1)
   end
 
-  -- Close on any keystroke
   local function close_win()
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
     end
   end
 
-  local key_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
-  -- Map all printable chars
-  local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()-_=+[]{}|;:',.<>?/ "
-  for i = 1, #chars do
-    pcall(vim.keymap.set, NORMAL_MODE, chars:sub(i, i), close_win, key_opts)
-  end
-  -- Map special keys
-  for _, key in ipairs({ "<CR>", "<Esc>", "<Space>", "<BS>", "<Tab>", "<leader>" }) do
-    pcall(vim.keymap.set, NORMAL_MODE, key, close_win, key_opts)
-  end
+  M.bind_popup_close_keys(buf, close_win, { shortcuts = shortcuts })
 end
 
 return M

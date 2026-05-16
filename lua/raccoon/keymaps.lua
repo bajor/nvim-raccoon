@@ -11,6 +11,10 @@ local diff = require("raccoon.diff")
 local state = require("raccoon.state")
 local thread_index = require("raccoon.thread_index")
 
+local function popup_ui()
+  return require("raccoon.ui")
+end
+
 --- Default keymap options
 local default_opts = { noremap = true, silent = true }
 
@@ -538,6 +542,7 @@ function M.merge_picker()
       end
 
       -- Create picker buffer with CI status
+      local shortcuts = config.load_shortcuts()
       local lines = {
         "Select merge method for PR #" .. number .. ":",
         "",
@@ -546,34 +551,39 @@ function M.merge_picker()
         "  [1] Merge        - Create a merge commit",
         "  [2] Squash       - Squash and merge",
         "  [3] Rebase       - Rebase and merge",
-        "",
-        "  [q] Cancel",
       }
+      popup_ui().append_popup_footer(lines, {
+        { literal = "1/2/3", label = "choose" },
+        { literal = "Enter", label = "select" },
+        { key = "close", label = "close" },
+        { literal = "j/k", label = "navigate" },
+      }, shortcuts)
 
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
       vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
       local width = 50
-      local height = #lines + 1
+      local height = #lines + 2
 
-      local win = vim.api.nvim_open_win(buf, true, {
-        relative = "editor",
-        row = math.floor((vim.o.lines - height) / 2),
-        col = math.floor((vim.o.columns - width) / 2),
+      local ui_mod = popup_ui()
+      local win, float_buf = ui_mod.create_floating_window({
         width = width,
         height = height,
-        style = "minimal",
+        title = ui_mod.decorate_popup_title("Merge PR", {
+          { key = "close", label = "close" },
+        }, shortcuts),
         border = "rounded",
-        title = " Merge PR ",
-        title_pos = "center",
       })
+      if float_buf ~= buf then
+        vim.api.nvim_win_set_buf(win, buf)
+        pcall(vim.api.nvim_buf_delete, float_buf, { force = true })
+      end
 
       -- Highlight the title and CI status
       vim.api.nvim_buf_call(buf, function()
         vim.fn.matchadd("Title", "^Select merge method.*")
         vim.fn.matchadd("Number", "\\[1\\]\\|\\[2\\]\\|\\[3\\]")
-        vim.fn.matchadd("Comment", "\\[q\\]")
         -- Highlight CI status based on content
         if ci_status:find("failed") then
           vim.fn.matchadd("ErrorMsg", "CI:.*failed.*")
@@ -601,17 +611,16 @@ function M.merge_picker()
         elseif cursor_line == 7 then do_merge("rebase")
         end
       end, { buffer = buf, noremap = true, silent = true })
-      local shortcuts = config.load_shortcuts()
       local close_win = function()
         if vim.api.nvim_win_is_valid(win) then
           vim.api.nvim_win_close(win, true)
         end
       end
-      local close_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
-      if config.is_enabled(shortcuts.close) then
-        vim.keymap.set(NORMAL_MODE, shortcuts.close, close_win, close_opts)
-      end
-      vim.keymap.set(NORMAL_MODE, "<Esc>", close_win, close_opts)
+      ui_mod.bind_popup_close_keys(buf, close_win, {
+        shortcuts = shortcuts,
+        keymap_opts = { buffer = buf, noremap = true, silent = true, nowait = true },
+      })
+      vim.api.nvim_win_set_cursor(win, { 5, 0 })
     end)
   end)
 end

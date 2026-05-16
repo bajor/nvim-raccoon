@@ -651,10 +651,10 @@ describe("raccoon.commits keybinding lockdown", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
-    it("does not block q (used for close)", function()
+    it("blocks q so maximize popups do not rely on q-only close", function()
       local buf = create_scratch_buf()
       commits._lock_maximize_buf(buf)
-      assert.is_false(has_buf_keymap(buf, "n", "q"))
+      assert.is_true(has_buf_keymap(buf, "n", "q"))
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 

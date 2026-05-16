@@ -5,6 +5,15 @@ local localcommits = require("raccoon.localcommits")
 local state = require("raccoon.state")
 
 describe("raccoon.ui", function()
+  local function has_buf_keymap(buf, mode, lhs)
+    for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
+      if map.lhs == lhs then
+        return true
+      end
+    end
+    return false
+  end
+
   describe("create_floating_window", function()
     after_each(function()
       -- Clean up any open windows
@@ -39,7 +48,7 @@ describe("raccoon.ui", function()
     end)
 
     it("uses default dimensions if not provided", function()
-      local win, buf = ui.create_floating_window({})
+      local win, _ = ui.create_floating_window({})
 
       local config = vim.api.nvim_win_get_config(win)
       assert.equals(60, config.width)
@@ -136,6 +145,29 @@ describe("raccoon.ui", function()
     end)
   end)
 
+  describe("popup helpers", function()
+    it("decorates popup titles from configured and literal hints", function()
+      local title = ui.decorate_popup_title("Popup", {
+        { key = "close", label = "close" },
+        { literal = "Enter", label = "open" },
+      }, require("raccoon.config").defaults.shortcuts)
+
+      assert.equals("Popup (<leader>q=close, Enter=open)", title)
+    end)
+
+    it("binds configured close shortcut and escape", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      ui.bind_popup_close_keys(buf, function() end, {
+        shortcuts = require("raccoon.config").defaults.shortcuts,
+      })
+
+      assert.is_true(has_buf_keymap(buf, "n", " q"))
+      assert.is_true(has_buf_keymap(buf, "n", "<Esc>"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+  end)
+
   describe("create_floating_window with percentages", function()
     after_each(function()
       for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -177,7 +209,6 @@ describe("raccoon.ui", function()
         border = "single",
       })
 
-      local config = vim.api.nvim_win_get_config(win)
       -- Border config varies by Neovim version, just check window is valid
       assert.is_true(vim.api.nvim_win_is_valid(win))
 
