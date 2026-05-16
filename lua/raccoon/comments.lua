@@ -101,6 +101,7 @@ local editor_state = {
   path = nil,
   line = nil,
   prefill_lines = nil,
+  augroup = nil,
 }
 
 local function trim(text)
@@ -167,6 +168,9 @@ local function close_active_editor(force)
     end
     vim.api.nvim_win_close(editor_state.win, true)
   end
+  if editor_state.augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, editor_state.augroup)
+  end
   editor_state = {
     win = nil,
     buf = nil,
@@ -176,6 +180,7 @@ local function close_active_editor(force)
     path = nil,
     line = nil,
     prefill_lines = nil,
+    augroup = nil,
   }
   return true
 end
@@ -386,6 +391,54 @@ local function build_editor_title(label, shortcuts, allow_send, allow_resolve, a
   return require("raccoon.ui").decorate_popup_title(label, hint_specs, shortcuts)
 end
 
+local function editor_is_in_input_region(win, input_start)
+  if not input_start or input_start < 1 then
+    return false
+  end
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+  local cursor = vim.api.nvim_win_get_cursor(win)
+  return cursor and cursor[1] >= input_start or false
+end
+
+local function update_editor_editability(buf, win, input_start)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local can_edit = editor_is_in_input_region(win, input_start)
+  vim.bo[buf].modifiable = can_edit
+  if not can_edit then
+    local mode = vim.api.nvim_get_mode().mode or ""
+    if mode:sub(1, 1) == "i" then
+      vim.cmd("stopinsert")
+    end
+  end
+end
+
+function M.refresh_editor_editability()
+  update_editor_editability(editor_state.buf, editor_state.win, editor_state.input_start)
+end
+
+local function setup_editor_access_control(buf, win, input_start)
+  if not input_start then
+    vim.bo[buf].modifiable = false
+    return nil
+  end
+
+  local group = vim.api.nvim_create_augroup("RaccoonEditorAccess" .. buf, { clear = true })
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "InsertEnter", "BufEnter", "WinEnter" }, {
+    group = group,
+    buffer = buf,
+    callback = function()
+      update_editor_editability(buf, win, input_start)
+    end,
+  })
+
+  update_editor_editability(buf, win, input_start)
+  return group
+end
+
 local function open_editor_window(opts)
   close_picker()
   local ui = require("raccoon.ui")
@@ -422,6 +475,7 @@ local function open_editor_window(opts)
     path = opts.path,
     line = opts.line,
     prefill_lines = opts.prefill_lines,
+    augroup = nil,
   }
 
   if opts.input_start and opts.initial_input_lines and #opts.initial_input_lines > 0 then
@@ -456,7 +510,11 @@ local function open_editor_window(opts)
 
   if opts.input_start then
     vim.api.nvim_win_set_cursor(win, { opts.input_start, 0 })
+    editor_state.augroup = setup_editor_access_control(buf, win, opts.input_start)
     vim.cmd("startinsert")
+    update_editor_editability(buf, win, opts.input_start)
+  else
+    editor_state.augroup = setup_editor_access_control(buf, win, opts.input_start)
   end
 end
 

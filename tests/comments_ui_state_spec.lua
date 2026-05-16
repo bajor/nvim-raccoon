@@ -273,7 +273,10 @@ describe("raccoon.comments UI state restore", function()
     assert.same({ "draft new thread" }, restored.input_lines)
     assert.is_true(comments.has_unsent_text())
     assert.is_false(current_win_title():match("=send") ~= nil)
-    assert.matches("Thread is no longer commentable on this line; clear the text or close it", notifications[#notifications])
+    assert.matches(
+      "Thread is no longer commentable on this line; clear the text or close it",
+      notifications[#notifications]
+    )
   end)
 
   it("restores a thread reply draft and disables send when the thread becomes resolved", function()
@@ -334,5 +337,43 @@ describe("raccoon.comments UI state restore", function()
     assert.is_false(current_win_title():match("=send") ~= nil)
     assert.truthy(current_win_title():match("=unresolve"))
     assert.matches("Thread is now resolved; unresolve it or clear the text", notifications[#notifications])
+  end)
+
+  it("keeps prior thread comments read-only while allowing navigation and editing only in the reply region", function()
+    comments.restore_ui_state({
+      kind = "editor",
+      editor_kind = "thread",
+      thread_id = "thread-a",
+      input_lines = { "draft reply" },
+    })
+
+    local buf = vim.api.nvim_get_current_buf()
+    local input_line = vim.api.nvim_win_get_cursor(0)[1]
+    local first_line_before = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
+
+    assert.is_true(vim.bo[buf].modifiable)
+    vim.cmd("stopinsert")
+
+    vim.cmd("normal! gg")
+    comments.refresh_editor_editability()
+    assert.equals(1, vim.api.nvim_win_get_cursor(0)[1])
+    assert.is_false(vim.bo[buf].modifiable)
+
+    vim.cmd("normal! j")
+    comments.refresh_editor_editability()
+    assert.equals(2, vim.api.nvim_win_get_cursor(0)[1])
+    assert.is_false(vim.bo[buf].modifiable)
+
+    pcall(vim.cmd, "normal! x")
+    assert.equals(first_line_before, vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1])
+
+    vim.cmd("normal! G")
+    comments.refresh_editor_editability()
+    assert.equals(input_line, vim.api.nvim_win_get_cursor(0)[1])
+    assert.is_true(vim.bo[buf].modifiable)
+
+    local ok_reply_edit = pcall(vim.cmd, "normal! AX")
+    assert.is_true(ok_reply_edit)
+    assert.equals("draft replyX", vim.api.nvim_buf_get_lines(buf, input_line - 1, input_line, false)[1])
   end)
 end)
