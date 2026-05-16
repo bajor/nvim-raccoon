@@ -945,7 +945,6 @@ local shortcut_groups = {
 }
 
 --- Show a floating window with all configured shortcuts
---- Closes on any keystroke
 function M.show_shortcuts()
   local shortcuts = config.load_shortcuts()
 
