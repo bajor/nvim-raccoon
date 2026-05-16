@@ -87,6 +87,106 @@ local function expand_path(path)
   return path
 end
 
+---@param path string
+---@return string
+local function shrink_home(path)
+  local home = vim.fn.expand("~")
+  if path:sub(1, #home) == home then
+    return "~" .. path:sub(#home + 1)
+  end
+  return path
+end
+
+---@return string
+function M.default_config_template()
+  local commit_viewer = M.defaults.commit_viewer
+  local shortcuts = M.defaults.shortcuts
+  local clone_root = shrink_home(M.defaults.clone_root)
+
+  return string.format([[{
+  "github_host": "github.com",
+  "tokens": {
+    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
+  },
+  "repos": [],
+  "clone_root": "%s",
+  "sync_interval": %d,
+  "commit_viewer": {
+    "grid": { "rows": %d, "cols": %d },
+    "base_commits_count": %d,
+    "sidebar_width": %d,
+    "commit_message_max_lines": %d,
+    "passthrough_keys": []
+  },
+  "shortcuts": {
+    "pr_list": "%s",
+    "show_shortcuts": "%s",
+    "sync": "%s",
+    "next_point": "%s",
+    "prev_point": "%s",
+    "next_file": "%s",
+    "prev_file": "%s",
+    "next_thread": "%s",
+    "prev_thread": "%s",
+    "next_needs_reply_thread": "%s",
+    "comment": "%s",
+    "description": "%s",
+    "list_comments": "%s",
+    "list_files": "%s",
+    "list_threads": "%s",
+    "merge": "%s",
+    "commit_viewer_toggle": "%s",
+    "comment_send": "%s",
+    "comment_resolve": "%s",
+    "comment_unresolve": "%s",
+    "close": "%s",
+    "commit_viewer": {
+      "next_page": "%s",
+      "prev_page": "%s",
+      "next_page_alt": "%s",
+      "exit": "%s",
+      "maximize_prefix": "%s",
+      "browse_files": "%s"
+    }
+  }
+}]],
+    clone_root,
+    M.defaults.sync_interval,
+    commit_viewer.grid.rows,
+    commit_viewer.grid.cols,
+    commit_viewer.base_commits_count,
+    commit_viewer.sidebar_width,
+    commit_viewer.commit_message_max_lines,
+    shortcuts.pr_list,
+    shortcuts.show_shortcuts,
+    shortcuts.sync,
+    shortcuts.next_point,
+    shortcuts.prev_point,
+    shortcuts.next_file,
+    shortcuts.prev_file,
+    shortcuts.next_thread,
+    shortcuts.prev_thread,
+    shortcuts.next_needs_reply_thread,
+    shortcuts.comment,
+    shortcuts.description,
+    shortcuts.list_comments,
+    shortcuts.list_files,
+    shortcuts.list_threads,
+    shortcuts.merge,
+    shortcuts.commit_viewer_toggle,
+    shortcuts.comment_send,
+    shortcuts.comment_resolve,
+    shortcuts.comment_unresolve,
+    shortcuts.close,
+    shortcuts.commit_viewer.next_page,
+    shortcuts.commit_viewer.prev_page,
+    shortcuts.commit_viewer.next_page_alt,
+    shortcuts.commit_viewer.exit,
+    shortcuts.commit_viewer.maximize_prefix,
+    shortcuts.commit_viewer.browse_files
+  )
+end
+
 --- Validate required fields in config
 ---@param config table
 ---@return boolean, string?
@@ -197,27 +297,12 @@ function M.create_default()
     return false, "Config file already exists"
   end
 
-  local default = {
-    github_host = "github.com",
-    tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
-    clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-    sync_interval = 300,
-    commit_viewer = {
-      grid = { rows = 2, cols = 2 },
-      base_commits_count = 20,
-    },
-  }
-
-  local json = vim.json.encode(default)
-  -- Pretty print JSON
-  local formatted = json:gsub(",", ",\n  "):gsub("{", "{\n  "):gsub("}", "\n}")
-
   local file = io.open(M.config_path, "w")
   if not file then
     return false, "Cannot create config file"
   end
 
-  file:write(formatted)
+  file:write(M.default_config_template())
   file:close()
 
   return true, nil

@@ -22,10 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Status text now uses `IN SYNC`, `BEHIND <n> <base>`, and `CONFLICTS`.
 - Commit mode and local mode are explicitly read-only for comment/thread work; use flat diff for review actions.
 - Re-entering commit mode now restores the last commit/page/file-tree position for the current PR, and returning to flat diff restores the previous file/thread/composer context.
+- `:Raccoon config` now generates the current full starter config, including shortcut defaults and commit-viewer settings.
 
 ### Removed
 - Flat-diff fallback from new thread/reply actions to broad PR comments.
 - Local pending-comment workflow and `comment_save` as the active send action (old configs still migrate through compat).
+
+### Fixed
+- `:Raccoon` usage/help and command-line completion now advertise `open` consistently.
 
 ## [0.12.0] - 2026-05-04
 

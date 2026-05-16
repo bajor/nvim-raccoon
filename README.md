@@ -72,6 +72,8 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/config.json`. A minimal config looks like this:
 
+The generated starter file includes the current shortcut defaults and commit-viewer block explicitly. You can trim it down later if you prefer a smaller config.
+
 ```json
 {
   "tokens": {

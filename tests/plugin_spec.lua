@@ -21,6 +21,18 @@ describe("plugin Raccoon command", function()
     assert.is_table(commands.Raccoon)
   end)
 
+  it("includes open in usage text and completion", function()
+    local messages = {}
+    vim.notify = function(message)
+      table.insert(messages, message)
+    end
+
+    vim.cmd("Raccoon")
+
+    assert.matches("open", messages[#messages])
+    assert.is_true(vim.tbl_contains(vim.fn.getcompletion("Raccoon ", "cmdline"), "open"))
+  end)
+
   it("blocks merge in commit mode", function()
     local messages = {}
     vim.notify = function(message)

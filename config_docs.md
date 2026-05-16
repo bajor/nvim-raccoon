@@ -2,6 +2,8 @@
 
 All configuration for raccoon.nvim lives in a single JSON file at `~/.config/raccoon/config.json`. Run `:Raccoon config` to create it with defaults and open it for editing.
 
+The generated starter file includes the current shortcut defaults and commit-viewer block explicitly. You can delete fields you do not care about; the loader still merges with built-in defaults on read.
+
 ## How it works
 
 On every PR operation (opening, syncing, merging), the plugin reads `config.json`, merges it with built-in defaults, validates required fields, and uses the result. You only need to specify fields you want to set or override — everything else falls back to sensible defaults.
