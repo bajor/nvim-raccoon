@@ -129,7 +129,6 @@ function M.build()
   end
 
   local thread_by_id = {}
-  local issue_comments_by_file = {}
   local review_comments = {}
   local issue_entries = {}
   local thread_order = 0

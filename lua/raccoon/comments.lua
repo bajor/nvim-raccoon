@@ -234,15 +234,6 @@ local function ensure_review_context()
   }, nil
 end
 
-local function refresh_current_file_display()
-  local buf = vim.api.nvim_get_current_buf()
-  local path = current_buf_path(buf)
-  if not path then
-    return
-  end
-  M.show_comments(buf, state.get_comments(path))
-end
-
 local function build_badge(counts)
   local parts = {}
   if (counts.nr or 0) > 0 then
@@ -620,17 +611,25 @@ local function open_thread_editor(thread_id, opts)
       vim.notify("Empty reply", vim.log.levels.WARN)
       return
     end
-    api.reply_to_comment(ctx.owner, ctx.repo, ctx.number, thread.root_comment_id, body, ctx.token, function(_result, err)
-      vim.schedule(function()
-        if err then
-          vim.notify("Failed to send reply: " .. err, vim.log.levels.ERROR)
-          return
-        end
-        close_active_editor(true)
-        vim.notify("Thread reply sent", vim.log.levels.INFO)
-        require("raccoon.open").sync()
-      end)
-    end)
+    api.reply_to_comment(
+      ctx.owner,
+      ctx.repo,
+      ctx.number,
+      thread.root_comment_id,
+      body,
+      ctx.token,
+      function(_result, err)
+        vim.schedule(function()
+          if err then
+            vim.notify("Failed to send reply: " .. err, vim.log.levels.ERROR)
+            return
+          end
+          close_active_editor(true)
+          vim.notify("Thread reply sent", vim.log.levels.INFO)
+          require("raccoon.open").sync()
+        end)
+      end
+    )
   end
 
   local function resolve_thread()
@@ -679,7 +678,13 @@ local function open_thread_editor(thread_id, opts)
   end
 
   open_editor_window({
-    title = build_editor_title(thread.path .. " " .. thread.line_label, shortcuts, allow_send, not thread.resolved, thread.resolved),
+    title = build_editor_title(
+      thread.path .. " " .. thread.line_label,
+      shortcuts,
+      allow_send,
+      not thread.resolved,
+      thread.resolved
+    ),
     lines = lines,
     input_start = input_start,
     kind = "thread",
@@ -904,7 +909,10 @@ local function open_picker(opts)
     end, km_opts)
   elseif config.is_enabled(shortcuts.sync) then
     vim.keymap.set(NORMAL_MODE, shortcuts.sync, function()
-      vim.notify("Refresh not available in this picker; close it and sync from the review buffer if needed", vim.log.levels.INFO)
+      vim.notify(
+        "Refresh not available in this picker; close it and sync from the review buffer if needed",
+        vim.log.levels.INFO
+      )
     end, km_opts)
   end
   if config.is_enabled(shortcuts.close) then
@@ -1004,7 +1012,11 @@ local function history_rows(index)
     table.insert(rows, {
       key = "review:" .. tostring(review.id or review.submitted_at or "?"),
       kind = "review",
-      text = string.format("[REVIEW] %s %s", review.user and review.user.login or "unknown", normalize_preview(review.body or "", 90)),
+      text = string.format(
+        "[REVIEW] %s %s",
+        review.user and review.user.login or "unknown",
+        normalize_preview(review.body or "", 90)
+      ),
       on_select = function()
         M.show_readonly_thread({ comments = { review }, title = " Review " })
       end,
@@ -1046,7 +1058,13 @@ local function history_rows(index)
           line = thread.line,
           thread_id = thread.thread_id,
           resolved = thread.resolved,
-          text = string.format("%s %s %s %s", tag, thread.line_label, thread.latest_author, normalize_preview(thread.preview, 80)),
+          text = string.format(
+            "%s %s %s %s",
+            tag,
+            thread.line_label,
+            thread.latest_author,
+            normalize_preview(thread.preview, 80)
+          ),
           on_select = function()
             if thread.line then
               M.jump_to_thread(thread.thread_id, {})
@@ -1066,7 +1084,12 @@ local function history_rows(index)
           kind = "issue",
           path = issue.path,
           line = issue.line,
-          text = string.format("[I] L%d %s %s", issue.line, issue.comment.user and issue.comment.user.login or "unknown", normalize_preview(issue.comment.body or "", 80)),
+          text = string.format(
+            "[I] L%d %s %s",
+            issue.line,
+            issue.comment.user and issue.comment.user.login or "unknown",
+            normalize_preview(issue.comment.body or "", 80)
+          ),
           on_select = function()
             jump_to_path_and_line(issue.path, issue.line)
           end,
@@ -1174,7 +1197,14 @@ function M.list_threads(opts)
     local tag = thread.needs_reply and "[NR]" or "[U]"
     table.insert(rows, {
       key = "thread:" .. thread.thread_id,
-      text = string.format("%s %s %s %s %s", tag, thread.path, thread.line_label, thread.latest_author, normalize_preview(thread.preview, 70)),
+      text = string.format(
+        "%s %s %s %s %s",
+        tag,
+        thread.path,
+        thread.line_label,
+        thread.latest_author,
+        normalize_preview(thread.preview, 70)
+      ),
       on_select = function()
         if thread.line then
           M.jump_to_thread(thread.thread_id, {})
@@ -1279,7 +1309,13 @@ local function open_same_line_picker(path, line, line_state)
     local tag = thread.needs_reply and "[NR]" or "[U]"
     table.insert(thread_rows, {
       key = "thread:" .. thread.thread_id,
-      text = string.format("%s %s %s %s", tag, thread.latest_author, thread.line_label, normalize_preview(thread.preview, 70)),
+      text = string.format(
+        "%s %s %s %s",
+        tag,
+        thread.latest_author,
+        thread.line_label,
+        normalize_preview(thread.preview, 70)
+      ),
       on_select = function()
         open_thread_editor(thread.thread_id)
       end,

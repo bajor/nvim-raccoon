@@ -345,9 +345,9 @@ function M.show_pr_list()
   if in_commit_mode then
     local clear_popup
     if state.is_commit_mode() then
-      local commits = require("raccoon.commits")
-      commits.set_popup_win(win)
-      clear_popup = commits.clear_popup_win
+      local commit_mode = require("raccoon.commits")
+      commit_mode.set_popup_win(win)
+      clear_popup = commit_mode.clear_popup_win
     else
       localcommits.set_popup_win(win)
       clear_popup = localcommits.clear_popup_win
@@ -799,11 +799,28 @@ local shortcut_groups = {
   { title = "Global", keys = { "pr_list", "show_shortcuts" } },
   {
     title = "Review Navigation",
-    keys = { "next_point", "prev_point", "next_file", "prev_file", "next_thread", "prev_thread", "next_needs_reply_thread" },
+    keys = {
+      "next_point",
+      "prev_point",
+      "next_file",
+      "prev_file",
+      "next_thread",
+      "prev_thread",
+      "next_needs_reply_thread",
+    },
   },
   {
     title = "Review Actions",
-    keys = { "comment", "description", "list_comments", "list_threads", "list_files", "sync", "merge", "commit_viewer_toggle" },
+    keys = {
+      "comment",
+      "description",
+      "list_comments",
+      "list_threads",
+      "list_files",
+      "sync",
+      "merge",
+      "commit_viewer_toggle",
+    },
   },
   { title = "Comment Editor", keys = { "comment_send", "comment_resolve", "comment_unresolve" } },
   {

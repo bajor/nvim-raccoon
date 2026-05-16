@@ -621,24 +621,31 @@ end
 ---@return table[] keymaps
 function M.build_keymaps(shortcuts)
   local n = NORMAL_MODE
+  local function map(lhs, rhs, desc)
+    return { mode = n, lhs = lhs, rhs = rhs, desc = desc }
+  end
   local all = {
-    { mode = n, lhs = shortcuts.next_point, rhs = function() M.next_point() end, desc = "Raccoon: Next diff/comment (flat diff only)" },
-    { mode = n, lhs = shortcuts.prev_point, rhs = function() M.prev_point() end, desc = "Raccoon: Previous diff/comment (flat diff only)" },
-    { mode = n, lhs = shortcuts.next_file, rhs = function() M.next_file() end, desc = "Raccoon: Next file (flat diff only)" },
-    { mode = n, lhs = shortcuts.prev_file, rhs = function() M.prev_file() end, desc = "Raccoon: Previous file (flat diff only)" },
-    { mode = n, lhs = shortcuts.next_thread, rhs = function() M.next_thread() end, desc = "Raccoon: Next unresolved thread (flat diff only)" },
-    { mode = n, lhs = shortcuts.prev_thread, rhs = function() M.prev_thread() end, desc = "Raccoon: Previous unresolved thread (flat diff only)" },
-    { mode = n, lhs = shortcuts.next_needs_reply_thread, rhs = function() M.next_needs_reply_thread() end, desc = "Raccoon: Next needs-reply thread (flat diff only)" },
-    { mode = n, lhs = shortcuts.comment, rhs = function() M.comment_at_cursor() end, desc = "Raccoon: Comment at cursor (flat diff only)" },
-    { mode = n, lhs = shortcuts.description, rhs = function() M.show_description() end, desc = "Raccoon: Show PR description" },
-    { mode = n, lhs = shortcuts.list_comments, rhs = function() M.list_comments() end, desc = "Raccoon: List PR comments (flat diff only)" },
-    { mode = n, lhs = shortcuts.list_files, rhs = function() M.list_files() end, desc = "Raccoon: List changed files (flat diff only)" },
-    { mode = n, lhs = shortcuts.list_threads, rhs = function() M.list_threads() end, desc = "Raccoon: List unresolved threads (flat diff only)" },
-    { mode = n, lhs = shortcuts.sync, rhs = function() M.sync() end, desc = "Raccoon: Sync current view" },
-    { mode = n, lhs = shortcuts.merge, rhs = function() M.merge_picker() end, desc = "Raccoon: Merge PR (flat diff only)" },
-    { mode = n, lhs = shortcuts.commit_viewer_toggle, rhs = function()
+    map(shortcuts.next_point, function() M.next_point() end, "Raccoon: Next diff/comment (flat diff only)"),
+    map(shortcuts.prev_point, function() M.prev_point() end, "Raccoon: Previous diff/comment (flat diff only)"),
+    map(shortcuts.next_file, function() M.next_file() end, "Raccoon: Next file (flat diff only)"),
+    map(shortcuts.prev_file, function() M.prev_file() end, "Raccoon: Previous file (flat diff only)"),
+    map(shortcuts.next_thread, function() M.next_thread() end, "Raccoon: Next unresolved thread (flat diff only)"),
+    map(shortcuts.prev_thread, function() M.prev_thread() end, "Raccoon: Previous unresolved thread (flat diff only)"),
+    map(
+      shortcuts.next_needs_reply_thread,
+      function() M.next_needs_reply_thread() end,
+      "Raccoon: Next needs-reply thread (flat diff only)"
+    ),
+    map(shortcuts.comment, function() M.comment_at_cursor() end, "Raccoon: Comment at cursor (flat diff only)"),
+    map(shortcuts.description, function() M.show_description() end, "Raccoon: Show PR description"),
+    map(shortcuts.list_comments, function() M.list_comments() end, "Raccoon: List PR comments (flat diff only)"),
+    map(shortcuts.list_files, function() M.list_files() end, "Raccoon: List changed files (flat diff only)"),
+    map(shortcuts.list_threads, function() M.list_threads() end, "Raccoon: List unresolved threads (flat diff only)"),
+    map(shortcuts.sync, function() M.sync() end, "Raccoon: Sync current view"),
+    map(shortcuts.merge, function() M.merge_picker() end, "Raccoon: Merge PR (flat diff only)"),
+    map(shortcuts.commit_viewer_toggle, function()
       require("raccoon.commits").toggle()
-    end, desc = "Raccoon: Toggle commit viewer" },
+    end, "Raccoon: Toggle commit viewer"),
   }
   local result = {}
   for _, km in ipairs(all) do

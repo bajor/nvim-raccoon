@@ -949,7 +949,10 @@ M._format_stat_bar = ui.format_stat_bar
 M._close_filetree = function() ui.close_win_pair(commit_state, "filetree_win", "filetree_buf") end
 M.has_hidden_review_draft = function()
   local snapshot = mode_restore_state.review
-  return snapshot and snapshot.session_key == current_review_session_key() and snapshot_has_unsent_text(snapshot.overlay) or false
+  return snapshot
+    and snapshot.session_key == current_review_session_key()
+    and snapshot_has_unsent_text(snapshot.overlay)
+    or false
 end
 M.clear_mode_restore_state = function()
   mode_restore_state.review = nil

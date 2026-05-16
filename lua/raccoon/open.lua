@@ -150,6 +150,20 @@ local function parse_issue_comment_body(comment)
 end
 
 local function validate_thread_metadata(review_comments, resolution_map)
+  local function missing_thread_id_error(comment)
+    return string.format(
+      "could not retrieve review threads from GraphQL (missing thread id on review comment %s)",
+      tostring(comment.id or "?")
+    )
+  end
+
+  local function missing_root_comment_error(thread_id)
+    return string.format(
+      "could not retrieve review threads from GraphQL (missing root review comment for thread %s)",
+      tostring(thread_id)
+    )
+  end
+
   if #review_comments == 0 then
     return nil
   end
@@ -162,10 +176,10 @@ local function validate_thread_metadata(review_comments, resolution_map)
   for _, comment in ipairs(review_comments) do
     local metadata = comment.id and resolution_map[comment.id] or nil
     if not metadata then
-      return string.format("could not retrieve review threads from GraphQL (missing thread id on review comment %s)", tostring(comment.id or "?"))
+      return missing_thread_id_error(comment)
     end
     if type(metadata.thread_id) ~= "string" or metadata.thread_id == "" then
-      return string.format("could not retrieve review threads from GraphQL (missing thread id on review comment %s)", tostring(comment.id or "?"))
+      return missing_thread_id_error(comment)
     end
 
     comment.resolved = metadata.isResolved == true
@@ -179,7 +193,7 @@ local function validate_thread_metadata(review_comments, resolution_map)
 
   for _, comment in ipairs(review_comments) do
     if not roots_by_thread[comment.thread_id] then
-      return string.format("could not retrieve review threads from GraphQL (missing root review comment for thread %s)", tostring(comment.thread_id))
+      return missing_root_comment_error(comment.thread_id)
     end
   end
 
