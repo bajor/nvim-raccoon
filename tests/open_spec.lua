@@ -1,11 +1,17 @@
 local open = require("raccoon.open")
 local state = require("raccoon.state")
 local config = require("raccoon.config")
+local commits = require("raccoon.commits")
 
 describe("raccoon.open", function()
   -- Reset state before each test
   before_each(function()
     state.reset()
+    commits.clear_mode_restore_state()
+  end)
+
+  after_each(function()
+    commits.clear_mode_restore_state()
   end)
 
 
@@ -71,7 +77,7 @@ describe("raccoon.open", function()
       })
 
       local status = open.statusline()
-      assert.equals("✓ In sync", status)
+      assert.equals("IN SYNC", status)
     end)
 
     it("returns empty when PR not set", function()
@@ -169,6 +175,37 @@ describe("raccoon.open", function()
 
       assert.is_not_nil(notify_msg)
       assert.truthy(notify_msg:match("closed"))
+    end)
+
+    it("blocks close when commit mode is hiding an unsent draft", function()
+      state.start({
+        owner = "test",
+        repo = "test",
+        number = 1,
+        url = "https://github.com/test/test/pull/1",
+        clone_path = "/tmp/test",
+      })
+
+      commits._set_mode_restore_state({
+        session_key = state.get_url(),
+        overlay = {
+          kind = "editor",
+          input_lines = { "hidden draft" },
+        },
+      }, nil)
+
+      local notify_msg = nil
+      local original_notify = vim.notify
+      vim.notify = function(msg)
+        notify_msg = msg
+      end
+
+      open.close_pr()
+
+      vim.notify = original_notify
+
+      assert.is_true(state.is_active())
+      assert.equals("Cannot close review with unsent text; clear it or send it first", notify_msg)
     end)
   end)
 

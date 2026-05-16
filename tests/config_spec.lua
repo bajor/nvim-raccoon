@@ -439,9 +439,9 @@ describe("raccoon.config", function()
       local expected = {
         "pr_list", "show_shortcuts",
         "next_point", "prev_point", "next_file", "prev_file",
-        "next_thread", "prev_thread",
-        "comment", "description", "list_comments", "merge", "commit_viewer_toggle",
-        "comment_save", "comment_resolve", "comment_unresolve",
+        "next_thread", "prev_thread", "next_needs_reply_thread",
+        "comment", "description", "list_comments", "list_threads", "list_files", "sync", "merge", "commit_viewer_toggle",
+        "comment_send", "comment_resolve", "comment_unresolve",
         "close",
       }
       for _, key in ipairs(expected) do
@@ -470,6 +470,15 @@ describe("raccoon.config", function()
         assert.is_string(val, "commit_viewer." .. key .. " should be a string")
         assert.is_true(#val > 0, "commit_viewer." .. key .. " should not be empty")
       end
+    end)
+
+    it("uses the new review shortcut defaults", function()
+      assert.equals("<leader>nr", config.defaults.shortcuts.next_needs_reply_thread)
+      assert.equals("<leader>r", config.defaults.shortcuts.sync)
+      assert.equals("<leader>mr", config.defaults.shortcuts.merge)
+      assert.equals("<leader>s", config.defaults.shortcuts.comment_send)
+      assert.equals("<leader>cr", config.defaults.shortcuts.comment_resolve)
+      assert.equals("<leader>cu", config.defaults.shortcuts.comment_unresolve)
     end)
   end)
 
@@ -772,7 +781,7 @@ describe("raccoon.config", function()
         github_host = "github.com",
         tokens = {
           ["personal"] = "ghp_aaa",
-          ["work"] = { token = "ghp_bbb", host = "github.acme.com" },
+          ["work"] = { token = "ghp_bbb", host = "github.acme.com", login = "reviewer" },
         },
       }
       local entries = config.get_all_tokens(cfg)
@@ -786,6 +795,22 @@ describe("raccoon.config", function()
       assert.equals("work", entries[2].key)
       assert.equals("ghp_bbb", entries[2].token)
       assert.equals("github.acme.com", entries[2].host)
+      assert.equals("reviewer", entries[2].login)
+    end)
+
+    it("get_token_entry includes optional login", function()
+      local cfg = {
+        github_host = "github.com",
+        tokens = {
+          ["work"] = { token = "ghp_bbb", host = "github.acme.com", login = "reviewer" },
+        },
+      }
+      local entry = config.get_token_entry(cfg, "work")
+      assert.same({
+        token = "ghp_bbb",
+        host = "github.acme.com",
+        login = "reviewer",
+      }, entry)
     end)
 
     it("loads config with table token and normalizes host", function()

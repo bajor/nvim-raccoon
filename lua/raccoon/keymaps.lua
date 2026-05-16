@@ -9,6 +9,7 @@ local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
 local state = require("raccoon.state")
+local thread_index = require("raccoon.thread_index")
 
 --- Default keymap options
 local default_opts = { noremap = true, silent = true }
@@ -16,14 +17,21 @@ local default_opts = { noremap = true, silent = true }
 --- Get a valid line number from a comment, handling vim.NIL from JSON null
 ---@param comment table
 ---@return number|nil
-local function get_comment_line(comment)
-  for _, field in ipairs({ "line", "original_line", "position" }) do
-    local val = comment[field]
-    if type(val) == "number" and val > 0 then
-      return val
-    end
+local function in_flat_diff_mode()
+  return state.is_active() and not state.is_commit_mode() and not require("raccoon.localcommits").is_active()
+end
+
+local function flat_diff_only()
+  vim.notify("Available only in flat diff review mode", vim.log.levels.INFO)
+end
+
+local function build_thread_index()
+  local index, err = thread_index.build()
+  if err then
+    vim.notify("Thread data error: " .. err, vim.log.levels.ERROR)
+    return nil
   end
-  return nil
+  return index
 end
 
 --- Get all points of interest (diffs and comments) for a file
@@ -65,9 +73,9 @@ local function get_file_points(file)
   end
 
   -- Get comments
-  local file_comments = state.get_comments(file.filename)
-  for _, comment in ipairs(file_comments) do
-    local line = get_comment_line(comment)
+  local index = build_thread_index()
+  local line_map = index and index.line_state_by_file[file.filename] or {}
+  for line in pairs(line_map) do
     if line and not seen[line] then
       table.insert(points, { line = line, type = "comment" })
       seen[line] = true
@@ -198,39 +206,32 @@ function M.prev_point()
   diff.prev_file()
 end
 
---- Get all comment threads across all files (comments only, no diffs)
----@return table[] comment_points List of {file_index, file, line, type="comment"}
-local function get_all_comment_points()
-  local files = state.get_files()
-  local comment_points = {}
+local function get_navigable_threads()
+  local index = build_thread_index()
+  if not index then
+    return {}
+  end
+  return index.unresolved_threads or {}
+end
 
-  for file_idx, file in ipairs(files) do
-    local file_comments = state.get_comments(file.filename)
-    local seen = {}
+local function goto_thread(thread, open_if_no_line)
+  if not thread then
+    return
+  end
+  comments.jump_to_thread(thread.thread_id, { open_window_if_no_line = open_if_no_line })
+end
 
-    for _, comment in ipairs(file_comments) do
-      local line = get_comment_line(comment)
-      if line and not seen[line] then
-        table.insert(comment_points, {
-          file_index = file_idx,
-          file = file,
-          line = line,
-          type = "comment",
-        })
-        seen[line] = true
-      end
+local function find_selected_thread_index(threads)
+  local current_thread_id = state.get_selected_thread_id()
+  if not current_thread_id then
+    return nil
+  end
+  for idx, thread in ipairs(threads) do
+    if thread.thread_id == current_thread_id then
+      return idx
     end
   end
-
-  -- Sort by file index, then by line
-  table.sort(comment_points, function(a, b)
-    if a.file_index ~= b.file_index then
-      return a.file_index < b.file_index
-    end
-    return a.line < b.line
-  end)
-
-  return comment_points
+  return nil
 end
 
 --- Go to next comment thread (across files)
@@ -240,27 +241,40 @@ function M.next_thread()
     return
   end
 
-  local comment_points = get_all_comment_points()
-  if #comment_points == 0 then
-    vim.notify("No comment threads in this PR", vim.log.levels.INFO)
+  if not in_flat_diff_mode() then
+    flat_diff_only()
+    return
+  end
+
+  local threads = get_navigable_threads()
+  if #threads == 0 then
+    vim.notify("No unresolved threads in this PR", vim.log.levels.INFO)
+    return
+  end
+
+  local selected_idx = find_selected_thread_index(threads)
+  if selected_idx then
+    local next_idx = selected_idx < #threads and (selected_idx + 1) or 1
+    if next_idx == 1 and selected_idx == #threads then
+      vim.notify("Wrapped to first thread", vim.log.levels.INFO)
+    end
+    goto_thread(threads[next_idx], true)
     return
   end
 
   local current_file_idx = state.get_current_file_index()
   local current_line = vim.fn.line(".")
-
-  -- Find next comment after current position
-  for _, point in ipairs(comment_points) do
-    if point.file_index > current_file_idx or
-       (point.file_index == current_file_idx and point.line > current_line) then
-      goto_point(point)
+  for _, thread in ipairs(threads) do
+    local thread_line = thread.line or math.huge
+    if thread.file_index > current_file_idx
+        or (thread.file_index == current_file_idx and thread_line > current_line)
+    then
+      goto_thread(thread, true)
       return
     end
   end
-
-  -- Wrap around to first comment
   vim.notify("Wrapped to first thread", vim.log.levels.INFO)
-  goto_point(comment_points[1])
+  goto_thread(threads[1], true)
 end
 
 --- Go to previous comment thread (across files)
@@ -270,28 +284,135 @@ function M.prev_thread()
     return
   end
 
-  local comment_points = get_all_comment_points()
-  if #comment_points == 0 then
-    vim.notify("No comment threads in this PR", vim.log.levels.INFO)
+  if not in_flat_diff_mode() then
+    flat_diff_only()
+    return
+  end
+
+  local threads = get_navigable_threads()
+  if #threads == 0 then
+    vim.notify("No unresolved threads in this PR", vim.log.levels.INFO)
+    return
+  end
+
+  local selected_idx = find_selected_thread_index(threads)
+  if selected_idx then
+    local prev_idx = selected_idx > 1 and (selected_idx - 1) or #threads
+    if prev_idx == #threads and selected_idx == 1 then
+      vim.notify("Wrapped to last thread", vim.log.levels.INFO)
+    end
+    goto_thread(threads[prev_idx], true)
     return
   end
 
   local current_file_idx = state.get_current_file_index()
   local current_line = vim.fn.line(".")
-
-  -- Find previous comment before current position (iterate in reverse)
-  for i = #comment_points, 1, -1 do
-    local point = comment_points[i]
-    if point.file_index < current_file_idx or
-       (point.file_index == current_file_idx and point.line < current_line) then
-      goto_point(point)
+  for i = #threads, 1, -1 do
+    local thread = threads[i]
+    local thread_line = thread.line or math.huge
+    if thread.file_index < current_file_idx
+        or (thread.file_index == current_file_idx and thread_line < current_line)
+    then
+      goto_thread(thread, true)
       return
     end
   end
 
-  -- Wrap around to last comment
   vim.notify("Wrapped to last thread", vim.log.levels.INFO)
-  goto_point(comment_points[#comment_points])
+  goto_thread(threads[#threads], true)
+end
+
+function M.next_needs_reply_thread()
+  if not state.is_active() then
+    vim.notify("No active PR session", vim.log.levels.WARN)
+    return
+  end
+
+  if not in_flat_diff_mode() then
+    flat_diff_only()
+    return
+  end
+
+  local all_threads = get_navigable_threads()
+  local threads = {}
+  for _, thread in ipairs(all_threads) do
+    if thread.needs_reply then
+      table.insert(threads, thread)
+    end
+  end
+  if #threads == 0 then
+    vim.notify("No unresolved threads need your reply", vim.log.levels.INFO)
+    return
+  end
+
+  local selected_idx = find_selected_thread_index(threads)
+  if selected_idx then
+    local next_idx = selected_idx < #threads and (selected_idx + 1) or 1
+    if next_idx == 1 and selected_idx == #threads then
+      vim.notify("Wrapped to first needs-reply thread", vim.log.levels.INFO)
+    end
+    goto_thread(threads[next_idx], true)
+    return
+  end
+
+  local current_file_idx = state.get_current_file_index()
+  local current_line = vim.fn.line(".")
+  for _, thread in ipairs(threads) do
+    local thread_line = thread.line or math.huge
+    if thread.file_index > current_file_idx
+        or (thread.file_index == current_file_idx and thread_line > current_line)
+    then
+      goto_thread(thread, true)
+      return
+    end
+  end
+
+  vim.notify("Wrapped to first needs-reply thread", vim.log.levels.INFO)
+  goto_thread(threads[1], true)
+end
+
+function M.next_file()
+  if not state.is_active() then
+    vim.notify("No active PR session", vim.log.levels.WARN)
+    return false
+  end
+  if not in_flat_diff_mode() then
+    flat_diff_only()
+    return false
+  end
+
+  local files = state.get_files()
+  if #files == 0 then
+    return false
+  end
+
+  if not state.next_file() then
+    state.goto_file(1)
+  end
+  local file = state.get_current_file()
+  return file and comments.jump_to_file(file.filename) or false
+end
+
+function M.prev_file()
+  if not state.is_active() then
+    vim.notify("No active PR session", vim.log.levels.WARN)
+    return false
+  end
+  if not in_flat_diff_mode() then
+    flat_diff_only()
+    return false
+  end
+
+  local files = state.get_files()
+  if #files == 0 then
+    return false
+  end
+
+  if not state.prev_file() then
+    state.goto_file(#files)
+  end
+  local file = state.get_current_file()
+  return file and comments.jump_to_file(file.filename) or false
 end
 
 --- Open or create comment at current line
@@ -314,6 +435,28 @@ end
 --- Show all PR comments
 function M.list_comments()
   comments.list_comments()
+end
+
+function M.list_threads()
+  comments.list_threads()
+end
+
+function M.list_files()
+  comments.list_files()
+end
+
+function M.sync()
+  if state.is_active() then
+    local open = require("raccoon.open")
+    open.sync()
+    return
+  end
+  local ui = require("raccoon.ui")
+  if ui.is_pr_list_open() then
+    ui.refresh_pr_list()
+    return
+  end
+  vim.notify("No active raccoon view to sync", vim.log.levels.WARN)
 end
 
 --- Format CI check status for display
@@ -352,6 +495,11 @@ end
 function M.merge_picker()
   if not state.is_active() then
     vim.notify("No active PR session", vim.log.levels.WARN)
+    return
+  end
+
+  if state.is_commit_mode() or require("raccoon.localcommits").is_active() then
+    flat_diff_only()
     return
   end
 
@@ -474,19 +622,23 @@ end
 function M.build_keymaps(shortcuts)
   local n = NORMAL_MODE
   local all = {
-    { mode = n, lhs = shortcuts.next_point, rhs = function() M.next_point() end, desc = "Next diff/comment" },
-    { mode = n, lhs = shortcuts.prev_point, rhs = function() M.prev_point() end, desc = "Previous diff/comment" },
-    { mode = n, lhs = shortcuts.next_file, rhs = function() diff.next_file() end, desc = "Next file" },
-    { mode = n, lhs = shortcuts.prev_file, rhs = function() diff.prev_file() end, desc = "Previous file" },
-    { mode = n, lhs = shortcuts.next_thread, rhs = function() M.next_thread() end, desc = "Next comment thread" },
-    { mode = n, lhs = shortcuts.prev_thread, rhs = function() M.prev_thread() end, desc = "Previous comment thread" },
-    { mode = n, lhs = shortcuts.comment, rhs = function() M.comment_at_cursor() end, desc = "Comment at cursor" },
-    { mode = n, lhs = shortcuts.description, rhs = function() M.show_description() end, desc = "Show PR description" },
-    { mode = n, lhs = shortcuts.list_comments, rhs = function() M.list_comments() end, desc = "List all PR comments" },
-    { mode = n, lhs = shortcuts.merge, rhs = function() M.merge_picker() end, desc = "Merge PR (pick method)" },
+    { mode = n, lhs = shortcuts.next_point, rhs = function() M.next_point() end, desc = "Raccoon: Next diff/comment (flat diff only)" },
+    { mode = n, lhs = shortcuts.prev_point, rhs = function() M.prev_point() end, desc = "Raccoon: Previous diff/comment (flat diff only)" },
+    { mode = n, lhs = shortcuts.next_file, rhs = function() M.next_file() end, desc = "Raccoon: Next file (flat diff only)" },
+    { mode = n, lhs = shortcuts.prev_file, rhs = function() M.prev_file() end, desc = "Raccoon: Previous file (flat diff only)" },
+    { mode = n, lhs = shortcuts.next_thread, rhs = function() M.next_thread() end, desc = "Raccoon: Next unresolved thread (flat diff only)" },
+    { mode = n, lhs = shortcuts.prev_thread, rhs = function() M.prev_thread() end, desc = "Raccoon: Previous unresolved thread (flat diff only)" },
+    { mode = n, lhs = shortcuts.next_needs_reply_thread, rhs = function() M.next_needs_reply_thread() end, desc = "Raccoon: Next needs-reply thread (flat diff only)" },
+    { mode = n, lhs = shortcuts.comment, rhs = function() M.comment_at_cursor() end, desc = "Raccoon: Comment at cursor (flat diff only)" },
+    { mode = n, lhs = shortcuts.description, rhs = function() M.show_description() end, desc = "Raccoon: Show PR description" },
+    { mode = n, lhs = shortcuts.list_comments, rhs = function() M.list_comments() end, desc = "Raccoon: List PR comments (flat diff only)" },
+    { mode = n, lhs = shortcuts.list_files, rhs = function() M.list_files() end, desc = "Raccoon: List changed files (flat diff only)" },
+    { mode = n, lhs = shortcuts.list_threads, rhs = function() M.list_threads() end, desc = "Raccoon: List unresolved threads (flat diff only)" },
+    { mode = n, lhs = shortcuts.sync, rhs = function() M.sync() end, desc = "Raccoon: Sync current view" },
+    { mode = n, lhs = shortcuts.merge, rhs = function() M.merge_picker() end, desc = "Raccoon: Merge PR (flat diff only)" },
     { mode = n, lhs = shortcuts.commit_viewer_toggle, rhs = function()
       require("raccoon.commits").toggle()
-    end, desc = "Toggle commit viewer" },
+    end, desc = "Raccoon: Toggle commit viewer" },
   }
   local result = {}
   for _, km in ipairs(all) do

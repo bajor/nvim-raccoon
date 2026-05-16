@@ -11,7 +11,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
 
   if not subcommand then
     vim.notify(
-      "Usage: :Raccoon <prs|list|description|sync|merge|squash|rebase|commits|local|shortcuts|close|config>",
+      "Usage: :Raccoon <prs|list|threads|files|description|sync|merge|squash|rebase|commits|local|shortcuts|close|config>",
       vim.log.levels.WARN
     )
     return
@@ -42,22 +42,40 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   elseif subcommand == "list" then
     local pr_comments = require("raccoon.comments")
     pr_comments.list_comments()
+  elseif subcommand == "threads" then
+    local pr_comments = require("raccoon.comments")
+    pr_comments.list_threads()
+  elseif subcommand == "files" then
+    local pr_comments = require("raccoon.comments")
+    pr_comments.list_files()
   elseif subcommand == "description" or subcommand == "desc" then
     local ui = require("raccoon.ui")
     ui.show_description()
   elseif subcommand == "sync" or subcommand == "update" or subcommand == "refresh" then
-    local pr_open = require("raccoon.open")
-    pr_open.sync()
+    local state = require("raccoon.state")
+    if state.is_active() then
+      require("raccoon.open").sync()
+    elseif require("raccoon.ui").is_pr_list_open() then
+      require("raccoon.ui").refresh_pr_list()
+    else
+      vim.notify("No active raccoon view to sync", vim.log.levels.WARN)
+    end
   elseif subcommand == "close" then
     local pr_open = require("raccoon.open")
     pr_open.close_pr()
   elseif subcommand == "merge" or subcommand == "squash" or subcommand == "rebase" then
     local state = require("raccoon.state")
+    local localcommits = require("raccoon.localcommits")
     local api = require("raccoon.api")
     local config = require("raccoon.config")
 
     if not state.is_active() then
       vim.notify("No active PR review session", vim.log.levels.WARN)
+      return
+    end
+
+    if state.is_commit_mode() or localcommits.is_active() then
+      vim.notify("Available only in flat diff review mode", vim.log.levels.INFO)
       return
     end
 
@@ -80,8 +98,8 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     end
 
     api.init(state.get_github_host() or cfg.github_host)
-    local token = config.get_token_for_owner(cfg, owner)
-    if not token then
+    local token_entry = config.get_token_entry(cfg, owner)
+    if not token_entry then
       vim.notify(
         string.format("No token configured for '%s'. Add it to tokens in config.", owner),
         vim.log.levels.ERROR
@@ -105,7 +123,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     api.merge_pr(owner, repo, number, {
       merge_method = merge_method,
       commit_title = pr.title,
-    }, token, function(_result, err)
+    }, token_entry.token, function(_result, err)
       vim.schedule(function()
         if err then
           vim.notify("Merge failed: " .. err, vim.log.levels.ERROR)
@@ -159,14 +177,18 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     "prev_file": "<leader>pf",
     "next_thread": "<leader>nt",
     "prev_thread": "<leader>pt",
+    "next_needs_reply_thread": "<leader>nr",
     "comment": "<leader>c",
     "description": "<leader>dd",
     "list_comments": "<leader>ll",
-    "merge": "<leader>rr",
+    "list_threads": "<leader>lt",
+    "list_files": "<leader>lf",
+    "sync": "<leader>r",
+    "merge": "<leader>mr",
     "commit_viewer_toggle": "<leader>cm",
-    "comment_save": "<leader>s",
-    "comment_resolve": "<leader>r",
-    "comment_unresolve": "<leader>u",
+    "comment_send": "<leader>s",
+    "comment_resolve": "<leader>cr",
+    "comment_unresolve": "<leader>cu",
     "close": "<leader>q",
     "commit_viewer": {
       "next_page": "<leader>j",
@@ -195,7 +217,7 @@ end, {
     if #args == 2 then
       -- Complete subcommands
       return {
-        "prs", "list", "description", "sync", "merge", "squash",
+        "prs", "list", "threads", "files", "description", "sync", "merge", "squash",
         "rebase", "commits", "local", "shortcuts", "close", "config",
       }
     end

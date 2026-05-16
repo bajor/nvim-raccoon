@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.0] - 2026-05-16
+
+### Added
+- Exact-thread flat diff review based on GitHub `thread_id`, including unresolved-only inline rendering and exact-thread replies.
+- `:Raccoon threads` and `:Raccoon files` for unresolved-thread and changed-file pickers in flat diff.
+- `[NR/U/I]` badges in flat diff and file picker rows.
+- Optional per-token `login` config field to skip viewer lookup and power needs-reply detection.
+- Flat-diff/commit-viewer mode restore for the current PR, including preserved reply/new-thread drafts across toggles.
+- `ARCHITECTURE_DIFF.md` for the thread-indexed review flow.
+
+### Changed
+- Flat diff now hides resolved review threads entirely; resolved history lives in `:Raccoon list`.
+- `:Raccoon list` is thread-aware and may show multiple rows for the same file and line when GitHub has multiple real threads there.
+- Manual refresh is now the configured `sync` shortcut (`<leader>r` by default), and merge default moved to `<leader>mr`.
+- Comment popup actions now use `comment_send`, `comment_resolve`, and `comment_unresolve` defaults of `<leader>s`, `<leader>cr`, and `<leader>cu`.
+- Status text now uses `IN SYNC`, `BEHIND <n> <base>`, and `CONFLICTS`.
+- Commit mode and local mode are explicitly read-only for comment/thread work; use flat diff for review actions.
+- Re-entering commit mode now restores the last commit/page/file-tree position for the current PR, and returning to flat diff restores the previous file/thread/composer context.
+
+### Removed
+- Flat-diff fallback from new thread/reply actions to broad PR comments.
+- Local pending-comment workflow and `comment_save` as the active send action (old configs still migrate through compat).
+
 ## [0.12.0] - 2026-05-04
 
 ### Removed

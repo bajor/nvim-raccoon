@@ -1,5 +1,6 @@
 local ui = require("raccoon.ui")
 local commit_ui = require("raccoon.commit_ui")
+local commits = require("raccoon.commits")
 local localcommits = require("raccoon.localcommits")
 local state = require("raccoon.state")
 
@@ -268,6 +269,7 @@ describe("raccoon.ui", function()
   describe("show_pr_list", function()
     after_each(function()
       ui.close_pr_list()
+      commits.clear_mode_restore_state()
     end)
 
     it("has show_pr_list function", function()
@@ -378,6 +380,44 @@ describe("raccoon.ui", function()
       assert.equals(1, ui.state.selected)
 
       ui.fetch_all_prs = original_fetch
+    end)
+
+    it("blocks opening when commit mode is hiding an unsent draft", function()
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/owner/repo/pull/1",
+        clone_path = "/tmp/test",
+      })
+      commits._set_mode_restore_state({
+        session_key = state.get_url(),
+        overlay = {
+          kind = "editor",
+          input_lines = { "hidden draft" },
+        },
+      }, nil)
+
+      local original_fetch = ui.fetch_all_prs
+      local fetch_called = false
+      local notify_msg = nil
+      local original_notify = vim.notify
+      ui.fetch_all_prs = function(callback)
+        fetch_called = true
+        callback({}, nil)
+      end
+      vim.notify = function(msg)
+        notify_msg = msg
+      end
+
+      ui.show_pr_list()
+
+      vim.notify = original_notify
+      ui.fetch_all_prs = original_fetch
+
+      assert.is_false(fetch_called)
+      assert.is_nil(ui.state.win)
+      assert.equals("Cannot switch PRs with unsent text; clear it or send it first", notify_msg)
     end)
   end)
 

@@ -400,6 +400,42 @@ function M.update_comment(owner, repo, comment_id, body, token, callback)
   end)
 end
 
+--- Create a reply on an existing review thread.
+--- GitHub requires the top-level review comment id for the thread.
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param number number PR number
+---@param comment_id number Top-level review comment ID for the thread
+---@param body string Reply body
+---@param token string GitHub token
+---@param callback fun(comment: table|nil, err: string|nil)
+function M.reply_to_comment(owner, repo, number, comment_id, body, token, callback)
+  vim.schedule(function()
+    local url = string.format(
+      "%s/repos/%s/%s/pulls/%d/comments/%d/replies",
+      M.base_url,
+      owner,
+      repo,
+      number,
+      comment_id
+    )
+
+    local response, err = request({
+      url = url,
+      method = "POST",
+      token = token,
+      body = { body = body },
+    })
+
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    callback(response.data, nil)
+  end)
+end
+
 --- Get issue comments on a pull request (general comments, not line-specific)
 ---@param owner string Repository owner
 ---@param repo string Repository name

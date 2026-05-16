@@ -59,14 +59,13 @@ local function update_statusline()
 
   -- Conflict warning (highest priority - red)
   if has_conflicts then
-    table.insert(parts, "%#RaccoonConflict# ⛔ MERGE CONFLICTS %*")
+    table.insert(parts, "%#RaccoonConflict# CONFLICTS %*")
   end
 
   -- Behind warning (yellow)
   if commits_behind > 0 then
-    local plural = commits_behind == 1 and "commit" or "commits"
-    table.insert(parts, string.format("%%#RaccoonWarning# ⚠ %d %s behind %s %%*",
-      commits_behind, plural, pr.base.ref))
+    table.insert(parts, string.format("%%#RaccoonWarning# BEHIND %d %s %%*",
+      commits_behind, pr.base.ref))
   end
 
   -- Build the statusline string
@@ -74,7 +73,7 @@ local function update_statusline()
   if #parts > 0 then
     status_str = table.concat(parts, " ")
   elseif commits_behind == 0 and not has_conflicts then
-    status_str = "%#RaccoonOk# ✓ In sync with " .. pr.base.ref .. " %*"
+    status_str = "%#RaccoonOk# IN SYNC %*"
   else
     return -- No status to show
   end
@@ -102,12 +101,11 @@ function M.statusline()
   end
 
   if has_conflicts then
-    return file_part .. "⛔ CONFLICTS"
+    return file_part .. "CONFLICTS"
   elseif commits_behind > 0 then
-    local plural = commits_behind == 1 and "commit" or "commits"
-    return file_part .. string.format("⚠ %d %s behind %s", commits_behind, plural, pr.base.ref)
+    return file_part .. string.format("BEHIND %d %s", commits_behind, pr.base.ref)
   else
-    return file_part .. "✓ In sync"
+    return file_part .. "IN SYNC"
   end
 end
 
@@ -121,6 +119,161 @@ end
 ---@param msg string
 local function notify_loading(msg)
   vim.notify(msg, vim.log.levels.INFO)
+end
+
+local function ensure_comments_bucket(map, path)
+  local bucket = map[path]
+  if not bucket then
+    bucket = {}
+    map[path] = bucket
+  end
+  return bucket
+end
+
+local function parse_issue_comment_body(comment)
+  local body = comment.body or ""
+  local file_path, line_num = body:match("^%*%*`([^:]+):(%d+)`%*%*")
+  if not file_path or not line_num then
+    return nil
+  end
+
+  return {
+    id = comment.id,
+    body = body:gsub("^%*%*`[^`]+`%*%*\n*", ""),
+    path = file_path,
+    line = tonumber(line_num),
+    user = comment.user,
+    created_at = comment.created_at,
+    updated_at = comment.updated_at,
+    issue_comment = true,
+  }
+end
+
+local function validate_thread_metadata(review_comments, resolution_map)
+  if #review_comments == 0 then
+    return nil
+  end
+
+  if not resolution_map or next(resolution_map) == nil then
+    return "could not retrieve review threads from GraphQL"
+  end
+
+  local roots_by_thread = {}
+  for _, comment in ipairs(review_comments) do
+    local metadata = comment.id and resolution_map[comment.id] or nil
+    if not metadata then
+      return string.format("could not retrieve review threads from GraphQL (missing thread id on review comment %s)", tostring(comment.id or "?"))
+    end
+    if type(metadata.thread_id) ~= "string" or metadata.thread_id == "" then
+      return string.format("could not retrieve review threads from GraphQL (missing thread id on review comment %s)", tostring(comment.id or "?"))
+    end
+
+    comment.resolved = metadata.isResolved == true
+    comment.resolved_by = metadata.resolvedBy
+    comment.thread_id = metadata.thread_id
+
+    if comment.in_reply_to_id == nil or comment.in_reply_to_id == vim.NIL then
+      roots_by_thread[metadata.thread_id] = true
+    end
+  end
+
+  for _, comment in ipairs(review_comments) do
+    if not roots_by_thread[comment.thread_id] then
+      return string.format("could not retrieve review threads from GraphQL (missing root review comment for thread %s)", tostring(comment.thread_id))
+    end
+  end
+
+  return nil
+end
+
+local function build_review_payload(owner, repo, number, token, callback)
+  api.get_pr_comments(owner, repo, number, token, function(review_comments, comments_err)
+    if comments_err then
+      callback(nil, "Could not fetch review comments: " .. comments_err)
+      return
+    end
+
+    api.get_issue_comments(owner, repo, number, token, function(issue_comments, issue_err)
+      api.get_pr_reviews(owner, repo, number, token, function(reviews, reviews_err)
+        api.get_pr_review_threads(owner, repo, number, token, function(resolution_map, res_err)
+          if res_err and #(review_comments or {}) > 0 then
+            callback(nil, "could not retrieve review threads from GraphQL")
+            return
+          end
+
+          local metadata_err = validate_thread_metadata(review_comments or {}, resolution_map or {})
+          if metadata_err then
+            callback(nil, metadata_err)
+            return
+          end
+
+          local payload = {
+            comments_by_path = {},
+            review_bodies = {},
+            warnings = {},
+          }
+
+          for _, comment in ipairs(review_comments or {}) do
+            if comment.path then
+              table.insert(ensure_comments_bucket(payload.comments_by_path, comment.path), comment)
+            end
+          end
+
+          if issue_err then
+            table.insert(payload.warnings, "Could not fetch issue comments: " .. issue_err)
+          else
+            for _, issue_comment in ipairs(issue_comments or {}) do
+              local parsed = parse_issue_comment_body(issue_comment)
+              if parsed then
+                table.insert(ensure_comments_bucket(payload.comments_by_path, parsed.path), parsed)
+              end
+            end
+          end
+
+          if reviews_err then
+            table.insert(payload.warnings, "Could not fetch reviews: " .. reviews_err)
+          else
+            for _, review in ipairs(reviews or {}) do
+              if review.body and review.body ~= "" then
+                table.insert(payload.review_bodies, {
+                  id = review.id,
+                  body = review.body,
+                  user = review.user,
+                  state = review.state,
+                  submitted_at = review.submitted_at,
+                  is_review = true,
+                })
+              end
+            end
+          end
+
+          callback(payload, nil)
+        end)
+      end)
+    end)
+  end)
+end
+
+local function apply_review_payload(files, payload)
+  for _, file in ipairs(files or {}) do
+    state.set_comments(file.filename, payload.comments_by_path[file.filename] or {})
+  end
+  state.set_comments("_reviews", payload.review_bodies or {})
+end
+
+local function resolve_viewer_login(cfg, owner, host, callback)
+  local token_entry = config.get_token_entry(cfg, owner)
+  if not token_entry then
+    callback(nil, string.format("No token configured for '%s'. Add it to tokens in config.", owner))
+    return
+  end
+
+  if token_entry.login and token_entry.login ~= "" then
+    callback(token_entry.login, nil)
+    return
+  end
+
+  api.get_viewer(token_entry.token, callback, host)
 end
 
 --- Show an error notification
@@ -146,14 +299,8 @@ local function open_first_file()
   -- Setup all PR review keymaps
   keymaps.setup()
 
-  -- Open file with diff highlighting
-  local buf = diff.open_file(file)
-  if buf then
-    -- Show any existing comments
-    local file_comments = state.get_comments(file.filename)
-    if #file_comments > 0 then
-      comments.show_comments(buf, file_comments)
-    end
+  local opened = comments.jump_to_file(file.filename)
+  if opened then
     local shortcuts = config.load_shortcuts()
     local nav_hint = ""
     if config.is_enabled(shortcuts.next_file) and config.is_enabled(shortcuts.prev_file) then
@@ -190,97 +337,17 @@ local function fetch_pr_data(owner, repo, number, token, callback)
 
       state.set_files(files)
 
-      -- Fetch review comments (line-level)
-      api.get_pr_comments(owner, repo, number, token, function(review_comments, comments_err)
-        if comments_err then
-          vim.notify("Warning: Could not fetch review comments: " .. comments_err, vim.log.levels.WARN)
-        else
-          -- Index comments by file path
-          for _, comment in ipairs(review_comments or {}) do
-            if comment.path then
-              local file_comments = state.get_comments(comment.path)
-              table.insert(file_comments, comment)
-              state.set_comments(comment.path, file_comments)
-            end
-          end
+      build_review_payload(owner, repo, number, token, function(payload, payload_err)
+        if payload_err then
+          callback(payload_err)
+          return
         end
 
-        -- Also fetch issue comments (general PR comments)
-        api.get_issue_comments(owner, repo, number, token, function(issue_comments, issue_err)
-          if issue_err then
-            vim.notify("Warning: Could not fetch issue comments: " .. issue_err, vim.log.levels.WARN)
-          else
-            -- Parse issue comments that have file:line references in body
-            -- Format: **`file:line`**\n\ncomment body
-            for _, comment in ipairs(issue_comments or {}) do
-              local body = comment.body or ""
-              local file_path, line_num = body:match("^%*%*`([^:]+):(%d+)`%*%*")
-              if file_path and line_num then
-                -- Extract actual comment body (after the file reference)
-                local actual_body = body:gsub("^%*%*`[^`]+`%*%*\n*", "")
-                local parsed_comment = {
-                  id = comment.id,
-                  body = actual_body,
-                  path = file_path,
-                  line = tonumber(line_num),
-                  user = comment.user,
-                  created_at = comment.created_at,
-                  updated_at = comment.updated_at,
-                  issue_comment = true, -- Mark as issue comment
-                }
-                local file_comments = state.get_comments(file_path)
-                table.insert(file_comments, parsed_comment)
-                state.set_comments(file_path, file_comments)
-              end
-            end
-          end
-
-          -- Fetch PR reviews (includes review bodies from bots like qodo-code-review)
-          api.get_pr_reviews(owner, repo, number, token, function(reviews, reviews_err)
-            if reviews_err then
-              vim.notify("Warning: Could not fetch reviews: " .. reviews_err, vim.log.levels.WARN)
-            else
-              -- Store review bodies as general comments under "_reviews" key
-              local review_bodies = {}
-              for _, review in ipairs(reviews or {}) do
-                if review.body and review.body ~= "" then
-                  table.insert(review_bodies, {
-                    id = review.id,
-                    body = review.body,
-                    user = review.user,
-                    state = review.state, -- APPROVED, CHANGES_REQUESTED, COMMENTED, etc.
-                    submitted_at = review.submitted_at,
-                    is_review = true,
-                  })
-                end
-              end
-              if #review_bodies > 0 then
-                state.set_comments("_reviews", review_bodies)
-              end
-            end
-
-          -- Fetch thread resolution status via GraphQL
-          api.get_pr_review_threads(owner, repo, number, token, function(resolution_map, res_err)
-            if res_err then
-              vim.notify("Warning: Could not fetch thread resolution: " .. res_err, vim.log.levels.WARN)
-            elseif resolution_map then
-              -- Apply resolution status to stored comments
-              for _, file in ipairs(files) do
-                local file_comments = state.get_comments(file.filename)
-                for _, comment in ipairs(file_comments) do
-                  if comment.id and resolution_map[comment.id] then
-                    comment.resolved = resolution_map[comment.id].isResolved
-                    comment.resolved_by = resolution_map[comment.id].resolvedBy
-                    comment.thread_id = resolution_map[comment.id].thread_id
-                  end
-                end
-              end
-            end
-
-            callback(nil)
-          end)
-          end)
-        end)
+        apply_review_payload(files, payload)
+        for _, warning in ipairs(payload.warnings or {}) do
+          vim.notify("Warning: " .. warning, vim.log.levels.WARN)
+        end
+        callback(nil)
       end)
     end)
   end)
@@ -302,6 +369,12 @@ local function sync_pr(silent, force)
   if not state.is_active() then
     return
   end
+
+  if silent and comments.has_unsent_text() then
+    return
+  end
+
+  local overlay_snapshot = force and comments.capture_ui_state() or nil
 
   local cfg, cfg_err = config.load()
   if cfg_err then
@@ -326,11 +399,12 @@ local function sync_pr(silent, force)
   api.init(github_host)
 
   local branch = pr.head.ref
-  local token = config.get_token_for_owner(cfg, owner)
-  if not token then
+  local token_entry = config.get_token_entry(cfg, owner)
+  if not token_entry then
     vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
     return
   end
+  local token = token_entry.token
   local repo_url = string.format("https://%s@%s/%s/%s.git", token, github_host, owner, repo)
 
   -- Check remote for updates first
@@ -388,99 +462,34 @@ local function sync_pr(silent, force)
           return
         end
 
-        state.set_files(files)
-
-        -- Preserve local state (resolved, pending) before clearing
-        local local_state = {}
-        for _, file in ipairs(files) do
-          local file_comments = state.get_comments(file.filename)
-          for _, comment in ipairs(file_comments) do
-            if comment.id and (comment.resolved ~= nil or comment.pending) then
-              local_state[comment.id] = {
-                resolved = comment.resolved,
-                pending = comment.pending,
-              }
-            end
-          end
-          state.set_comments(file.filename, {})
-        end
-
-        -- Re-fetch review comments
-        api.get_pr_comments(owner, repo, number, token, function(new_comments, comments_err)
-          if not comments_err then
-            for _, comment in ipairs(new_comments or {}) do
-              if comment.path then
-                -- Restore local state if it exists
-                if comment.id and local_state[comment.id] then
-                  comment.resolved = local_state[comment.id].resolved
-                  comment.pending = local_state[comment.id].pending
-                end
-                local file_comments = state.get_comments(comment.path)
-                table.insert(file_comments, comment)
-                state.set_comments(comment.path, file_comments)
-              end
-            end
+        build_review_payload(owner, repo, number, token, function(payload, payload_err)
+          if payload_err then
+            notify_error("Sync failed: " .. payload_err)
+            return
           end
 
-          -- Also fetch issue comments
-          api.get_issue_comments(owner, repo, number, token, function(issue_comments, issue_err)
-            if not issue_err then
-              for _, comment in ipairs(issue_comments or {}) do
-                local body = comment.body or ""
-                local file_path, line_num = body:match("^%*%*`([^:]+):(%d+)`%*%*")
-                if file_path and line_num then
-                  local actual_body = body:gsub("^%*%*`[^`]+`%*%*\n*", "")
-                  local parsed_comment = {
-                    id = comment.id,
-                    body = actual_body,
-                    path = file_path,
-                    line = tonumber(line_num),
-                    user = comment.user,
-                    created_at = comment.created_at,
-                    updated_at = comment.updated_at,
-                    issue_comment = true,
-                  }
-                  -- Restore local state if it exists
-                  if parsed_comment.id and local_state[parsed_comment.id] then
-                    parsed_comment.resolved = local_state[parsed_comment.id].resolved
-                    parsed_comment.pending = local_state[parsed_comment.id].pending
-                  end
-                  local file_comments = state.get_comments(file_path)
-                  table.insert(file_comments, parsed_comment)
-                  state.set_comments(file_path, file_comments)
-                end
-              end
-            end
+          state.set_files(files)
+          apply_review_payload(files, payload)
+          for _, warning in ipairs(payload.warnings or {}) do
+            vim.notify("Warning: " .. warning, vim.log.levels.WARN)
+          end
 
-            -- Fetch thread resolution status via GraphQL (overwrites local state)
-            api.get_pr_review_threads(owner, repo, number, token, function(resolution_map, res_err)
-              if res_err then
-                vim.notify("Warning: Could not fetch thread resolution: " .. res_err, vim.log.levels.WARN)
-              elseif resolution_map then
-                -- Apply server-side resolution status (overwrites local)
-                for _, file in ipairs(files) do
-                  local file_comments = state.get_comments(file.filename)
-                  for _, comment in ipairs(file_comments) do
-                    if comment.id and resolution_map[comment.id] then
-                      comment.resolved = resolution_map[comment.id].isResolved
-                      comment.resolved_by = resolution_map[comment.id].resolvedBy
-                      comment.thread_id = resolution_map[comment.id].thread_id
-                    end
-                  end
-                end
-              end
+          -- Refresh current file display
+          local current_file = state.get_current_file()
+          if current_file and not state.is_commit_mode() and not require("raccoon.localcommits").is_active() then
+            local buf = vim.api.nvim_get_current_buf()
+            diff.apply_highlights(buf, current_file.patch)
+            comments.show_comments(buf, state.get_comments(current_file.filename))
+          end
 
-              -- Refresh current file display
-              local current_file = state.get_current_file()
-              if current_file then
-                local buf = vim.api.nvim_get_current_buf()
-                diff.apply_highlights(buf, current_file.patch)
-                comments.show_comments(buf, state.get_comments(current_file.filename))
-              end
+          if state.is_commit_mode() then
+            require("raccoon.commits").refresh_after_sync()
+          end
 
-              vim.notify("PR synced - new commits loaded", vim.log.levels.INFO)
-            end)
-          end)
+          if overlay_snapshot then
+            comments.restore_ui_state(overlay_snapshot)
+          end
+          vim.notify("PR synced - new commits loaded", vim.log.levels.INFO)
         end)
       end)
     end)
@@ -546,6 +555,17 @@ end
 --- Open a PR for review
 ---@param url string GitHub PR URL
 function M.open_pr(url)
+  if state.is_active() and state.get_url() == url then
+    vim.notify("PR is already open", vim.log.levels.INFO)
+    return
+  end
+
+  local commits = require("raccoon.commits")
+  if state.is_active() and (comments.has_unsent_text() or commits.has_hidden_review_draft()) then
+    vim.notify("Cannot switch PRs with unsent text; clear it or send it first", vim.log.levels.WARN)
+    return
+  end
+
   -- Load config first (needed for github_host)
   local cfg, cfg_err = config.load()
   if cfg_err then
@@ -570,22 +590,24 @@ function M.open_pr(url)
   -- Build clone path
   local clone_path = git.build_pr_path(cfg.clone_root, owner, repo, number)
 
+  -- Resolve token for this owner
+  local token_entry = config.get_token_entry(cfg, owner)
+  if not token_entry then
+    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
+    return
+  end
+  local token = token_entry.token
+
   -- Start session
   state.start({
     owner = owner,
     repo = repo,
     number = number,
     url = url,
+    viewer_login = token_entry.login,
     github_host = url_host,
     clone_path = clone_path,
   })
-
-  -- Resolve token for this owner
-  local token = config.get_token_for_owner(cfg, owner)
-  if not token then
-    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
-    return
-  end
 
   notify_loading(string.format("Opening PR #%d from %s/%s...", number, owner, repo))
 
@@ -633,35 +655,45 @@ function M.open_pr(url)
         end
       end)
 
-      -- Fetch files and comments
-      fetch_pr_data(owner, repo, number, token, function(data_err)
-        if data_err then
-          notify_error("Failed to fetch PR data: " .. data_err)
+      resolve_viewer_login(cfg, owner, url_host, function(login, login_err)
+        if login_err then
+          notify_error("Failed to determine viewer login: " .. login_err)
           state.reset()
           return
         end
 
-        -- Change to clone directory
-        vim.cmd("cd " .. vim.fn.fnameescape(clone_path))
+        state.set_viewer_login(login)
 
-        -- Store initial SHA for change detection
-        last_known_sha = pr.head.sha
+        -- Fetch files and comments
+        fetch_pr_data(owner, repo, number, token, function(data_err)
+          if data_err then
+            notify_error("Failed to fetch PR data: " .. data_err)
+            state.reset()
+            return
+          end
 
-        -- Start periodic sync timer
-        start_sync_timer()
+          -- Change to clone directory
+          vim.cmd("cd " .. vim.fn.fnameescape(clone_path))
 
-        -- Open the first file
-        open_first_file()
+          -- Store initial SHA for change detection
+          last_known_sha = pr.head.sha
 
-        -- Update statusline (show warning if behind base)
-        vim.defer_fn(update_statusline, 100)
+          -- Start periodic sync timer
+          start_sync_timer()
 
-        notify_success(string.format(
-          "PR #%d: %s (%d files) - auto-sync enabled",
-          number,
-          pr.title:sub(1, 40),
-          #state.get_files()
-        ))
+          -- Open the first file
+          open_first_file()
+
+          -- Update statusline (show warning if behind base)
+          vim.defer_fn(update_statusline, 100)
+
+          notify_success(string.format(
+            "PR #%d: %s (%d files) - auto-sync enabled",
+            number,
+            pr.title:sub(1, 40),
+            #state.get_files()
+          ))
+        end)
       end)
     end)
   end)
@@ -671,6 +703,12 @@ end
 function M.close_pr()
   if not state.is_active() then
     vim.notify("No active PR review session", vim.log.levels.WARN)
+    return
+  end
+
+  local commits = require("raccoon.commits")
+  if comments.has_unsent_text() or commits.has_hidden_review_draft() then
+    vim.notify("Cannot close review with unsent text; clear it or send it first", vim.log.levels.WARN)
     return
   end
 
@@ -685,6 +723,7 @@ function M.close_pr()
 
   -- Clear all PR review keymaps
   keymaps.clear()
+  commits.clear_mode_restore_state()
 
   state.stop()
   vim.notify("PR review session closed", vim.log.levels.INFO)

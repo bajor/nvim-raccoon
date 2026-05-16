@@ -3,7 +3,6 @@
 local M = {}
 
 local api = require("raccoon.api")
-local comments = require("raccoon.comments")
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local INSERT_MODE = config.INSERT
@@ -42,21 +41,10 @@ function M.submit_review(event, body, callback)
     return
   end
 
-  -- Submit review with comments
   api.submit_review(owner, repo, number, event, body, token, function(_result, err)
     if err then
       callback(err)
     else
-      -- Mark all pending comments as submitted
-      local files = state.get_files()
-      for _, file in ipairs(files) do
-        local file_comments = state.get_comments(file.filename)
-        for _, comment in ipairs(file_comments) do
-          if comment.pending then
-            comment.pending = false
-          end
-        end
-      end
       callback(nil)
     end
   end)
@@ -70,15 +58,11 @@ function M.show_submit_ui()
   end
 
   local pr = state.get_pr()
-  local pending = comments.get_pending_comments()
-
   -- Build prompt lines
   local lines = {
     "Submit Review for PR #" .. (state.get_number() or "?"),
     "",
     "Title: " .. (pr and pr.title or "Unknown"),
-    "Pending comments: " .. #pending,
-    "",
     "Select review type:",
     "",
     "  [a] Approve",
@@ -255,16 +239,14 @@ function M.quick_approve(force)
 end
 
 --- Get the current review status summary
----@return table summary { files_reviewed, total_files, pending_comments, pr_title }
+---@return table summary { files_reviewed, total_files, pr_title }
 function M.get_status()
   local files = state.get_files()
-  local pending = comments.get_pending_comments()
   local pr = state.get_pr()
 
   return {
     files_reviewed = state.get_current_file_index(),
     total_files = #files,
-    pending_comments = #pending,
     pr_title = pr and pr.title,
     pr_number = state.get_number(),
     owner = state.get_owner(),
@@ -287,7 +269,6 @@ function M.show_status()
     string.format("Repo: %s/%s", status.owner or "?", status.repo or "?"),
     "",
     string.format("Files: %d/%d reviewed", status.files_reviewed, status.total_files),
-    string.format("Pending comments: %d", status.pending_comments),
   }
 
   -- Create buffer

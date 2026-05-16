@@ -18,6 +18,10 @@ M.state = {
   description_win = nil,
 }
 
+function M.is_pr_list_open()
+  return M.state.win and vim.api.nvim_win_is_valid(M.state.win) or false
+end
+
 --- Create a centered floating window
 ---@param opts table Options: width, height, title, border, width_pct, height_pct, enter
 ---@return number win_id, number buf_id
@@ -83,6 +87,13 @@ function M.close_pr_list()
   if localcommits.is_active() then
     localcommits.clear_popup_win()
   end
+end
+
+function M.close_description()
+  if M.state.description_win and vim.api.nvim_win_is_valid(M.state.description_win) then
+    vim.api.nvim_win_close(M.state.description_win, true)
+  end
+  M.state.description_win = nil
 end
 
 --- Convert UTC date components to Unix epoch via pure arithmetic.
@@ -155,7 +166,8 @@ local function render_pr_list(prs, buf_width, shortcuts)
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
     local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-    table.insert(lines, string.format("  Press 'r' to refresh, '%s' to close", close_key))
+    local sync_key = config.is_enabled(shortcuts.sync) and shortcuts.sync or "sync"
+    table.insert(lines, string.format("  Press %s to refresh, %s to close", sync_key, close_key))
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -212,7 +224,8 @@ local function render_pr_list(prs, buf_width, shortcuts)
   -- Footer separator
   table.insert(lines, string.rep("─", buf_width - 4))
   local close_key = config.is_enabled(shortcuts.close) and shortcuts.close or "Esc"
-  table.insert(lines, string.format(" Enter: open │ %s: close │ r: refresh │ j/k: navigate", close_key))
+  local sync_key = config.is_enabled(shortcuts.sync) and shortcuts.sync or "sync"
+  table.insert(lines, string.format(" Enter: open │ %s: close │ %s: refresh │ j/k: navigate", close_key, sync_key))
 
   return lines, highlights
 end
@@ -303,6 +316,17 @@ function M.show_pr_list()
     return
   end
 
+  local review_comments = require("raccoon.comments")
+  local commits = require("raccoon.commits")
+  if review_comments.has_unsent_text() or commits.has_hidden_review_draft() then
+    vim.notify("Cannot switch PRs with unsent text; clear it or send it first", vim.log.levels.WARN)
+    return
+  end
+  if not review_comments.close_overlays(false) then
+    return
+  end
+  M.close_description()
+
   -- Create floating window
   local in_commit_mode = state.is_commit_mode() or localcommits.is_active()
   local win, buf = M.create_floating_window({
@@ -380,6 +404,13 @@ function M.show_pr_list()
     local url = pr.html_url
     if not url then return end
 
+    local current_full_name = string.format("%s/%s", state.get_owner() or "", state.get_repo() or "")
+    local selected_full_name = pr.base.repo and pr.base.repo.full_name or ""
+    if state.is_active() and current_full_name == selected_full_name and state.get_number() == pr.number then
+      M.close_pr_list()
+      return
+    end
+
     M.close_pr_list()
     close_active_session_for_pr_switch()
 
@@ -393,8 +424,9 @@ function M.show_pr_list()
   end
   vim.keymap.set(NORMAL_MODE, "<Esc>", function() M.close_pr_list() end, opts)
 
-  -- Refresh on r
-  vim.keymap.set(NORMAL_MODE, "r", function() M.refresh_pr_list() end, opts)
+  if config.is_enabled(shortcuts.sync) then
+    vim.keymap.set(NORMAL_MODE, shortcuts.sync, function() M.refresh_pr_list() end, opts)
+  end
 
   -- Fetch and display PRs
   M.refresh_pr_list()
@@ -621,18 +653,26 @@ function M.fetch_all_prs(callback)
   end
 
   for _, entry in ipairs(token_entries) do
-    api.get_viewer(entry.token, function(login, viewer_err)
-      if viewer_err then
-        table.insert(viewer_errors, { key = entry.key, err = "Failed to get username: " .. viewer_err })
-      elseif login then
-        viewer_map[entry.token] = login
-      end
-
+    if entry.login and entry.login ~= "" then
+      viewer_map[entry.token] = entry.login
       viewer_pending.n = viewer_pending.n - 1
       if viewer_pending.n == 0 then
         on_all_viewers_resolved()
       end
-    end, entry.host)
+    else
+      api.get_viewer(entry.token, function(login, viewer_err)
+        if viewer_err then
+          table.insert(viewer_errors, { key = entry.key, err = "Failed to get username: " .. viewer_err })
+        elseif login then
+          viewer_map[entry.token] = login
+        end
+
+        viewer_pending.n = viewer_pending.n - 1
+        if viewer_pending.n == 0 then
+          on_all_viewers_resolved()
+        end
+      end, entry.host)
+    end
   end
 end
 
@@ -640,8 +680,7 @@ end
 function M.show_description()
   -- If description window is already open, close it (toggle off)
   if M.state.description_win and vim.api.nvim_win_is_valid(M.state.description_win) then
-    vim.api.nvim_win_close(M.state.description_win, true)
-    M.state.description_win = nil
+    M.close_description()
     return
   end
 
@@ -649,6 +688,16 @@ function M.show_description()
     vim.notify("No active PR review session", vim.log.levels.WARN)
     return
   end
+
+  local review_comments = require("raccoon.comments")
+  if review_comments.has_unsent_text() then
+    vim.notify("Cannot open description with unsent text; clear it or send it first", vim.log.levels.WARN)
+    return
+  end
+  if not review_comments.close_overlays(false) then
+    return
+  end
+  M.close_pr_list()
 
   local pr = state.get_pr()
   if not pr then
@@ -702,13 +751,11 @@ function M.show_description()
   local opts = { buffer = buf, noremap = true, silent = true }
   if config.is_enabled(shortcuts.close) then
     vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-      M.state.description_win = nil
+      M.close_description()
     end, opts)
   end
   vim.keymap.set(NORMAL_MODE, "<Esc>", function()
-    vim.api.nvim_win_close(win, true)
-    M.state.description_win = nil
+    M.close_description()
   end, opts)
 end
 
@@ -716,18 +763,22 @@ end
 local shortcut_descriptions = {
   pr_list = "Open PR list",
   show_shortcuts = "Show shortcuts help",
-  next_point = "Next diff/comment",
-  prev_point = "Previous diff/comment",
-  next_file = "Next file",
-  prev_file = "Previous file",
-  next_thread = "Next comment thread",
-  prev_thread = "Previous comment thread",
-  comment = "Comment at cursor",
+  next_point = "Next diff/comment (flat diff only)",
+  prev_point = "Previous diff/comment (flat diff only)",
+  next_file = "Next file (flat diff only)",
+  prev_file = "Previous file (flat diff only)",
+  next_thread = "Next unresolved thread (flat diff only)",
+  prev_thread = "Previous unresolved thread (flat diff only)",
+  next_needs_reply_thread = "Next needs-reply thread (flat diff only)",
+  comment = "Comment at cursor (flat diff only)",
   description = "Show PR description",
-  list_comments = "List all PR comments",
-  merge = "Merge PR (pick method)",
+  list_comments = "List PR comments (flat diff only)",
+  list_threads = "List unresolved threads (flat diff only)",
+  list_files = "List changed files (flat diff only)",
+  sync = "Sync current view",
+  merge = "Merge PR (flat diff only)",
   commit_viewer_toggle = "Toggle commit viewer",
-  comment_save = "Save comment",
+  comment_send = "Send comment/reply",
   comment_resolve = "Resolve thread",
   comment_unresolve = "Unresolve thread",
   close = "Close/dismiss",
@@ -748,13 +799,13 @@ local shortcut_groups = {
   { title = "Global", keys = { "pr_list", "show_shortcuts" } },
   {
     title = "Review Navigation",
-    keys = { "next_point", "prev_point", "next_file", "prev_file", "next_thread", "prev_thread" },
+    keys = { "next_point", "prev_point", "next_file", "prev_file", "next_thread", "prev_thread", "next_needs_reply_thread" },
   },
   {
     title = "Review Actions",
-    keys = { "comment", "description", "list_comments", "merge", "commit_viewer_toggle" },
+    keys = { "comment", "description", "list_comments", "list_threads", "list_files", "sync", "merge", "commit_viewer_toggle" },
   },
-  { title = "Comment Editor", keys = { "comment_save", "comment_resolve", "comment_unresolve" } },
+  { title = "Comment Editor", keys = { "comment_send", "comment_resolve", "comment_unresolve" } },
   {
     title = "Commit Viewer", nested = "commit_viewer",
     keys = { "next_page", "prev_page", "next_page_alt", "exit", "maximize_prefix", "browse_files" },

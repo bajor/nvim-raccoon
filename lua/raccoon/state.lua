@@ -16,6 +16,8 @@ M.session = {
   number = nil,
   --- PR URL
   url = nil,
+  --- Authenticated login for the current viewer
+  viewer_login = nil,
   --- GitHub host for this PR's repository
   github_host = nil,
   --- Local clone path
@@ -24,6 +26,8 @@ M.session = {
   files = {},
   --- Current file index (1-based)
   current_file = 1,
+  --- Currently selected exact review thread
+  selected_thread_id = nil,
   --- Comments indexed by file path
   comments = {},
   --- Buffers created for this session
@@ -47,10 +51,12 @@ function M.reset()
     repo = nil,
     number = nil,
     url = nil,
+    viewer_login = nil,
     github_host = nil,
     clone_path = nil,
     files = {},
     current_file = 1,
+    selected_thread_id = nil,
     comments = {},
     buffers = {},
     sync_status = {
@@ -72,6 +78,7 @@ function M.start(opts)
   M.session.repo = opts.repo
   M.session.number = opts.number
   M.session.url = opts.url
+  M.session.viewer_login = opts.viewer_login
   M.session.github_host = opts.github_host
   M.session.clone_path = opts.clone_path
 end
@@ -97,6 +104,11 @@ end
 ---@return table|nil
 function M.get_pr()
   return M.session.pr
+end
+
+---@return string|nil
+function M.get_url()
+  return M.session.url
 end
 
 --- Set the current PR data
@@ -170,6 +182,18 @@ function M.set_comments(path, comments)
   M.session.comments[path] = comments
 end
 
+--- Get the currently selected exact review thread id.
+---@return string|nil
+function M.get_selected_thread_id()
+  return M.session.selected_thread_id
+end
+
+--- Set the currently selected exact review thread id.
+---@param thread_id string|nil
+function M.set_selected_thread_id(thread_id)
+  M.session.selected_thread_id = thread_id
+end
+
 --- Get comments for a file
 ---@param path string File path
 ---@return table[]
@@ -213,6 +237,18 @@ function M.get_github_host()
   return M.session.github_host
 end
 
+--- Get the viewer login for this session.
+---@return string|nil
+function M.get_viewer_login()
+  return M.session.viewer_login
+end
+
+--- Set the viewer login for this session.
+---@param login string|nil
+function M.set_viewer_login(login)
+  M.session.viewer_login = login
+end
+
 --- Get sync status
 ---@return table
 function M.get_sync_status()
@@ -247,12 +283,14 @@ function M.get_statusline_component()
   end
 
   -- Show sync status
+  local pr = M.session.pr
+  local base_ref = pr and pr.base and pr.base.ref or "base"
   if sync.has_conflicts then
-    table.insert(parts, "⛔ CONFLICTS")
+    table.insert(parts, "CONFLICTS")
   elseif sync.behind > 0 then
-    table.insert(parts, string.format("⚠ %d behind", sync.behind))
+    table.insert(parts, string.format("BEHIND %d %s", sync.behind, base_ref))
   else
-    table.insert(parts, "✓ In sync")
+    table.insert(parts, "IN SYNC")
   end
 
   return table.concat(parts, " │ ")

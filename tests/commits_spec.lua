@@ -1,14 +1,99 @@
 local commit_ui = require("raccoon.commit_ui")
+local comments = require("raccoon.comments")
 local commits = require("raccoon.commits")
 local config = require("raccoon.config")
 local git = require("raccoon.git")
 local state = require("raccoon.state")
 
+local CLONE_PATH = "/tmp/claude/raccoon-tests/commit-mode-review"
+
+local function review_comment(fields)
+  return vim.tbl_extend("force", {
+    id = 1,
+    body = "review comment",
+    thread_id = "thread-1",
+    root_comment_id = 1,
+    line = 2,
+    resolved = false,
+    in_reply_to_id = vim.NIL,
+    created_at = "2026-01-01T00:00:00Z",
+    user = { login = "reviewer" },
+  }, fields or {})
+end
+
+local function write_file(path, lines)
+  local full_path = CLONE_PATH .. "/" .. path
+  vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
+  local file = assert(io.open(full_path, "w"))
+  file:write(table.concat(lines, "\n"))
+  file:close()
+end
+
+local function make_file_buffer(path, line_count)
+  local lines = {}
+  for idx = 1, line_count do
+    lines[idx] = "line " .. idx
+  end
+  write_file(path, lines)
+  vim.cmd("edit! " .. vim.fn.fnameescape(CLONE_PATH .. "/" .. path))
+  return vim.api.nvim_get_current_buf()
+end
+
+local function setup_review_session()
+  state.reset()
+  commits.clear_mode_restore_state()
+  state.start({
+    owner = "owner",
+    repo = "repo",
+    number = 1,
+    url = "https://github.com/owner/repo/pull/1",
+    clone_path = CLONE_PATH,
+  })
+  state.set_pr({
+    number = 1,
+    title = "Test PR",
+    head = { sha = "headsha", ref = "feature" },
+    base = { ref = "main" },
+  })
+  state.set_files({
+    {
+      filename = "lua/a.lua",
+      patch = "@@ -1,2 +1,3 @@\n line 1\n+line 2\n line 3",
+    },
+  })
+  state.set_comments("lua/a.lua", {
+    review_comment({
+      id = 10,
+      root_comment_id = 10,
+      thread_id = "thread-a",
+      line = 2,
+      body = "Initial review comment",
+      user = { login = "me" },
+    }),
+    review_comment({
+      id = 11,
+      root_comment_id = 10,
+      thread_id = "thread-a",
+      line = 2,
+      body = "Reply after me",
+      in_reply_to_id = 10,
+      user = { login = "reviewer-1" },
+    }),
+  })
+end
+
 describe("raccoon.commits", function()
   before_each(function()
     state.reset()
+    commits.clear_mode_restore_state()
   end)
 
+  after_each(function()
+    commits.exit_commit_mode({ resume_sync = false })
+    comments.close_overlays(true)
+    commits.clear_mode_restore_state()
+    state.reset()
+  end)
 
   describe("toggle without active session", function()
     it("does nothing when no PR session", function()
@@ -41,6 +126,105 @@ describe("raccoon.commits", function()
 
       commits.clear_popup_win()
       assert.is_nil(commits._get_state().popup_win)
+    end)
+  end)
+
+  describe("mode-switch snapshot helpers", function()
+    it("captures and restores a thread reply draft from flat diff", function()
+      setup_review_session()
+      make_file_buffer("lua/a.lua", 8)
+
+      comments.restore_ui_state({
+        kind = "editor",
+        editor_kind = "thread",
+        thread_id = "thread-a",
+        input_lines = { "draft reply from mode switch" },
+      })
+
+      local snapshot = commits._capture_review_snapshot()
+      assert.equals("editor", snapshot.overlay.kind)
+      assert.equals("thread", snapshot.overlay.editor_kind)
+      assert.same({ "draft reply from mode switch" }, snapshot.overlay.input_lines)
+
+      comments.close_overlays(true)
+      commits._restore_review_snapshot(snapshot)
+
+      local restored = comments.capture_ui_state()
+      assert.equals("editor", restored.kind)
+      assert.equals("thread", restored.editor_kind)
+      assert.equals("thread-a", restored.thread_id)
+      assert.same({ "draft reply from mode switch" }, restored.input_lines)
+    end)
+
+    it("detects a hidden preserved draft for the current PR", function()
+      setup_review_session()
+      commits._set_mode_restore_state({
+        session_key = state.get_url(),
+        overlay = {
+          kind = "editor",
+          input_lines = { "hidden draft" },
+        },
+      }, nil)
+
+      assert.is_true(commits.has_hidden_review_draft())
+    end)
+
+    it("captures commit-view position including page and file-tree cursor", function()
+      local cs = commits._get_state()
+      cs.pr_commits = {
+        { sha = "pr-1", message = "PR 1" },
+        { sha = "pr-2", message = "PR 2" },
+      }
+      cs.base_commits = {
+        { sha = "base-1", message = "Base 1" },
+      }
+      cs.selected_index = 3
+      cs.current_page = 4
+      cs.focus_target = "filetree"
+      cs.filetree_buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(cs.filetree_buf, 0, -1, false, { "a", "b", "c", "d" })
+      cs.filetree_win = vim.api.nvim_open_win(cs.filetree_buf, false, {
+        relative = "editor",
+        row = 0,
+        col = 0,
+        width = 20,
+        height = 4,
+      })
+      vim.api.nvim_win_set_cursor(cs.filetree_win, { 3, 0 })
+
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/owner/repo/pull/1",
+        clone_path = CLONE_PATH,
+      })
+
+      local snapshot = commits._capture_commit_view_snapshot()
+      assert.equals("base-1", snapshot.selected_sha)
+      assert.is_false(snapshot.prefer_pr_section)
+      assert.equals(1, snapshot.preferred_section_index)
+      assert.equals(4, snapshot.current_page)
+      assert.equals("filetree", snapshot.focus_target)
+      assert.equals(3, snapshot.filetree_cursor)
+
+      vim.api.nvim_win_close(cs.filetree_win, true)
+      vim.api.nvim_buf_delete(cs.filetree_buf, { force = true })
+    end)
+
+    it("chooses resume index by SHA, then by section/index fallback", function()
+      local pr_commits = {
+        { sha = "pr-1" },
+        { sha = "pr-2" },
+      }
+      local base_commits = {
+        { sha = "base-1" },
+        { sha = "base-2" },
+      }
+
+      assert.equals(2, commits._choose_commit_index("pr-2", true, 1, pr_commits, base_commits))
+      assert.equals(4, commits._choose_commit_index(nil, false, 2, pr_commits, base_commits))
+      assert.equals(2, commits._choose_commit_index(nil, true, 9, pr_commits, {}))
     end)
   end)
 end)

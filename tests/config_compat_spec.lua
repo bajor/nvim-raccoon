@@ -61,6 +61,19 @@ describe("raccoon.config_compat", function()
       assert.is_nil(result.shortcuts.commit_mode)
     end)
 
+    it("migrates legacy comment_save to comment_send", function()
+      local input = {
+        shortcuts = {
+          comment_save = "<leader>x",
+        },
+      }
+
+      local result = compat.normalize(input)
+
+      assert.equals("<leader>x", result.shortcuts.comment_send)
+      assert.is_nil(result.shortcuts.comment_save)
+    end)
+
     it("migrates disabled legacy commit_viewer toggle before migrating commit_mode", function()
       local input = {
         shortcuts = {

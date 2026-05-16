@@ -33,9 +33,12 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 
 - Browse open PRs with a floating picker
 - Review changed files with inline diff highlighting
-- Create and view inline comments on specific lines
-- Jump between diff hunks and comment threads
+- Exact-thread review comments in flat diff
+- Jump between diff hunks, unresolved threads, and needs-reply threads
+- File picker and unresolved-thread picker for flat diff
+- Broad comment history via `:Raccoon list`
 - Step through individual commits in a grid layout (commit viewer mode)
+- Switch between flat diff and commit viewer without losing your place or draft reply/thread text
 - View PR descriptions and metadata
 - Merge, squash, or rebase PRs
 - Auto-sync to detect new commits pushed to the branch
@@ -84,7 +87,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
-| `tokens` | object | `{}` | Token per owner/org — string or `{"token": "...", "host": "..."}` for multi-host |
+| `tokens` | object | `{}` | Token per owner/org — string or `{"token": "...", "host": "...", "login": "..."}` for multi-host |
 | `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `sync_interval` | number | `300` | How often (in seconds) to auto-sync with remote (minimum 10) *(formerly `pull_changes_interval`)* |
@@ -129,13 +132,13 @@ To use **both github.com and GHES** simultaneously, set the host per token:
 }
 ```
 
-String tokens use the `github_host` default (`"github.com"`). Table tokens with a `host` field override it. The PR list fetches from all configured hosts, and `:Raccoon open <url>` auto-detects the host from the URL.
+String tokens use the `github_host` default (`"github.com"`). Table tokens with a `host` field override it. Optional `login` skips the viewer lookup for that token and is only used to identify "you" in thread features such as `[NR]`. The PR list fetches from all configured hosts, and `:Raccoon open <url>` auto-detects the host from the URL.
 
 The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for REST, `https://<host>/api/graphql` for GraphQL). PR URLs, clone URLs, and remote parsing all use the resolved host.
 
 ### Shortcut defaults
 
-See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 configurable shortcuts, grouped by context, with descriptions of what each one does and examples of custom configurations.
+See [shortcuts_docs.md](shortcuts_docs.md) for the full shortcut reference, mode boundaries, and abbreviation meanings.
 
 ### Full config example
 
@@ -161,14 +164,18 @@ See [shortcuts_docs.md](shortcuts_docs.md) for a detailed reference of all 23 co
     "prev_file": "<leader>pf",
     "next_thread": "<leader>nt",
     "prev_thread": "<leader>pt",
+    "next_needs_reply_thread": "<leader>nr",
     "comment": "<leader>c",
     "description": "<leader>dd",
     "list_comments": "<leader>ll",
-    "merge": "<leader>rr",
+    "list_threads": "<leader>lt",
+    "list_files": "<leader>lf",
+    "sync": "<leader>r",
+    "merge": "<leader>mr",
     "commit_viewer_toggle": "<leader>cm",
-    "comment_save": "<leader>s",
-    "comment_resolve": "<leader>r",
-    "comment_unresolve": "<leader>u",
+    "comment_send": "<leader>s",
+    "comment_resolve": "<leader>cr",
+    "comment_unresolve": "<leader>cu",
     "close": "<leader>q",
     "commit_viewer": {
       "next_page": "<leader>j",
@@ -214,7 +221,7 @@ When you open a PR, raccoon shallow-clones the PR branch into a local directory 
 
 The per-PR directory means previous clones stay on disk — reopening a PR is fast because it fetches updates instead of cloning from scratch. Neovim's working directory changes to the clone path during a review session, so LSP, treesitter, and other tools work on the actual source code.
 
-One review session is active at a time. Opening a second PR closes the first.
+One review session is active at a time. Opening a second PR closes the first unless a reply/new-thread composer still has unsent text.
 
 ## Commands
 
@@ -223,8 +230,10 @@ One review session is active at a time. Opening a second PR closes the first.
 | `:Raccoon prs` | Open the PR list picker |
 | `:Raccoon open <url>` | Open a PR by its GitHub URL |
 | `:Raccoon list` | List all comments in the current PR |
+| `:Raccoon threads` | List unresolved review threads in flat diff order |
+| `:Raccoon files` | List changed files with `[NR/U/I]` counts |
 | `:Raccoon description` (or `desc`) | Show PR description and metadata |
-| `:Raccoon sync` (or `update`, `refresh`) | Sync the PR with remote |
+| `:Raccoon sync` (or `update`, `refresh`) | Refresh the current raccoon context; in review sessions this is a full PR sync |
 | `:Raccoon merge` | Merge the PR |
 | `:Raccoon squash` | Squash and merge |
 | `:Raccoon rebase` | Rebase and merge |
@@ -236,7 +245,7 @@ One review session is active at a time. Opening a second PR closes the first.
 
 ## Keymaps
 
-All keymaps are configurable via the `shortcuts` field in `config.json`. Override any key by adding it to your config — unspecified keys keep their defaults. Set any shortcut to `false` to disable it; the underlying `:Raccoon` command still works. Run `:Raccoon shortcuts` to see your active bindings.
+All keymaps are configurable via the `shortcuts` field in `config.json`. Override any key by adding it to your config. Set any shortcut to `false` to disable it; the underlying `:Raccoon` command still works. Run `:Raccoon shortcuts` to see the active bindings.
 
 The most-used defaults at a glance:
 
@@ -247,13 +256,24 @@ The most-used defaults at a glance:
 | `<leader>?` | `show_shortcuts` | Show all configured shortcuts |
 | `<leader>q` | `close` | Close window / exit session |
 
-For the full reference of all 23 configurable shortcuts (review navigation, comment editor, commit viewer, etc.), see [shortcuts_docs.md](shortcuts_docs.md).
+For the full reference, including flat-diff-only vs commit/local-mode behavior, see [shortcuts_docs.md](shortcuts_docs.md).
+
+### Flat Diff Thread UI
+
+- Flat diff shows only unresolved review threads plus parsed issue comments.
+- `[NR]` means an unresolved thread where you commented and somebody replied after you.
+- `[U]` means another unresolved thread.
+- `[I]` means a parsed PR issue comment tied to a file/line.
+- Resolved review threads are hidden from flat diff and appear only in `:Raccoon list`.
+- `:Raccoon list` may show multiple rows for the same file and line because review threads are tracked by exact GitHub `thread_id`, not line grouping.
 
 ## Commit Viewer Mode
 
 Inspired by chess game review, where you step through moves to understand the sequence that led to the final position. Instead of seeing the PR as a flat diff, commit viewer lets you replay the author's thought process one commit at a time — understanding *how* the code got to where it is, not just *what* changed.
 
 Press `<leader>cm` during a PR review to enter commit viewer mode. A file tree on the left shows all PR files with three-level highlighting: files in the current commit are brighter, and files currently visible in the grid are highlighted the strongest. The main area displays a configurable grid of diff hunks. A sidebar on the right lists all commits from the PR branch and recent base branch commits.
+
+Toggling between flat diff and commit viewer restores both sides of your context. If you switch while writing a reply or new thread, raccoon preserves the draft text, lets you inspect commits, and reopens the same composer when you return to flat diff. Re-entering commit mode also restores the last commit/page/file-tree position for the current PR.
 
 ### Commit viewer keymaps
 
@@ -272,7 +292,9 @@ In-mode shortcuts live under `shortcuts.commit_viewer` in config:
 
 Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number are shown in the winbar. A header bar displays the current commit message and page indicator. Navigation crosses seamlessly from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
 
-Most vim keybindings are disabled in commit mode to prevent breaking the layout. Only the keys listed above work. Exit with `<leader>cm`. Auto-sync is paused while commit viewer mode is active and resumes automatically when you exit.
+Commit mode is read-only. It does not show inline comments, issue notes, thread pickers, file pickers, or merge actions. Use flat diff for commenting and thread work. `description`, `sync`, and `prs` stay available there. Flat-diff-only actions show `Available only in flat diff review mode`.
+
+Most vim keybindings are disabled in commit mode to prevent breaking the layout. Only the keys listed above work. Exit with `<leader>cm`. Auto-sync is paused while commit/local viewer mode is active and resumes automatically when you exit.
 
 Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. Close with `q` or `<leader>q`.
 
@@ -296,15 +318,15 @@ The first entry in the sidebar is **"Current changes"** — a live view of all u
 
 When a new commit is made (e.g. by an AI agent in another terminal), it appears in the sidebar automatically (10-second HEAD poll). Your selection stays on whatever commit you were viewing — new commits just shift the list without stealing focus.
 
-Local mode works alongside an active PR review — entering `:Raccoon local` pauses the PR session, and exiting resumes it.
+Local mode works alongside an active PR review — entering `:Raccoon local` pauses the PR session, and exiting resumes it. It follows the same read-only review boundary as commit mode.
 
 ## Statusline
 
 The statusline shows your review position and sync status:
 
-- `[1/3] ✓ In sync` — reviewing file 1 of 3, branch is up to date
-- `[2/3] ⚠ 2 commits behind main` — needs sync
-- `[1/5] ⛔ CONFLICTS` — merge conflicts detected
+- `[1/3] IN SYNC`
+- `[2/3] BEHIND 2 main`
+- `[1/5] CONFLICTS`
 
 When navigating with `<leader>j`/`<leader>k`, notifications show position within the current file:
 

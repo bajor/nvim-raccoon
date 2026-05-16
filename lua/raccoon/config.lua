@@ -1,6 +1,6 @@
 ---@class RaccoonConfig
 ---@field github_host string GitHub host (default: "github.com", set for GitHub Enterprise)
----@field tokens table<string, string|{token:string, host:string}> Per-owner/org tokens
+---@field tokens table<string, string|{token:string, host:string?, login:string?}> Per-owner/org tokens
 ---@field repos string[] Optional list of repos to show PRs from ("owner/repo" format)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field sync_interval number Auto-sync interval in seconds (default: 300, minimum: 10)
@@ -39,6 +39,7 @@ M.defaults = {
     -- Global
     pr_list = "<leader>pr",
     show_shortcuts = "<leader>?",
+    sync = "<leader>r",
     -- Review navigation
     next_point = "<leader>j",
     prev_point = "<leader>k",
@@ -46,16 +47,19 @@ M.defaults = {
     prev_file = "<leader>pf",
     next_thread = "<leader>nt",
     prev_thread = "<leader>pt",
+    next_needs_reply_thread = "<leader>nr",
     -- Review actions
     comment = "<leader>c",
     description = "<leader>dd",
     list_comments = "<leader>ll",
-    merge = "<leader>rr",
+    list_files = "<leader>lf",
+    list_threads = "<leader>lt",
+    merge = "<leader>mr",
     commit_viewer_toggle = "<leader>cm",
     -- Comment editor
-    comment_save = "<leader>s",
-    comment_resolve = "<leader>r",
-    comment_unresolve = "<leader>u",
+    comment_send = "<leader>s",
+    comment_resolve = "<leader>cr",
+    comment_unresolve = "<leader>cu",
     -- Common
     close = "<leader>q",
     -- Commit viewer mode
@@ -93,7 +97,7 @@ local function validate_config(config)
     return false, "tokens is required (maps owner/org name to GitHub token)"
   end
 
-  -- Validate each token entry is a string or {token, host} table
+  -- Validate each token entry is a string or {token, host, login} table
   for key, value in pairs(config.tokens) do
     if type(value) == "table" then
       if type(value.token) ~= "string" or value.token == "" then
@@ -102,8 +106,11 @@ local function validate_config(config)
       if value.host ~= nil and (type(value.host) ~= "string" or value.host == "") then
         return false, string.format("tokens['%s'].host must be a non-empty string", key)
       end
+      if value.login ~= nil and (type(value.login) ~= "string" or value.login == "") then
+        return false, string.format("tokens['%s'].login must be a non-empty string", key)
+      end
     elseif type(value) ~= "string" or value == "" then
-      return false, string.format("tokens['%s'] must be a non-empty string or {token, host} table", key)
+      return false, string.format("tokens['%s'] must be a non-empty string or {token, host, login} table", key)
     end
   end
 
@@ -150,9 +157,14 @@ function M.load()
   -- Normalize host in table token entries
   if config.tokens and type(config.tokens) == "table" then
     for key, value in pairs(config.tokens) do
-      if type(value) == "table" and value.host then
-        value.host = value.host:lower():gsub("^%s+", ""):gsub("%s+$", "")
-        value.host = value.host:gsub("^https?://", ""):gsub("/+$", "")
+      if type(value) == "table" then
+        if value.host then
+          value.host = value.host:lower():gsub("^%s+", ""):gsub("%s+$", "")
+          value.host = value.host:gsub("^https?://", ""):gsub("/+$", "")
+        end
+        if value.login then
+          value.login = value.login:gsub("^%s+", ""):gsub("%s+$", "")
+        end
         config.tokens[key] = value
       end
     end
@@ -300,19 +312,39 @@ function M.load_commit_viewer()
   return viewer
 end
 
---- Get the token and host for a given owner/org from the tokens table
+--- Get the normalized token entry for a given owner/org from the tokens table.
+---@param config RaccoonConfig
+---@param owner string
+---@return {token: string, host: string, login: string|nil}? entry
+function M.get_token_entry(config, owner)
+  if not config.tokens or not config.tokens[owner] then
+    return nil
+  end
+  local value = config.tokens[owner]
+  if type(value) == "table" then
+    return {
+      token = value.token,
+      host = value.host or config.github_host,
+      login = value.login,
+    }
+  end
+  return {
+    token = value,
+    host = config.github_host,
+    login = nil,
+  }
+end
+
+--- Get the token and host for a given owner/org from the tokens table.
 ---@param config RaccoonConfig
 ---@param owner string
 ---@return string? token, string? host
 function M.get_token_for_owner(config, owner)
-  if not config.tokens or not config.tokens[owner] then
+  local entry = M.get_token_entry(config, owner)
+  if not entry then
     return nil, nil
   end
-  local value = config.tokens[owner]
-  if type(value) == "table" then
-    return value.token, value.host or config.github_host
-  end
-  return value, config.github_host
+  return entry.token, entry.host
 end
 
 --- Get the token and host for a repo string ("owner/repo")
@@ -328,9 +360,9 @@ function M.get_token_for_repo(config, repo)
   return M.get_token_for_owner(config, owner)
 end
 
---- Get all token entries normalized as {key, token, host}
+--- Get all token entries normalized as {key, token, host, login}
 ---@param config RaccoonConfig
----@return {key: string, token: string, host: string}[]
+---@return {key: string, token: string, host: string, login: string|nil}[]
 function M.get_all_tokens(config)
   local entries = {}
   if not config.tokens or type(config.tokens) ~= "table" then
@@ -338,9 +370,14 @@ function M.get_all_tokens(config)
   end
   for key, value in pairs(config.tokens) do
     if type(value) == "table" and value.token then
-      table.insert(entries, { key = key, token = value.token, host = value.host or config.github_host })
+      table.insert(entries, {
+        key = key,
+        token = value.token,
+        host = value.host or config.github_host,
+        login = value.login,
+      })
     elseif type(value) == "string" then
-      table.insert(entries, { key = key, token = value, host = config.github_host })
+      table.insert(entries, { key = key, token = value, host = config.github_host, login = nil })
     end
   end
   return entries
