@@ -884,6 +884,9 @@ end
 local function set_picker_selection(win, row)
   if row and win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_set_cursor(win, { row, 0 })
+    pcall(vim.api.nvim_win_call, win, function()
+      vim.cmd("normal! zz")
+    end)
   end
 end
 
@@ -936,14 +939,19 @@ local function open_picker(opts)
   end
   local ui_mod = require("raccoon.ui")
   ui_mod.append_popup_footer(lines, footer_specs, shortcuts)
-
-  local width = math.min(160, vim.o.columns - 6)
-  local height = math.min(#lines + 2, vim.o.lines - 6)
+  local width
+  lines, width = ui_mod.fit_popup_lines(lines, {
+    title = opts.title,
+    min_width = 28,
+    max_width = math.max(28, vim.o.columns - 8),
+  })
+  local height = math.min(math.max(1, #lines), vim.o.lines - 6)
   local win, buf = ui_mod.create_floating_window({
     width = width,
     height = height,
     title = opts.title,
     border = "rounded",
+    wrap = false,
   })
 
   vim.bo[buf].modifiable = true

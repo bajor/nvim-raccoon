@@ -69,10 +69,74 @@ function M.create_floating_window(opts)
 
   -- Set window options
   vim.wo[win].cursorline = true
-  vim.wo[win].wrap = false
+  vim.wo[win].wrap = opts.wrap == true
   vim.wo[win].scrolloff = 3
+  vim.wo[win].sidescrolloff = 1
 
   return win, buf
+end
+
+---@param text string
+---@return number
+local function display_width(text)
+  return vim.fn.strdisplaywidth(text or "")
+end
+
+---@param text string
+---@param max_width number
+---@param ellipsis string
+---@return string
+local function truncate_display_text(text, max_width, ellipsis)
+  text = text or ""
+  ellipsis = ellipsis or "..."
+  if max_width <= 0 then
+    return ""
+  end
+  if display_width(text) <= max_width then
+    return text
+  end
+  if display_width(ellipsis) >= max_width then
+    return ellipsis:sub(1, max_width)
+  end
+
+  local char_count = vim.fn.strchars(text)
+  local out = {}
+  local used_width = 0
+  local remaining = max_width - display_width(ellipsis)
+  for idx = 0, char_count - 1 do
+    local ch = vim.fn.strcharpart(text, idx, 1)
+    local ch_width = display_width(ch)
+    if used_width + ch_width > remaining then
+      break
+    end
+    table.insert(out, ch)
+    used_width = used_width + ch_width
+  end
+  return table.concat(out) .. ellipsis
+end
+
+---@param lines string[]
+---@param opts table?
+---@return string[] fitted_lines
+---@return number width
+function M.fit_popup_lines(lines, opts)
+  opts = opts or {}
+  local margin = opts.margin or 8
+  local min_width = opts.min_width or 1
+  local max_width = opts.max_width or math.max(min_width, vim.o.columns - margin)
+  local ellipsis = opts.ellipsis or "..."
+  local title = opts.title or ""
+
+  local fitted = {}
+  local widest = display_width(title)
+  for _, line in ipairs(lines or {}) do
+    local fitted_line = truncate_display_text(line, max_width, ellipsis)
+    table.insert(fitted, fitted_line)
+    widest = math.max(widest, display_width(fitted_line))
+  end
+
+  local width = math.max(min_width, math.min(max_width, widest))
+  return fitted, width
 end
 
 ---@param shortcuts table

@@ -382,6 +382,8 @@ describe("raccoon.comments UI state restore", function()
   end)
 
   it("shows resolved same-line threads in the comment picker", function()
+    local original_columns = vim.o.columns
+    vim.o.columns = 220
     make_file_buffer("lua/a.lua", 12)
     vim.api.nvim_win_set_cursor(0, { 8, 0 })
 
@@ -398,6 +400,10 @@ describe("raccoon.comments UI state restore", function()
     local picker_lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, 2, false)
     assert.matches("^%[R%]", picker_lines[1])
     assert.is_false(picker_lines[2] and picker_lines[2]:match("^%[NEW%]") ~= nil)
+
+    local width = vim.api.nvim_win_get_config(0).width
+    vim.o.columns = original_columns
+    assert.is_true(width < 140)
   end)
 
   it("closes the same-line picker with the configured close shortcut", function()

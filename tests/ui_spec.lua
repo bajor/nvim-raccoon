@@ -182,6 +182,32 @@ describe("raccoon.ui", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    it("fits popup lines to content width", function()
+      local lines, width = ui.fit_popup_lines({
+        "short",
+        "a bit longer",
+      }, {
+        title = "Popup",
+        min_width = 10,
+        max_width = 80,
+      })
+
+      assert.same({ "short", "a bit longer" }, lines)
+      assert.equals(#("a bit longer"), width)
+    end)
+
+    it("truncates popup lines when they exceed max width", function()
+      local lines, width = ui.fit_popup_lines({
+        "01234567890123456789",
+      }, {
+        min_width = 10,
+        max_width = 12,
+      })
+
+      assert.equals(12, width)
+      assert.equals("012345678...", lines[1])
+    end)
   end)
 
   describe("create_floating_window with percentages", function()
