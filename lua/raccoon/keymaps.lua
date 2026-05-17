@@ -541,49 +541,47 @@ function M.merge_picker()
         ci_status = format_ci_status(check_runs)
       end
 
-      -- Create picker buffer with CI status
       local shortcuts = config.load_shortcuts()
+      local merge_options = {
+        { method = "merge", label = "Merge", detail = "Create a merge commit" },
+        { method = "squash", label = "Squash", detail = "Squash and merge" },
+        { method = "rebase", label = "Rebase", detail = "Rebase and merge" },
+      }
       local lines = {
-        "Select merge method for PR #" .. number .. ":",
-        "",
         "  " .. ci_status,
         "",
-        "  [1] Merge        - Create a merge commit",
-        "  [2] Squash       - Squash and merge",
-        "  [3] Rebase       - Rebase and merge",
+        string.format("  %-8s - %s", merge_options[1].label, merge_options[1].detail),
+        string.format("  %-8s - %s", merge_options[2].label, merge_options[2].detail),
+        string.format("  %-8s - %s", merge_options[3].label, merge_options[3].detail),
       }
-      popup_ui().append_popup_footer(lines, {
-        { literal = "1/2/3", label = "choose" },
-        { literal = "Enter", label = "select" },
-        { key = "close", label = "close" },
-        { literal = "j/k", label = "navigate" },
-      }, shortcuts)
-
-      local buf = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-      vim.api.nvim_buf_set_option(buf, "modifiable", false)
-
-      local width = 50
-      local height = #lines + 2
 
       local ui_mod = popup_ui()
+      local title = ui_mod.decorate_popup_title("Merge PR #" .. number, {
+        { literal = "Enter", label = "select" },
+        { literal = "j/k", label = "navigate" },
+        { key = "close", label = "close" },
+      }, shortcuts)
+      local width
+      lines, width = ui_mod.fit_popup_lines(lines, {
+        title = title,
+        min_width = 36,
+        max_width = math.max(36, vim.o.columns - 8),
+      })
+      local height = math.min(math.max(1, #lines), vim.o.lines - 6)
       local win, float_buf = ui_mod.create_floating_window({
         width = width,
         height = height,
-        title = ui_mod.decorate_popup_title("Merge PR", {
-          { key = "close", label = "close" },
-        }, shortcuts),
+        title = title,
         border = "rounded",
+        wrap = false,
       })
-      if float_buf ~= buf then
-        vim.api.nvim_win_set_buf(win, buf)
-        pcall(vim.api.nvim_buf_delete, float_buf, { force = true })
-      end
+      local buf = float_buf
+
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
       -- Highlight the title and CI status
       vim.api.nvim_buf_call(buf, function()
-        vim.fn.matchadd("Title", "^Select merge method.*")
-        vim.fn.matchadd("Number", "\\[1\\]\\|\\[2\\]\\|\\[3\\]")
         -- Highlight CI status based on content
         if ci_status:find("failed") then
           vim.fn.matchadd("ErrorMsg", "CI:.*failed.*")
@@ -592,6 +590,9 @@ function M.merge_picker()
         elseif ci_status:find("passed") then
           vim.fn.matchadd("DiagnosticOk", "CI:.*passed.*")
         end
+        vim.fn.matchadd("Bold", "^  Merge")
+        vim.fn.matchadd("Bold", "^  Squash")
+        vim.fn.matchadd("Bold", "^  Rebase")
       end)
 
       local function do_merge(method)
@@ -599,28 +600,43 @@ function M.merge_picker()
         vim.cmd("Raccoon " .. method)
       end
 
-      -- Keymaps for selection (adjusted line numbers for CI status line)
       local km_opts = { buffer = buf, noremap = true, silent = true }
-      vim.keymap.set(NORMAL_MODE, "1", function() do_merge("merge") end, km_opts)
-      vim.keymap.set(NORMAL_MODE, "2", function() do_merge("squash") end, km_opts)
-      vim.keymap.set(NORMAL_MODE, "3", function() do_merge("rebase") end, km_opts)
-      vim.keymap.set(NORMAL_MODE, "<CR>", function()
-        local cursor_line = vim.fn.line(".")
-        if cursor_line == 5 then do_merge("merge")
-        elseif cursor_line == 6 then do_merge("squash")
-        elseif cursor_line == 7 then do_merge("rebase")
+      local option_rows = { 3, 4, 5 }
+      local selected = 1
+      local function set_selected()
+        if vim.api.nvim_win_is_valid(win) then
+          vim.api.nvim_win_set_cursor(win, { option_rows[selected], 0 })
         end
-      end, { buffer = buf, noremap = true, silent = true })
+      end
       local close_win = function()
         if vim.api.nvim_win_is_valid(win) then
           vim.api.nvim_win_close(win, true)
         end
       end
+      ui_mod.bind_picker_navigation_keys(buf, {
+        move_down = function()
+          if selected < #merge_options then
+            selected = selected + 1
+            set_selected()
+          end
+        end,
+        move_up = function()
+          if selected > 1 then
+            selected = selected - 1
+            set_selected()
+          end
+        end,
+        select = function()
+          do_merge(merge_options[selected].method)
+        end,
+      }, {
+        keymap_opts = km_opts,
+      })
       ui_mod.bind_popup_close_keys(buf, close_win, {
         shortcuts = shortcuts,
         keymap_opts = { buffer = buf, noremap = true, silent = true, nowait = true },
       })
-      vim.api.nvim_win_set_cursor(win, { 5, 0 })
+      set_selected()
     end)
   end)
 end

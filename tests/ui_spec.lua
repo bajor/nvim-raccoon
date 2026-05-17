@@ -14,6 +14,25 @@ describe("raccoon.ui", function()
     return false
   end
 
+  local function popup_title(win)
+    local title = vim.api.nvim_win_get_config(win).title
+    if type(title) == "string" then
+      return title
+    end
+    if type(title) == "table" then
+      local parts = {}
+      for _, chunk in ipairs(title) do
+        if type(chunk) == "table" then
+          table.insert(parts, chunk[1] or "")
+        elseif type(chunk) == "string" then
+          table.insert(parts, chunk)
+        end
+      end
+      return table.concat(parts)
+    end
+    return ""
+  end
+
   describe("create_floating_window", function()
     after_each(function()
       -- Clean up any open windows
@@ -179,6 +198,23 @@ describe("raccoon.ui", function()
       assert.is_true(has_buf_keymap(buf, "i", " q"))
       assert.is_true(has_buf_keymap(buf, "n", "<Esc>"))
       assert.is_true(has_buf_keymap(buf, "i", "<Esc>"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("binds shared picker navigation keys", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      ui.bind_picker_navigation_keys(buf, {
+        move_down = function() end,
+        move_up = function() end,
+        select = function() end,
+      })
+
+      assert.is_true(has_buf_keymap(buf, "n", "j"))
+      assert.is_true(has_buf_keymap(buf, "n", "<Down>"))
+      assert.is_true(has_buf_keymap(buf, "n", "k"))
+      assert.is_true(has_buf_keymap(buf, "n", "<Up>"))
+      assert.is_true(has_buf_keymap(buf, "n", "<CR>"))
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
@@ -357,6 +393,38 @@ describe("raccoon.ui", function()
 
       assert.is_not_nil(ui.state.win)
       assert.is_true(vim.api.nvim_win_is_valid(ui.state.win))
+
+      ui.fetch_all_prs = original_fetch
+    end)
+
+    it("uses top title hints instead of footer hint lines", function()
+      local mock_prs = {
+        {
+          number = 42,
+          title = "Test PR",
+          html_url = "https://github.com/owner/repo/pull/42",
+          user = { login = "testuser" },
+          updated_at = "2026-01-01T00:00:00Z",
+          base = { repo = { full_name = "owner/repo" } },
+        },
+      }
+
+      local original_fetch = ui.fetch_all_prs
+      ui.fetch_all_prs = function(callback) callback(mock_prs, nil) end
+
+      ui.show_pr_list()
+
+      local title = popup_title(ui.state.win)
+      local lines = vim.api.nvim_buf_get_lines(ui.state.buf, 0, -1, false)
+
+      assert.matches("Enter=open", title)
+      assert.matches("<leader>q=close", title)
+      assert.matches("j/k=navigate", title)
+      for _, line in ipairs(lines) do
+        assert.is_nil(line:match("<leader>q"))
+        assert.is_nil(line:match("j/k: navigate"))
+        assert.is_nil(line:match("Enter: open"))
+      end
 
       ui.fetch_all_prs = original_fetch
     end)

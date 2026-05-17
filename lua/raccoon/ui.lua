@@ -263,6 +263,31 @@ function M.bind_popup_close_keys(buf, close_fn, opts)
   end
 end
 
+---@param buf number
+---@param handlers table
+---@param opts table?
+function M.bind_picker_navigation_keys(buf, handlers, opts)
+  opts = opts or {}
+  handlers = handlers or {}
+  local keymap_opts = vim.tbl_extend(
+    "force",
+    { buffer = buf, noremap = true, silent = true },
+    opts.keymap_opts or {}
+  )
+
+  if handlers.move_down then
+    vim.keymap.set(NORMAL_MODE, "j", handlers.move_down, keymap_opts)
+    vim.keymap.set(NORMAL_MODE, "<Down>", handlers.move_down, keymap_opts)
+  end
+  if handlers.move_up then
+    vim.keymap.set(NORMAL_MODE, "k", handlers.move_up, keymap_opts)
+    vim.keymap.set(NORMAL_MODE, "<Up>", handlers.move_up, keymap_opts)
+  end
+  if handlers.select then
+    vim.keymap.set(NORMAL_MODE, "<CR>", handlers.select, keymap_opts)
+  end
+end
+
 --- Close the PR list window
 function M.close_pr_list()
   if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
@@ -344,8 +369,7 @@ end
 --- Render the PR list in the buffer
 ---@param prs table[] List of PRs
 ---@param buf_width number Buffer width for formatting
----@param shortcuts table Shortcut bindings from config
-local function render_pr_list(prs, buf_width, shortcuts)
+local function render_pr_list(prs, buf_width)
   local lines = {}
   local highlights = {}
   buf_width = buf_width or 60
@@ -354,10 +378,6 @@ local function render_pr_list(prs, buf_width, shortcuts)
     table.insert(lines, "")
     table.insert(lines, "  No open pull requests found")
     table.insert(lines, "")
-    M.append_popup_footer(lines, {
-      { key = "sync", label = "refresh" },
-      { key = "close", label = "close" },
-    }, shortcuts)
   else
     -- Group by repo (preserve order with array)
     local by_repo = {}
@@ -409,12 +429,6 @@ local function render_pr_list(prs, buf_width, shortcuts)
         line_idx = line_idx + 1
       end
     end
-    M.append_popup_footer(lines, {
-      { literal = "Enter", label = "open" },
-      { key = "close", label = "close" },
-      { key = "sync", label = "refresh" },
-      { literal = "j/k", label = "navigate" },
-    }, shortcuts)
   end
 
   return lines, highlights
@@ -517,12 +531,19 @@ function M.show_pr_list()
   end
   M.close_description()
 
+  local shortcuts = config.load_shortcuts()
+
   -- Create floating window
   local in_commit_mode = state.is_commit_mode() or localcommits.is_active()
   local win, buf = M.create_floating_window({
     width_pct = 0.7,
     height_pct = 0.8,
-    title = "Pull Requests",
+    title = M.decorate_popup_title("Pull Requests", {
+      { literal = "Enter", label = "open" },
+      { literal = "j/k", label = "navigate" },
+      { key = "sync", label = "refresh" },
+      { key = "close", label = "close" },
+    }, shortcuts),
     border = "rounded",
     enter = not in_commit_mode,
   })
@@ -561,9 +582,6 @@ function M.show_pr_list()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  Loading..." })
   vim.bo[buf].modifiable = false
 
-  -- Load shortcuts from config
-  local shortcuts = config.load_shortcuts()
-
   -- Setup buffer-local keymaps
   local opts = { buffer = buf, noremap = true, silent = true }
 
@@ -581,32 +599,32 @@ function M.show_pr_list()
     end
   end
 
-  vim.keymap.set(NORMAL_MODE, "j", move_down, opts)
-  vim.keymap.set(NORMAL_MODE, "<Down>", move_down, opts)
-  vim.keymap.set(NORMAL_MODE, "k", move_up, opts)
-  vim.keymap.set(NORMAL_MODE, "<Up>", move_up, opts)
+  M.bind_picker_navigation_keys(buf, {
+    move_down = move_down,
+    move_up = move_up,
+    select = function()
+      local pr = M.state.prs[M.state.selected]
+      if not pr then return end
 
-  -- Open selected PR on Enter
-  vim.keymap.set(NORMAL_MODE, "<CR>", function()
-    local pr = M.state.prs[M.state.selected]
-    if not pr then return end
+      local url = pr.html_url
+      if not url then return end
 
-    local url = pr.html_url
-    if not url then return end
+      local current_full_name = string.format("%s/%s", state.get_owner() or "", state.get_repo() or "")
+      local selected_full_name = pr.base.repo and pr.base.repo.full_name or ""
+      if state.is_active() and current_full_name == selected_full_name and state.get_number() == pr.number then
+        M.close_pr_list()
+        return
+      end
 
-    local current_full_name = string.format("%s/%s", state.get_owner() or "", state.get_repo() or "")
-    local selected_full_name = pr.base.repo and pr.base.repo.full_name or ""
-    if state.is_active() and current_full_name == selected_full_name and state.get_number() == pr.number then
       M.close_pr_list()
-      return
-    end
+      close_active_session_for_pr_switch()
 
-    M.close_pr_list()
-    close_active_session_for_pr_switch()
-
-    local open = require("raccoon.open")
-    open.open_pr(url)
-  end, opts)
+      local open = require("raccoon.open")
+      open.open_pr(url)
+    end,
+  }, {
+    keymap_opts = opts,
+  })
 
   -- Close keymaps
   M.bind_popup_close_keys(buf, function()
@@ -694,8 +712,7 @@ function M.refresh_pr_list()
       M.state.error_line_count = #error_lines
     end
 
-    local shortcuts = config.load_shortcuts()
-    local lines, highlights = render_pr_list(prs, win_width, shortcuts)
+    local lines, highlights = render_pr_list(prs, win_width)
 
     -- Offset PR highlights by error lines count
     if #error_lines > 0 then
