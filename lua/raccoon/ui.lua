@@ -4,6 +4,7 @@ local M = {}
 
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local INSERT_MODE = config.INSERT
 local NORMAL_MODE = config.NORMAL
 local state = require("raccoon.state")
 local localcommits = require("raccoon.localcommits")
@@ -171,17 +172,30 @@ end
 function M.bind_popup_close_keys(buf, close_fn, opts)
   opts = opts or {}
   local shortcuts = opts.shortcuts or config.load_shortcuts()
+  local modes = opts.modes or { NORMAL_MODE }
   local keymap_opts = vim.tbl_extend(
     "force",
     { buffer = buf, noremap = true, silent = true },
     opts.keymap_opts or {}
   )
+  local function bind_modes(lhs, fn)
+    for _, mode in ipairs(modes) do
+      local wrapped = fn
+      if mode == INSERT_MODE then
+        wrapped = function()
+          vim.cmd("stopinsert")
+          fn()
+        end
+      end
+      vim.keymap.set(mode, lhs, wrapped, keymap_opts)
+    end
+  end
 
   if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, keymap_opts)
+    bind_modes(shortcuts.close, close_fn)
   end
   if opts.allow_escape ~= false then
-    vim.keymap.set(NORMAL_MODE, "<Esc>", close_fn, keymap_opts)
+    bind_modes("<Esc>", close_fn)
   end
 end
 

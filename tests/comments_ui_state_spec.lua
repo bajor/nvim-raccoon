@@ -58,6 +58,11 @@ local function current_win_title()
   return ""
 end
 
+local function feed_keys(lhs)
+  local keys = vim.api.nvim_replace_termcodes(lhs, true, false, true)
+  vim.api.nvim_feedkeys(keys, "xt", false)
+end
+
 local function setup_session()
   state.reset()
   state.start({
@@ -355,6 +360,19 @@ describe("raccoon.comments UI state restore", function()
 
     local picker_lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, 2, false)
     assert.matches("^%[R%]", picker_lines[1])
+  end)
+
+  it("closes the same-line picker with the configured close shortcut", function()
+    local file_buf = make_file_buffer("lua/a.lua", 12)
+    vim.api.nvim_win_set_cursor(0, { 8, 0 })
+
+    comments.show_comment_thread()
+    assert.equals("picker", comments.capture_ui_state().kind)
+
+    feed_keys(" q")
+
+    assert.is_nil(comments.capture_ui_state())
+    assert.equals(file_buf, vim.api.nvim_get_current_buf())
   end)
 
   it("keeps prior thread comments read-only while allowing navigation and editing only in the reply region", function()

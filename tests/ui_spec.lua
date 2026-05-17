@@ -166,6 +166,22 @@ describe("raccoon.ui", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    it("can bind close keys for insert-mode popups too", function()
+      local cfg = require("raccoon.config")
+      local buf = vim.api.nvim_create_buf(false, true)
+      ui.bind_popup_close_keys(buf, function() end, {
+        shortcuts = cfg.defaults.shortcuts,
+        modes = { cfg.NORMAL, cfg.INSERT },
+      })
+
+      assert.is_true(has_buf_keymap(buf, "n", " q"))
+      assert.is_true(has_buf_keymap(buf, "i", " q"))
+      assert.is_true(has_buf_keymap(buf, "n", "<Esc>"))
+      assert.is_true(has_buf_keymap(buf, "i", "<Esc>"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 
   describe("create_floating_window with percentages", function()

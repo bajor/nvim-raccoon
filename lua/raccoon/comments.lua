@@ -965,6 +965,7 @@ local function open_picker(opts)
   ui_mod.bind_popup_close_keys(buf, close_picker, {
     shortcuts = shortcuts,
     keymap_opts = km_opts,
+    modes = { NORMAL_MODE, config.INSERT },
   })
 end
 
