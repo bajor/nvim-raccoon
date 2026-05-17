@@ -104,6 +104,8 @@ local editor_state = {
   augroup = nil,
 }
 
+local open_new_thread_editor
+
 local function trim(text)
   return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -534,24 +536,32 @@ local function is_line_commentable(path, line)
   end
   for _, file in ipairs(state.get_files()) do
     if file.filename == path then
-      if not file.patch or file.patch == "" then
-        return false
-      end
-      local changes = diff.get_changed_lines(file.patch)
-      for _, added_line in ipairs(changes.added or {}) do
-        if added_line == line then
-          return true
-        end
-      end
-      for _, deleted in ipairs(changes.deleted or {}) do
-        if deleted.line_num == line then
-          return true
-        end
-      end
-      return false
+      return diff.is_line_in_review_context(file.patch, line)
     end
   end
   return false
+end
+
+---@return string
+local function line_outside_diff_context_message()
+  return "This line is outside the PR diff context; GitHub only allows review threads on changed lines and unchanged lines shown for context"
+end
+
+---@param path string
+---@param line number
+---@return boolean
+local function can_start_new_thread(path, line)
+  return is_line_commentable(path, line)
+end
+
+---@param path string
+---@param line number
+---@return string|nil
+local function new_thread_disable_reason(path, line)
+  if can_start_new_thread(path, line) then
+    return nil
+  end
+  return line_outside_diff_context_message()
 end
 
 local function send_new_thread(path, line)
@@ -564,6 +574,11 @@ local function send_new_thread(path, line)
   local body = trim(table.concat(lines, "\n"))
   if body == "" then
     vim.notify("Empty thread", vim.log.levels.WARN)
+    return
+  end
+  local disable_reason = new_thread_disable_reason(path, line)
+  if disable_reason then
+    vim.notify(disable_reason, vim.log.levels.WARN)
     return
   end
   if not ctx.pr or not ctx.pr.head or not ctx.pr.head.sha then
@@ -589,7 +604,21 @@ local function send_new_thread(path, line)
   end)
 end
 
-local function open_new_thread_editor(path, line, prefill_lines, opts)
+---@param path string
+---@param line number
+---@param prefill_lines string[]
+---@return boolean
+local function open_new_thread_from_line(path, line, prefill_lines)
+  local disable_reason = new_thread_disable_reason(path, line)
+  if disable_reason then
+    vim.notify(disable_reason, vim.log.levels.WARN)
+    return false
+  end
+  open_new_thread_editor(path, line, prefill_lines or {})
+  return true
+end
+
+open_new_thread_editor = function(path, line, prefill_lines, opts)
   opts = opts or {}
   local shortcuts = config.load_shortcuts()
   local lines = { "New thread on this line", "" }
@@ -1372,13 +1401,15 @@ local function open_same_line_picker(path, line, line_state)
       end,
     })
   end
-  table.insert(thread_rows, {
-    key = "new_thread:" .. path .. ":" .. tostring(line),
-    text = "[NEW] New thread on this line",
-    on_select = function()
-      open_new_thread_editor(path, line, {})
-    end,
-  })
+  if can_start_new_thread(path, line) then
+    table.insert(thread_rows, {
+      key = "new_thread:" .. path .. ":" .. tostring(line),
+      text = "[NEW] New thread on this line",
+      on_select = function()
+        open_new_thread_editor(path, line, {})
+      end,
+    })
+  end
   open_picker({
     kind = "same_line",
     title = "Line " .. tostring(line),
@@ -1405,14 +1436,14 @@ function M.show_comment_thread()
   end
   local line_state = thread_index.get_comment_line_state(index, path, line)
   if not line_state then
-    open_new_thread_editor(path, line, {})
+    open_new_thread_from_line(path, line, {})
     return
   end
   if #line_state.threads > 0 then
     open_same_line_picker(path, line, line_state)
     return
   end
-  open_new_thread_editor(path, line, issue_prefill_lines(line_state.issue_comments))
+  open_new_thread_from_line(path, line, issue_prefill_lines(line_state.issue_comments))
 end
 
 --- Get the namespace ID

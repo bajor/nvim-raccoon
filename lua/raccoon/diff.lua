@@ -98,6 +98,29 @@ function M.get_changed_lines(patch)
   return changes
 end
 
+--- Check whether a file line is in GitHub PR review diff context.
+--- GitHub accepts review comments on added lines and unchanged context lines
+--- that are shown inside a diff hunk.
+---@param patch string|nil
+---@param target_line number|nil
+---@return boolean
+function M.is_line_in_review_context(patch, target_line)
+  if type(target_line) ~= "number" or target_line < 1 then
+    return false
+  end
+
+  local hunks = M.parse_patch(patch)
+  for _, hunk in ipairs(hunks) do
+    for _, line in ipairs(hunk.lines) do
+      if line.line_num == target_line and (line.type == "add" or line.type == "ctx") then
+        return true
+      end
+    end
+  end
+
+  return false
+end
+
 --- Apply diff highlights to a buffer
 ---@param buf number Buffer ID
 ---@param patch string|nil The patch content

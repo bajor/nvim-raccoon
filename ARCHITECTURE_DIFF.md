@@ -53,7 +53,7 @@ sequenceDiagram
 
 ### Modified
 
-- `lua/raccoon/comments.lua`: inline rendering now uses the exact thread index, hides resolved review threads from flat diff markers, and sends real thread replies instead of line-grouped approximations. The same-line `comment` picker uses a history-aware line view so resolved same-line threads stay reachable.
+- `lua/raccoon/comments.lua`: inline rendering now uses the exact thread index, hides resolved review threads from flat diff markers, and sends real thread replies instead of line-grouped approximations. The same-line `comment` picker uses a history-aware line view so resolved same-line threads stay reachable, while new-thread creation is gated by real PR diff-context line detection.
 - `lua/raccoon/commits.lua`: commit viewer now captures/restores flat-diff state on mode switches and remembers the last commit/page/file-tree position per PR.
 - `lua/raccoon/keymaps.lua`: thread/file navigation now targets exact unresolved threads and flat-diff-only actions are enforced consistently in commit/local modes.
 - `lua/raccoon/open.lua`: PR open/sync validates GraphQL thread metadata strictly when review comments exist, stores viewer login, and restores UI after sync.

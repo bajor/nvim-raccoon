@@ -284,6 +284,43 @@ describe("raccoon.comments UI state restore", function()
     )
   end)
 
+  it("allows new threads on unchanged lines that are still inside diff context", function()
+    local notifications = {}
+    vim.notify = function(message)
+      table.insert(notifications, message)
+    end
+
+    make_file_buffer("lua/a.lua", 12)
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+    comments.show_comment_thread()
+
+    local snapshot = comments.capture_ui_state()
+    assert.equals("editor", snapshot.kind)
+    assert.equals("new_thread", snapshot.editor_kind)
+    assert.is_true(current_win_title():match("=send") ~= nil)
+    assert.equals(0, #notifications)
+  end)
+
+  it("blocks new threads outside the diff context before send", function()
+    local notifications = {}
+    vim.notify = function(message)
+      table.insert(notifications, message)
+    end
+
+    local file_buf = make_file_buffer("lua/a.lua", 12)
+    vim.api.nvim_win_set_cursor(0, { 10, 0 })
+
+    comments.show_comment_thread()
+
+    assert.is_nil(comments.capture_ui_state())
+    assert.equals(file_buf, vim.api.nvim_get_current_buf())
+    assert.matches(
+      "This line is outside the PR diff context; GitHub only allows review threads on changed lines and unchanged lines shown for context",
+      notifications[#notifications]
+    )
+  end)
+
   it("restores a thread reply draft and disables send when the thread becomes resolved", function()
     local notifications = {}
     vim.notify = function(message)
@@ -360,6 +397,7 @@ describe("raccoon.comments UI state restore", function()
 
     local picker_lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, 2, false)
     assert.matches("^%[R%]", picker_lines[1])
+    assert.is_false(picker_lines[2] and picker_lines[2]:match("^%[NEW%]") ~= nil)
   end)
 
   it("closes the same-line picker with the configured close shortcut", function()
