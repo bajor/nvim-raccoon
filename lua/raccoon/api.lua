@@ -363,7 +363,9 @@ function M.create_comment(owner, repo, number, opts, token, callback)
     if err then
       -- Add hint for common 422 error
       if err:find("422") then
-        err = err .. " (Line must be in PR diff context; GitHub accepts changed lines and unchanged lines shown for context)"
+        err = err
+          .. " (Line must be in PR diff context; "
+          .. "GitHub accepts changed lines and unchanged lines shown for context)"
       end
       callback(nil, err)
       return

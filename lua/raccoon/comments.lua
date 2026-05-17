@@ -575,7 +575,9 @@ end
 
 ---@return string
 local function line_outside_diff_context_message()
-  return "This line is outside the PR diff context; GitHub only allows review threads on changed lines and unchanged lines shown for context"
+  return "This line is outside the PR diff context; "
+    .. "GitHub only allows review threads on changed lines "
+    .. "and unchanged lines shown for context"
 end
 
 ---@param path string

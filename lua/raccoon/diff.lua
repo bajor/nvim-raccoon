@@ -67,9 +67,7 @@ function M.parse_patch(patch)
         -- Store the content for virtual text display
         table.insert(current_hunk.lines, { type = "del", content = line:sub(2), line_num = line_num })
         table.insert(current_hunk.changes, { type = "del", line_num = line_num, content = line:sub(2) })
-      elseif line:match("^\\ No newline at end of file$") then
-        -- Diff metadata marker; ignore it without affecting line numbering.
-      elseif line:match("^%s") or line == "" then
+      elseif not line:match("^\\ No newline at end of file$") and (line:match("^%s") or line == "") then
         -- Context line
         line_num = line_num + 1
         table.insert(current_hunk.lines, { type = "ctx", content = line:sub(2), line_num = line_num })
