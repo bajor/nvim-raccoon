@@ -266,7 +266,7 @@ For the full reference, including flat-diff-only vs commit/local-mode behavior, 
 - `[NR]` means an unresolved thread where you commented and somebody replied after you.
 - `[U]` means another unresolved thread.
 - `[I]` means a parsed PR issue comment tied to a file/line.
-- New review threads can be started on changed lines and on unchanged lines that are still shown inside the PR diff context. Lines outside the PR diff context are readable in raccoon's full-file view, but GitHub will not accept new review threads there.
+- New review threads can be started from any line in files that are part of the PR changed-file set. Raccoon uses GraphQL line-based thread creation first, with REST fallback for classic in-diff lines on older backends.
 - Resolved review threads stay hidden from flat-diff markers and badges, but `<leader>c` on that line still shows them in the same-line picker. Full history is also available in `:Raccoon list`.
 - `:Raccoon list` may show multiple rows for the same file and line because review threads are tracked by exact GitHub `thread_id`, not line grouping.
 

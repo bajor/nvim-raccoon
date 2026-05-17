@@ -22,7 +22,7 @@ Run `:Raccoon shortcuts` or press `<leader>?` to see the active bindings.
 - `[I]`: parsed PR issue comment tied to a file/line
 
 Resolved review threads are hidden from flat-diff markers and badges, but `comment` on that line still shows them in the same-line picker. Full history also remains available in `:Raccoon list`.
-New review threads can be started on changed lines and on unchanged lines that are shown in the PR diff context. Full-file lines outside that diff context are not valid GitHub review-thread targets.
+New review threads can be started from any line in files that are part of the PR changed-file set. Raccoon uses GraphQL line-based thread creation first, with REST fallback for classic in-diff lines on older backends.
 
 ## Config shape
 
@@ -68,7 +68,7 @@ It restores your last flat-diff location or composer draft when you come back, a
 
 | Config key | Default | Description |
 |------------|---------|-------------|
-| `comment` | `<leader>c` | Open the current line's exact-thread picker or `New thread on this line`. Resolved same-line threads are included there even though flat diff hides their inline markers. New threads are available only on changed lines and unchanged lines in PR diff context. Flat diff only. |
+| `comment` | `<leader>c` | Open the current line's exact-thread picker or `New thread on this line`. Resolved same-line threads are included there even though flat diff hides their inline markers. New threads are available on any line in PR-changed files, via GraphQL-first thread creation with REST fallback for classic in-diff lines. Flat diff only. |
 | `description` | `<leader>dd` | Toggle the PR description popup. Also available in commit mode. |
 | `list_comments` | `<leader>ll` | Open the broad PR comment history. Exact threads get separate rows even on the same line. Flat diff only. |
 | `list_threads` | `<leader>lt` | Open unresolved-thread picker. Flat diff only. |

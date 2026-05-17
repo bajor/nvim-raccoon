@@ -1,5 +1,8 @@
 local comments = require("raccoon.comments")
 local state = require("raccoon.state")
+local api = require("raccoon.api")
+local config = require("raccoon.config")
+local open = require("raccoon.open")
 
 local CLONE_PATH = "/tmp/raccoon-ui-state"
 
@@ -265,7 +268,6 @@ describe("raccoon.comments UI state restore", function()
     assert.same({ "draft new thread" }, snapshot.input_lines)
 
     state.set_files({
-      { filename = "lua/a.lua", patch = "" },
       { filename = "lua/b.lua", patch = "@@ -1,2 +1,3 @@\n line 1\n+line 2\n line 3" },
     })
 
@@ -330,23 +332,169 @@ describe("raccoon.comments UI state restore", function()
     assert.equals(0, #notifications)
   end)
 
-  it("blocks new threads outside the diff context before send", function()
+  it("allows composing new threads outside visible diff context for changed files", function()
     local notifications = {}
     vim.notify = function(message)
       table.insert(notifications, message)
     end
 
-    local file_buf = make_file_buffer("lua/a.lua", 12)
+    make_file_buffer("lua/a.lua", 12)
     vim.api.nvim_win_set_cursor(0, { 10, 0 })
 
     comments.show_comment_thread()
 
+    local snapshot = comments.capture_ui_state()
+    assert.equals("editor", snapshot.kind)
+    assert.equals("new_thread", snapshot.editor_kind)
+    assert.equals(0, #notifications)
+  end)
+
+  it("sends out-of-hunk changed-file comments via GraphQL thread creation", function()
+    local notifications = {}
+    local original_notify = vim.notify
+    local original_config_load = config.load
+    local original_get_token_entry = config.get_token_entry
+    local original_api_init = api.init
+    local original_create_review_thread = api.create_review_thread
+    local original_create_comment = api.create_comment
+    local original_sync = open.sync
+
+    local graphql_called = false
+    local rest_called = false
+    local sync_called = false
+
+    vim.notify = function(message)
+      table.insert(notifications, message)
+    end
+    config.load = function()
+      return {
+        github_host = "github.com",
+        tokens = { owner = "ghp_fake" },
+      }, nil
+    end
+    config.get_token_entry = function()
+      return { token = "ghp_fake" }
+    end
+    api.init = function() end
+    api.create_review_thread = function(_owner, _repo, _number, opts, _token, callback)
+      graphql_called = true
+      assert.equals("PR_kwDOA1", opts.pull_request_id)
+      assert.equals("lua/a.lua", opts.path)
+      assert.equals(10, opts.line)
+      callback({ id = 777 }, nil)
+    end
+    api.create_comment = function()
+      rest_called = true
+    end
+    open.sync = function()
+      sync_called = true
+    end
+
+    state.set_pr({
+      number = 1,
+      title = "Test PR",
+      node_id = "PR_kwDOA1",
+      head = { sha = "abc123", ref = "feature" },
+      base = { ref = "main" },
+    })
+
+    local file_buf = make_file_buffer("lua/a.lua", 12)
+    vim.api.nvim_win_set_cursor(0, { 10, 0 })
+    comments.show_comment_thread()
+
+    local editor_buf = vim.api.nvim_get_current_buf()
+    local line_count = vim.api.nvim_buf_line_count(editor_buf)
+    vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "graphQL send body" })
+    feed_keys(" s")
+    vim.wait(1000, function()
+      return sync_called
+    end, 10)
+
+    vim.notify = original_notify
+    config.load = original_config_load
+    config.get_token_entry = original_get_token_entry
+    api.init = original_api_init
+    api.create_review_thread = original_create_review_thread
+    api.create_comment = original_create_comment
+    open.sync = original_sync
+
+    assert.is_true(graphql_called)
+    assert.is_false(rest_called)
+    assert.is_true(sync_called)
     assert.is_nil(comments.capture_ui_state())
     assert.equals(file_buf, vim.api.nvim_get_current_buf())
-    assert.matches(
-      "This line is outside the PR diff context; GitHub only allows review threads on changed lines and unchanged lines shown for context",
-      notifications[#notifications]
-    )
+    assert.matches("Thread sent", notifications[#notifications])
+  end)
+
+  it("falls back to REST for in-diff lines when GraphQL thread creation fails", function()
+    local original_notify = vim.notify
+    local original_config_load = config.load
+    local original_get_token_entry = config.get_token_entry
+    local original_api_init = api.init
+    local original_create_review_thread = api.create_review_thread
+    local original_create_comment = api.create_comment
+    local original_sync = open.sync
+
+    local graphql_called = false
+    local rest_called = false
+    local sync_called = false
+
+    vim.notify = function() end
+    config.load = function()
+      return {
+        github_host = "github.com",
+        tokens = { owner = "ghp_fake" },
+      }, nil
+    end
+    config.get_token_entry = function()
+      return { token = "ghp_fake" }
+    end
+    api.init = function() end
+    api.create_review_thread = function(_owner, _repo, _number, _opts, _token, callback)
+      graphql_called = true
+      callback(nil, "GraphQL error: mutation unavailable")
+    end
+    api.create_comment = function(_owner, _repo, _number, opts, _token, callback)
+      rest_called = true
+      assert.equals("lua/a.lua", opts.path)
+      assert.equals(2, opts.line)
+      callback({ id = 55 }, nil)
+    end
+    open.sync = function()
+      sync_called = true
+    end
+
+    state.set_pr({
+      number = 1,
+      title = "Test PR",
+      node_id = "PR_kwDOA1",
+      head = { sha = "abc123", ref = "feature" },
+      base = { ref = "main" },
+    })
+
+    make_file_buffer("lua/a.lua", 12)
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    comments.show_comment_thread()
+
+    local editor_buf = vim.api.nvim_get_current_buf()
+    local line_count = vim.api.nvim_buf_line_count(editor_buf)
+    vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "fallback body" })
+    feed_keys(" s")
+    vim.wait(1000, function()
+      return sync_called
+    end, 10)
+
+    vim.notify = original_notify
+    config.load = original_config_load
+    config.get_token_entry = original_get_token_entry
+    api.init = original_api_init
+    api.create_review_thread = original_create_review_thread
+    api.create_comment = original_create_comment
+    open.sync = original_sync
+
+    assert.is_true(graphql_called)
+    assert.is_true(rest_called)
+    assert.is_true(sync_called)
   end)
 
   it("restores a thread reply draft and disables send when the thread becomes resolved", function()
@@ -427,7 +575,7 @@ describe("raccoon.comments UI state restore", function()
 
     local picker_lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, 2, false)
     assert.matches("^%[R%]", picker_lines[1])
-    assert.is_false(picker_lines[2] and picker_lines[2]:match("^%[NEW%]") ~= nil)
+    assert.truthy(picker_lines[2] and picker_lines[2]:match("^%[NEW%]"))
 
     local width = vim.api.nvim_win_get_config(0).width
     vim.o.columns = original_columns

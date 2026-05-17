@@ -574,31 +574,47 @@ local function checkout_line_count(path)
 end
 
 ---@return string
-local function line_outside_diff_context_message()
-  return "This line is outside the PR diff context; "
-    .. "GitHub only allows review threads on changed lines "
-    .. "and unchanged lines shown for context"
+local function file_outside_pr_changes_message()
+  return "This file is outside the PR changed-file set; "
+    .. "GitHub only allows review comments on changed files"
+end
+
+---@return string
+local function line_outside_file_bounds_message()
+  return "This line is outside the current file bounds; refresh and try again"
 end
 
 ---@param path string
 ---@param line number
 ---@return boolean
 local function can_start_new_thread(path, line)
-  return is_line_commentable(path, line)
+  if type(line) ~= "number" or line < 1 then
+    return false
+  end
+  return find_pr_file(path) ~= nil
 end
 
 ---@param path string
 ---@param line number
 ---@return string|nil
 local function new_thread_disable_reason(path, line)
-  if can_start_new_thread(path, line) then
-    return nil
+  if type(line) ~= "number" or line < 1 then
+    return "Invalid line number for comment"
   end
-  return line_outside_diff_context_message()
+
+  if not find_pr_file(path) then
+    return file_outside_pr_changes_message()
+  end
+
+  local line_count = checkout_line_count(path)
+  if line_count and line > line_count then
+    return line_outside_file_bounds_message()
+  end
+
+  return nil
 end
 
-local function send_new_thread(path, line, opts)
-  opts = opts or {}
+local function send_new_thread(path, line)
   local ctx, ctx_err = ensure_review_context()
   if ctx_err then
     vim.notify(ctx_err, vim.log.levels.ERROR)
@@ -610,30 +626,68 @@ local function send_new_thread(path, line, opts)
     vim.notify("Empty thread", vim.log.levels.WARN)
     return
   end
-  local disable_reason = opts.skip_commentable_precheck and nil or new_thread_disable_reason(path, line)
+  local disable_reason = new_thread_disable_reason(path, line)
   if disable_reason then
     vim.notify(disable_reason, vim.log.levels.WARN)
     return
   end
-  if not ctx.pr or not ctx.pr.head or not ctx.pr.head.sha then
-    vim.notify("Missing PR data (commit_id)", vim.log.levels.ERROR)
+
+  local function on_send_success()
+    close_active_editor(true)
+    vim.notify("Thread sent", vim.log.levels.INFO)
+    require("raccoon.open").sync()
+  end
+
+  local function send_via_rest(rest_error_prefix)
+    if not ctx.pr or not ctx.pr.head or not ctx.pr.head.sha then
+      vim.notify("Missing PR data (commit_id)", vim.log.levels.ERROR)
+      return
+    end
+    api.create_comment(ctx.owner, ctx.repo, ctx.number, {
+      body = body,
+      path = path,
+      line = line,
+      commit_id = ctx.pr.head.sha,
+      side = "RIGHT",
+    }, ctx.token, function(_result, err)
+      vim.schedule(function()
+        if err then
+          local prefix = rest_error_prefix or "Failed to send thread"
+          vim.notify(prefix .. ": " .. err, vim.log.levels.ERROR)
+          return
+        end
+        on_send_success()
+      end)
+    end)
+  end
+
+  local pr_node_id = ctx.pr and ctx.pr.node_id
+  if type(pr_node_id) ~= "string" or pr_node_id == "" then
+    send_via_rest()
     return
   end
-  api.create_comment(ctx.owner, ctx.repo, ctx.number, {
+
+  api.create_review_thread(ctx.owner, ctx.repo, ctx.number, {
+    pull_request_id = pr_node_id,
     body = body,
     path = path,
     line = line,
-    commit_id = ctx.pr.head.sha,
     side = "RIGHT",
   }, ctx.token, function(_result, err)
     vim.schedule(function()
-      if err then
-        vim.notify("Failed to send thread: " .. err, vim.log.levels.ERROR)
+      if not err then
+        on_send_success()
         return
       end
-      close_active_editor(true)
-      vim.notify("Thread sent", vim.log.levels.INFO)
-      require("raccoon.open").sync()
+
+      -- Compatibility fallback: older backends may not support GraphQL thread
+      -- creation, but REST still works for classic in-diff line comments.
+      if is_line_commentable(path, line) then
+        send_via_rest("Failed to send thread via GraphQL (fallback to REST)")
+        return
+      end
+
+      vim.notify("Failed to send thread: " .. err, vim.log.levels.ERROR)
     end)
   end)
 end
@@ -675,7 +729,7 @@ open_new_thread_editor = function(path, line, prefill_lines, opts)
     prefill_lines = prefill_lines,
     initial_input_lines = opts.initial_input_lines,
     on_send = opts.disable_send_reason and nil or function()
-      send_new_thread(path, line, { skip_commentable_precheck = opts.send_unverified == true })
+      send_new_thread(path, line)
     end,
   })
   if opts.disable_send_reason then
@@ -1069,19 +1123,12 @@ end
 
 local function restore_new_thread_snapshot(snapshot)
   local disable_reason = nil
-  local send_unverified = false
-  local file = find_pr_file(snapshot.path)
-  if not file or not file.patch or file.patch == "" then
+  if not find_pr_file(snapshot.path) then
     disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
   else
     local line_count = checkout_line_count(snapshot.path)
     if line_count and snapshot.line > line_count then
       disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
-    elseif not is_line_commentable(snapshot.path, snapshot.line) then
-      -- Keep send available when the file still exists and still has a diff.
-      -- GitHub remains the final source of truth for whether the line stayed
-      -- reviewable after sync.
-      send_unverified = true
     end
   end
   open_new_thread_editor(
@@ -1091,7 +1138,6 @@ local function restore_new_thread_snapshot(snapshot)
     {
       initial_input_lines = snapshot.input_lines,
       disable_send_reason = disable_reason,
-      send_unverified = send_unverified,
     }
   )
 end

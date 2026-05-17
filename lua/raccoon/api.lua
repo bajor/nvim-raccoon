@@ -16,6 +16,7 @@ M.server_info = { is_ghes = false }
 
 --- Cache for viewer login per token (keyed by first 8 chars of token)
 local viewer_cache = {}
+local graphql_request
 
 --- Compute REST and GraphQL base URLs from a GitHub host
 ---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
@@ -100,8 +101,37 @@ local function request(opts)
   end
 
   if response.status >= 400 then
-    local err_body = vim.json.decode(response.body or "{}") or {}
+    local ok, decoded = pcall(vim.json.decode, response.body or "{}")
+    local err_body = ok and decoded or {}
     local message = err_body.message or "Unknown error"
+    local details = {}
+    if type(err_body.errors) == "table" then
+      for _, item in ipairs(err_body.errors) do
+        if type(item) == "table" then
+          local field = item.field
+          local code = item.code
+          local detail = item.message
+          local parts = {}
+          if field and field ~= "" then
+            table.insert(parts, tostring(field))
+          end
+          if code and code ~= "" then
+            table.insert(parts, tostring(code))
+          end
+          if detail and detail ~= "" then
+            table.insert(parts, tostring(detail))
+          end
+          if #parts > 0 then
+            table.insert(details, table.concat(parts, ": "))
+          end
+        elseif type(item) == "string" and item ~= "" then
+          table.insert(details, item)
+        end
+      end
+    end
+    if #details > 0 then
+      message = message .. " [" .. table.concat(details, "; ") .. "]"
+    end
     return nil, ghes_hint(string.format("GitHub API error (%d): %s", response.status, message), response.status)
   end
 
@@ -375,6 +405,121 @@ function M.create_comment(owner, repo, number, opts, token, callback)
   end)
 end
 
+--- Create a new pull request review thread via GraphQL.
+--- Uses file/line coordinates (blob line numbers) rather than diff position.
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param number number PR number
+---@param opts table Thread options: body, path, line, pull_request_id, side
+---@param token string GitHub token
+---@param callback fun(comment: table|nil, err: string|nil)
+function M.create_review_thread(owner, repo, number, opts, token, callback)
+  vim.schedule(function()
+    local function send_with_pull_request_id(pull_request_id)
+      local mutation = [[
+        mutation(
+          $pullRequestId: ID!,
+          $body: String!,
+          $path: String!,
+          $line: Int!,
+          $side: DiffSide!
+        ) {
+          addPullRequestReview(input: {
+            pullRequestId: $pullRequestId,
+            event: COMMENT,
+            threads: [{
+              body: $body,
+              path: $path,
+              line: $line,
+              side: $side
+            }]
+          }) {
+            comments(first: 1) {
+              nodes {
+                databaseId
+                id
+                body
+                path
+                line
+              }
+            }
+          }
+        }
+      ]]
+
+      local variables = {
+        pullRequestId = pull_request_id,
+        body = opts.body,
+        path = opts.path,
+        line = opts.line,
+        side = opts.side or "RIGHT",
+      }
+
+      local data, err = graphql_request(mutation, variables, token)
+      if err then
+        callback(nil, err)
+        return
+      end
+
+      local nodes = data
+        and data.addPullRequestReview
+        and data.addPullRequestReview.comments
+        and data.addPullRequestReview.comments.nodes
+        or nil
+      local first = nodes and nodes[1] or nil
+      if not first then
+        callback(nil, "GraphQL response missing created review comment")
+        return
+      end
+
+      callback({
+        id = first.databaseId or first.id,
+        body = first.body,
+        path = first.path,
+        line = first.line,
+      }, nil)
+    end
+
+    local pull_request_id = opts and opts.pull_request_id
+    if type(pull_request_id) == "string" and pull_request_id ~= "" then
+      send_with_pull_request_id(pull_request_id)
+      return
+    end
+
+    local query = [[
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            id
+          }
+        }
+      }
+    ]]
+
+    local data, err = graphql_request(query, {
+      owner = owner,
+      repo = repo,
+      number = number,
+    }, token)
+    if err then
+      callback(nil, "Missing PR node id and failed to resolve it via GraphQL: " .. err)
+      return
+    end
+
+    local resolved_id = data
+      and data.repository
+      and data.repository.pullRequest
+      and data.repository.pullRequest.id
+      or nil
+    if type(resolved_id) ~= "string" or resolved_id == "" then
+      callback(nil, "Missing PR node id and GraphQL pullRequest.id lookup returned no result")
+      return
+    end
+
+    send_with_pull_request_id(resolved_id)
+  end)
+end
+
 --- Update an existing review comment
 ---@param owner string Repository owner
 ---@param repo string Repository name
@@ -583,7 +728,7 @@ end
 ---@param variables table Query variables
 ---@param token string GitHub token
 ---@return table|nil response, string|nil error
-local function graphql_request(query, variables, token)
+graphql_request = function(query, variables, token)
   local headers = default_headers(token)
   headers["Content-Type"] = "application/json"
 
