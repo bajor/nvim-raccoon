@@ -266,7 +266,7 @@ For the full reference, including flat-diff-only vs commit/local-mode behavior, 
 - `[NR]` means an unresolved thread where you commented and somebody replied after you.
 - `[U]` means another unresolved thread.
 - `[I]` means a parsed PR issue comment tied to a file/line.
-- Resolved review threads are hidden from flat diff and appear only in `:Raccoon list`.
+- Resolved review threads stay hidden from flat-diff markers and badges, but `<leader>c` on that line still shows them in the same-line picker. Full history is also available in `:Raccoon list`.
 - `:Raccoon list` may show multiple rows for the same file and line because review threads are tracked by exact GitHub `thread_id`, not line grouping.
 
 ## Commit Viewer Mode

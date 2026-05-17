@@ -339,6 +339,24 @@ describe("raccoon.comments UI state restore", function()
     assert.matches("Thread is now resolved; unresolve it or clear the text", notifications[#notifications])
   end)
 
+  it("shows resolved same-line threads in the comment picker", function()
+    make_file_buffer("lua/a.lua", 12)
+    vim.api.nvim_win_set_cursor(0, { 8, 0 })
+
+    comments.show_comment_thread()
+
+    local snapshot = comments.capture_ui_state()
+    assert.same({
+      kind = "picker",
+      picker_kind = "same_line",
+      row_key = "thread:thread-c",
+      row_index = 1,
+    }, snapshot)
+
+    local picker_lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, 2, false)
+    assert.matches("^%[R%]", picker_lines[1])
+  end)
+
   it("keeps prior thread comments read-only while allowing navigation and editing only in the reply region", function()
     comments.restore_ui_state({
       kind = "editor",

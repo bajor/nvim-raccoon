@@ -1344,6 +1344,9 @@ local function open_same_line_picker(path, line, line_state)
   local selected_thread_id = state.get_selected_thread_id()
   local selected = 1
   table.sort(line_state.threads, function(left, right)
+    if left.resolved ~= right.resolved then
+      return left.resolved == false
+    end
     if left.needs_reply ~= right.needs_reply then
       return left.needs_reply
     end
@@ -1353,7 +1356,7 @@ local function open_same_line_picker(path, line, line_state)
     if selected_thread_id and selected_thread_id == thread.thread_id then
       selected = row_idx
     end
-    local tag = thread.needs_reply and "[NR]" or "[U]"
+    local tag = thread.resolved and "[R]" or (thread.needs_reply and "[NR]" or "[U]")
     table.insert(thread_rows, {
       key = "thread:" .. thread.thread_id,
       text = string.format(
@@ -1399,7 +1402,7 @@ function M.show_comment_thread()
   if not index then
     return
   end
-  local line_state = thread_index.get_line_state(index, path, line)
+  local line_state = thread_index.get_comment_line_state(index, path, line)
   if not line_state then
     open_new_thread_editor(path, line, {})
     return

@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `ARCHITECTURE_DIFF.md` for the thread-indexed review flow.
 
 ### Changed
-- Flat diff now hides resolved review threads entirely; resolved history lives in `:Raccoon list`.
+- Flat diff now hides resolved review-thread markers and badges, but `<leader>c` on a line still includes resolved same-line threads in the picker; full history also remains in `:Raccoon list`.
 - `:Raccoon list` is thread-aware and may show multiple rows for the same file and line when GitHub has multiple real threads there.
 - Manual refresh is now the configured `sync` shortcut (`<leader>r` by default), and merge default moved to `<leader>mr`.
 - Comment popup actions now use `comment_send`, `comment_resolve`, and `comment_unresolve` defaults of `<leader>s`, `<leader>cr`, and `<leader>cu`.

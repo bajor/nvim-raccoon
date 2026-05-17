@@ -233,9 +233,21 @@ function M.build()
   local unresolved_threads = {}
   local history_threads = {}
   local line_state_by_file = {}
+  local comment_line_state_by_file = {}
 
   for _, thread in ipairs(threads) do
     table.insert(history_threads, thread)
+    if is_real_number(thread.line) and thread.path then
+      local bucket = ensure_line_bucket(comment_line_state_by_file, thread.path, thread.line)
+      table.insert(bucket.threads, thread)
+      if thread.resolved ~= true then
+        if thread.needs_reply then
+          bucket.counts.nr = bucket.counts.nr + 1
+        else
+          bucket.counts.u = bucket.counts.u + 1
+        end
+      end
+    end
     if thread.resolved ~= true then
       table.insert(unresolved_threads, thread)
       if is_real_number(thread.line) and thread.path then
@@ -254,6 +266,10 @@ function M.build()
     local bucket = ensure_line_bucket(line_state_by_file, entry.path, entry.line)
     table.insert(bucket.issue_comments, entry.comment)
     bucket.counts.i = bucket.counts.i + 1
+
+    local comment_bucket = ensure_line_bucket(comment_line_state_by_file, entry.path, entry.line)
+    table.insert(comment_bucket.issue_comments, entry.comment)
+    comment_bucket.counts.i = comment_bucket.counts.i + 1
   end
 
   table.sort(history_threads, compare_threads_for_history)
@@ -265,6 +281,7 @@ function M.build()
     history_threads = history_threads,
     thread_by_id = thread_by_id,
     line_state_by_file = line_state_by_file,
+    comment_line_state_by_file = comment_line_state_by_file,
     issue_entries = issue_entries,
     review_comments = review_comments,
     review_bodies = state.get_comments("_reviews"),
@@ -279,6 +296,18 @@ end
 ---@return table|nil
 function M.get_line_state(index, path, line)
   local file_map = index.line_state_by_file[path]
+  if not file_map then
+    return nil
+  end
+  return file_map[line]
+end
+
+---@param index table
+---@param path string
+---@param line number
+---@return table|nil
+function M.get_comment_line_state(index, path, line)
+  local file_map = index.comment_line_state_by_file[path]
   if not file_map then
     return nil
   end

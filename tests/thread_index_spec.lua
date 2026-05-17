@@ -129,6 +129,12 @@ describe("raccoon.thread_index", function()
     assert.same({ nr = 1, u = 1, i = 1 }, line_state.counts)
 
     assert.is_nil(thread_index.get_line_state(index, "lua/a.lua", 8))
+
+    local comment_line_state = thread_index.get_comment_line_state(index, "lua/a.lua", 8)
+    assert.is_not_nil(comment_line_state)
+    assert.equals(1, #comment_line_state.threads)
+    assert.equals("thread-c", comment_line_state.threads[1].thread_id)
+    assert.is_true(comment_line_state.threads[1].resolved)
   end)
 
   it("uses original_line and position when line is missing", function()
