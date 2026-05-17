@@ -18,6 +18,15 @@ describe("raccoon.commit_ui", function()
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
   end
 
+  after_each(function()
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      local config = vim.api.nvim_win_get_config(win)
+      if config.relative ~= "" then
+        vim.api.nvim_win_close(win, true)
+      end
+    end
+  end)
+
   it("header shows subject then updates to full multiline body", function()
     local buf, win = make_header(80)
 
@@ -39,6 +48,27 @@ describe("raccoon.commit_ui", function()
     assert.truthy(lines[1]:find("with refresh tokens"))
 
     teardown_header(buf, win)
+  end)
+
+  it("styles maximize list windows with the editor background highlights", function()
+    require("raccoon").setup()
+    local win
+    local state = { grid_rows = 1, grid_cols = 1 }
+
+    commit_ui.open_maximize_list({
+      title = "Files",
+      items = {
+        { display = "one.lua", value = "one.lua" },
+        { display = "two.lua", value = "two.lua" },
+      },
+      state = state,
+      on_select = function() end,
+    })
+
+    win = state.maximize_win
+    assert.is_true(vim.api.nvim_win_is_valid(win))
+    assert.matches("Normal:Normal", vim.wo[win].winhl)
+    assert.matches("FloatBorder:Normal", vim.wo[win].winhl)
   end)
 
   describe("truncate_sidebar_text", function()

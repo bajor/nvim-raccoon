@@ -14,6 +14,7 @@ local function setup_highlights()
   -- Green background for added lines (high contrast)
   vim.api.nvim_set_hl(0, "RaccoonAdd", {
     bg = "#2d5a2d",
+    ctermbg = 22,
     default = true,
   })
 
@@ -21,17 +22,21 @@ local function setup_highlights()
   vim.api.nvim_set_hl(0, "RaccoonDelete", {
     bg = "#5a2020",
     fg = "#e88888",
+    ctermbg = 52,
+    ctermfg = 174,
     default = true,
   })
 
   -- Sign column colors
   vim.api.nvim_set_hl(0, "RaccoonAddSign", {
     fg = "#98c379", -- Green
+    ctermfg = 114,
     default = true,
   })
 
   vim.api.nvim_set_hl(0, "RaccoonDeleteSign", {
     fg = "#e06c75", -- Red
+    ctermfg = 173,
     default = true,
   })
 
@@ -43,11 +48,14 @@ local function setup_highlights()
 
   vim.api.nvim_set_hl(0, "RaccoonFileInCommit", {
     fg = "#aaaaaa",
+    ctermfg = 248,
     default = true,
   })
 
   vim.api.nvim_set_hl(0, "RaccoonFileVisible", {
     fg = "#ffffff",
+    ctermfg = 15,
+    bold = true,
     default = true,
   })
 end

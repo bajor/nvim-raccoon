@@ -71,6 +71,7 @@ function M.show_readonly_thread(opts)
     title_pos = "center",
   })
 
+  ui.apply_popup_window_style(win)
   vim.wo[win].wrap = true
 
   local function close_window()
@@ -467,6 +468,8 @@ local function open_editor_window(opts)
     title = " " .. opts.title .. " ",
     title_pos = "center",
   })
+
+  ui.apply_popup_window_style(win)
 
   editor_state = {
     win = win,

@@ -95,6 +95,15 @@ describe("raccoon.ui", function()
 
       vim.api.nvim_win_close(win, true)
     end)
+
+    it("maps floating windows to the editor background highlights", function()
+      local win, _ = ui.create_floating_window({})
+
+      assert.matches("Normal:Normal", vim.wo[win].winhl)
+      assert.matches("FloatBorder:Normal", vim.wo[win].winhl)
+
+      vim.api.nvim_win_close(win, true)
+    end)
   end)
 
   describe("close_pr_list", function()

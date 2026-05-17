@@ -23,6 +23,23 @@ function M.is_pr_list_open()
   return M.state.win and vim.api.nvim_win_is_valid(M.state.win) or false
 end
 
+--- Style plugin-owned popup windows so they inherit the editor background
+--- instead of theme-specific NormalFloat defaults.
+---@param win number
+function M.apply_popup_window_style(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+
+  vim.wo[win].winhl = table.concat({
+    "Normal:Normal",
+    "NormalFloat:Normal",
+    "FloatBorder:Normal",
+    "SignColumn:Normal",
+    "EndOfBuffer:Normal",
+  }, ",")
+end
+
 --- Create a centered floating window
 ---@param opts table Options: width, height, title, border, width_pct, height_pct, enter
 ---@return number win_id, number buf_id
@@ -66,6 +83,8 @@ function M.create_floating_window(opts)
   -- Create window
   local enter = opts.enter ~= false
   local win = vim.api.nvim_open_win(buf, enter, win_opts)
+
+  M.apply_popup_window_style(win)
 
   -- Set window options
   vim.wo[win].cursorline = true

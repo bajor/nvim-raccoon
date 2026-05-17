@@ -1046,6 +1046,8 @@ function M.open_maximize(opts)
       return
     end
 
+    popup_ui().apply_popup_window_style(win)
+
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
     M.stop_maximize_watcher(opts.state)
@@ -1150,6 +1152,8 @@ function M.open_maximize_list(opts)
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
     return
   end
+
+  popup_ui().apply_popup_window_style(win)
 
   opts.state.maximize_win = win
   opts.state.maximize_buf = buf
@@ -1321,6 +1325,8 @@ function M.open_file_content(opts)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return
     end
+
+    popup_ui().apply_popup_window_style(win)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
