@@ -542,6 +542,37 @@ local function is_line_commentable(path, line)
   return false
 end
 
+---@param path string
+---@return table|nil
+local function find_pr_file(path)
+  for _, file in ipairs(state.get_files()) do
+    if file.filename == path then
+      return file
+    end
+  end
+  return nil
+end
+
+---@param path string
+---@return number|nil
+local function checkout_line_count(path)
+  local clone_path = state.get_clone_path()
+  if not clone_path then
+    return nil
+  end
+  local file_path = vim.fs.joinpath(clone_path, path)
+  local file = io.open(file_path, "r")
+  if not file then
+    return nil
+  end
+  local count = 0
+  for _ in file:lines() do
+    count = count + 1
+  end
+  file:close()
+  return count
+end
+
 ---@return string
 local function line_outside_diff_context_message()
   return "This line is outside the PR diff context; GitHub only allows review threads on changed lines and unchanged lines shown for context"
@@ -564,7 +595,8 @@ local function new_thread_disable_reason(path, line)
   return line_outside_diff_context_message()
 end
 
-local function send_new_thread(path, line)
+local function send_new_thread(path, line, opts)
+  opts = opts or {}
   local ctx, ctx_err = ensure_review_context()
   if ctx_err then
     vim.notify(ctx_err, vim.log.levels.ERROR)
@@ -576,7 +608,7 @@ local function send_new_thread(path, line)
     vim.notify("Empty thread", vim.log.levels.WARN)
     return
   end
-  local disable_reason = new_thread_disable_reason(path, line)
+  local disable_reason = opts.skip_commentable_precheck and nil or new_thread_disable_reason(path, line)
   if disable_reason then
     vim.notify(disable_reason, vim.log.levels.WARN)
     return
@@ -641,7 +673,7 @@ open_new_thread_editor = function(path, line, prefill_lines, opts)
     prefill_lines = prefill_lines,
     initial_input_lines = opts.initial_input_lines,
     on_send = opts.disable_send_reason and nil or function()
-      send_new_thread(path, line)
+      send_new_thread(path, line, { skip_commentable_precheck = opts.send_unverified == true })
     end,
   })
   if opts.disable_send_reason then
@@ -1035,14 +1067,30 @@ end
 
 local function restore_new_thread_snapshot(snapshot)
   local disable_reason = nil
-  if not is_line_commentable(snapshot.path, snapshot.line) then
+  local send_unverified = false
+  local file = find_pr_file(snapshot.path)
+  if not file or not file.patch or file.patch == "" then
     disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
+  else
+    local line_count = checkout_line_count(snapshot.path)
+    if line_count and snapshot.line > line_count then
+      disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
+    elseif not is_line_commentable(snapshot.path, snapshot.line) then
+      -- Keep send available when the file still exists and still has a diff.
+      -- GitHub remains the final source of truth for whether the line stayed
+      -- reviewable after sync.
+      send_unverified = true
+    end
   end
   open_new_thread_editor(
     snapshot.path,
     snapshot.line,
     snapshot.prefill_lines or {},
-    { initial_input_lines = snapshot.input_lines, disable_send_reason = disable_reason }
+    {
+      initial_input_lines = snapshot.input_lines,
+      disable_send_reason = disable_reason,
+      send_unverified = send_unverified,
+    }
   )
 end
 

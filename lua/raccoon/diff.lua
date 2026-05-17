@@ -32,11 +32,16 @@ function M.parse_patch(patch)
     return {}
   end
 
+  local normalized_patch = patch
+  if normalized_patch:sub(-1) ~= "\n" then
+    normalized_patch = normalized_patch .. "\n"
+  end
+
   local hunks = {}
   local current_hunk = nil
   local line_num = 0
 
-  for line in patch:gmatch("[^\n]+") do
+  for line in normalized_patch:gmatch("(.-)\n") do
     if line:match("^@@") then
       -- New hunk
       if current_hunk then
@@ -62,6 +67,8 @@ function M.parse_patch(patch)
         -- Store the content for virtual text display
         table.insert(current_hunk.lines, { type = "del", content = line:sub(2), line_num = line_num })
         table.insert(current_hunk.changes, { type = "del", line_num = line_num, content = line:sub(2) })
+      elseif line:match("^\\ No newline at end of file$") then
+        -- Diff metadata marker; ignore it without affecting line numbering.
       elseif line:match("^%s") or line == "" then
         -- Context line
         line_num = line_num + 1

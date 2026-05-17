@@ -284,6 +284,34 @@ describe("raccoon.comments UI state restore", function()
     )
   end)
 
+  it("restores a new-thread draft with send still available when sync cannot re-verify diff context", function()
+    make_file_buffer("lua/a.lua", 12)
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+    comments.show_comment_thread()
+    local editor_buf = vim.api.nvim_get_current_buf()
+    local line_count = vim.api.nvim_buf_line_count(editor_buf)
+    vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "draft new thread" })
+
+    local snapshot = comments.capture_ui_state()
+    assert.equals("editor", snapshot.kind)
+    assert.equals("new_thread", snapshot.editor_kind)
+
+    state.set_files({
+      { filename = "lua/a.lua", patch = "@@ -20,1 +20,2 @@\n line 20\n+line 21" },
+      { filename = "lua/b.lua", patch = "@@ -1,2 +1,3 @@\n line 1\n+line 2\n line 3" },
+    })
+
+    comments.close_overlays(true)
+    comments.restore_ui_state(snapshot)
+
+    local restored = comments.capture_ui_state()
+    assert.equals("editor", restored.kind)
+    assert.equals("new_thread", restored.editor_kind)
+    assert.same({ "draft new thread" }, restored.input_lines)
+    assert.is_true(current_win_title():match("=send") ~= nil)
+  end)
+
   it("allows new threads on unchanged lines that are still inside diff context", function()
     local notifications = {}
     vim.notify = function(message)

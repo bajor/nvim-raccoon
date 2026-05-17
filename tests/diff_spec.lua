@@ -429,6 +429,16 @@ describe("raccoon.diff", function()
       assert.is_false(diff.is_line_in_review_context(patch, 13))
       assert.is_false(diff.is_line_in_review_context(patch, 99))
     end)
+
+    it("keeps correct line numbers across blank lines in a hunk", function()
+      local patch = "@@ -1,4 +1,5 @@\n line 1\n \n+line 3\n line 4\n line 5"
+
+      assert.is_true(diff.is_line_in_review_context(patch, 1))
+      assert.is_true(diff.is_line_in_review_context(patch, 2))
+      assert.is_true(diff.is_line_in_review_context(patch, 3))
+      assert.is_true(diff.is_line_in_review_context(patch, 4))
+      assert.is_true(diff.is_line_in_review_context(patch, 5))
+    end)
   end)
 
   describe("apply_highlights edge cases", function()
