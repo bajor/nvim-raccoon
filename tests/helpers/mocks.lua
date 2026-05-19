@@ -23,6 +23,7 @@ function M.mock_curl(responses)
     originals.curl_patch = curl.patch
     originals.curl_put = curl.put
     originals.curl_delete = curl.delete
+    originals.curl_request = curl.request
   end
 
   local function make_mock_request(method)
@@ -60,6 +61,7 @@ function M.mock_curl(responses)
     curl.patch = make_mock_request("PATCH")
     curl.put = make_mock_request("PUT")
     curl.delete = make_mock_request("DELETE")
+    curl.request = make_mock_request("REQUEST")
   end
 
   return recorded_requests
@@ -176,6 +178,9 @@ function M.restore()
     end
     if originals.curl_delete then
       curl.delete = originals.curl_delete
+    end
+    if originals.curl_request then
+      curl.request = originals.curl_request
     end
   end
 

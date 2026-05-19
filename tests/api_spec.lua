@@ -1,4 +1,5 @@
 local api = require("raccoon.api")
+local mocks = require("tests.helpers.mocks")
 
 describe("raccoon.api", function()
   describe("parse_pr_url", function()
@@ -241,6 +242,71 @@ describe("raccoon.api edge cases", function()
     it("is a table with is_ghes field", function()
       assert.is_table(api.server_info)
       assert.is_boolean(api.server_info.is_ghes)
+    end)
+  end)
+
+  describe("create_review_thread", function()
+    after_each(function()
+      mocks.restore()
+      api.init("github.com")
+    end)
+
+    it("uses a schema-valid addPullRequestReview selection set for changed-file threads", function()
+      local recorded = mocks.mock_curl({
+        ["api%.github%.com/graphql"] = function(opts)
+          local payload = vim.json.decode(opts.body or "{}")
+          local query = payload.query or ""
+
+          if query:match("addPullRequestReview%b()%s*{%s*comments%s*%(") then
+            return mocks.api_response({
+              errors = {
+                { message = "Field 'comments' doesn't exist on type 'AddPullRequestReviewPayload'" },
+              },
+            })
+          end
+
+          assert.truthy(query:match("addPullRequestReview"))
+          assert.truthy(query:match("pullRequestReview"))
+
+          return mocks.api_response({
+            data = {
+              addPullRequestReview = {
+                pullRequestReview = {
+                  id = "PRR_kwDOA1",
+                },
+              },
+            },
+          })
+        end,
+      })
+
+      local done = false
+      local result_comment
+      local result_err
+
+      api.create_review_thread("owner", "repo", 1, {
+        pull_request_id = "PR_kwDOA1",
+        body = "graphQL send body",
+        path = "lua/a.lua",
+        line = 10,
+        side = "RIGHT",
+      }, "ghp_fake", function(comment, err)
+        result_comment = comment
+        result_err = err
+        done = true
+      end)
+
+      vim.wait(5000, function()
+        return done
+      end, 10)
+
+      assert.is_true(done)
+      assert.equals(1, #recorded)
+      assert.is_nil(result_err)
+      assert.is_table(result_comment)
+      assert.equals("graphQL send body", result_comment.body)
+      assert.equals("lua/a.lua", result_comment.path)
+      assert.equals(10, result_comment.line)
     end)
   end)
 end)

@@ -434,14 +434,8 @@ function M.create_review_thread(owner, repo, number, opts, token, callback)
               side: $side
             }]
           }) {
-            comments(first: 1) {
-              nodes {
-                databaseId
-                id
-                body
-                path
-                line
-              }
+            pullRequestReview {
+              id
             }
           }
         }
@@ -461,22 +455,20 @@ function M.create_review_thread(owner, repo, number, opts, token, callback)
         return
       end
 
-      local nodes = data
+      local review = data
         and data.addPullRequestReview
-        and data.addPullRequestReview.comments
-        and data.addPullRequestReview.comments.nodes
+        and data.addPullRequestReview.pullRequestReview
         or nil
-      local first = nodes and nodes[1] or nil
-      if not first then
-        callback(nil, "GraphQL response missing created review comment")
+      if not review or type(review.id) ~= "string" or review.id == "" then
+        callback(nil, "GraphQL response missing created review")
         return
       end
 
       callback({
-        id = first.databaseId or first.id,
-        body = first.body,
-        path = first.path,
-        line = first.line,
+        id = review.id,
+        body = opts.body,
+        path = opts.path,
+        line = opts.line,
       }, nil)
     end
 
