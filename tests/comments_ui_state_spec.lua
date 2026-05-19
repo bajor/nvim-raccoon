@@ -349,7 +349,7 @@ describe("raccoon.comments UI state restore", function()
     assert.equals(0, #notifications)
   end)
 
-  it("sends out-of-hunk changed-file comments via GraphQL thread creation", function()
+  it("sends out-of-hunk changed-file comments as file-level REST comments", function()
     local notifications = {}
     local original_notify = vim.notify
     local original_config_load = config.load
@@ -378,13 +378,14 @@ describe("raccoon.comments UI state restore", function()
     api.init = function() end
     api.create_review_thread = function(_owner, _repo, _number, opts, _token, callback)
       graphql_called = true
-      assert.equals("PR_kwDOA1", opts.pull_request_id)
-      assert.equals("lua/a.lua", opts.path)
-      assert.equals(10, opts.line)
-      callback({ id = 777 }, nil)
+      callback(nil, "GraphQL should not be used for file-level comments")
     end
-    api.create_comment = function()
+    api.create_comment = function(_owner, _repo, _number, opts, _token, callback)
       rest_called = true
+      assert.equals("lua/a.lua", opts.path)
+      assert.equals("file", opts.subject_type)
+      assert.is_nil(opts.line)
+      callback({ id = 777 }, nil)
     end
     open.sync = function()
       sync_called = true
@@ -418,8 +419,8 @@ describe("raccoon.comments UI state restore", function()
     api.create_comment = original_create_comment
     open.sync = original_sync
 
-    assert.is_true(graphql_called)
-    assert.is_false(rest_called)
+    assert.is_false(graphql_called)
+    assert.is_true(rest_called)
     assert.is_true(sync_called)
     assert.is_nil(comments.capture_ui_state())
     assert.equals(file_buf, vim.api.nvim_get_current_buf())

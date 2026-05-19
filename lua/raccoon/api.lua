@@ -358,7 +358,7 @@ end
 ---@param owner string Repository owner
 ---@param repo string Repository name
 ---@param number number PR number
----@param opts table Comment options: body, commit_id, path, line (or position for old API)
+---@param opts table Comment options: body, commit_id, path, line (or position for old API), subject_type
 ---@param token string GitHub token
 ---@param callback fun(comment: table|nil, err: string|nil)
 function M.create_comment(owner, repo, number, opts, token, callback)
@@ -372,12 +372,15 @@ function M.create_comment(owner, repo, number, opts, token, callback)
       commit_id = opts.commit_id,
       path = opts.path,
     }
+    if opts.subject_type then
+      body.subject_type = opts.subject_type
+    end
 
     -- Use position-based commenting (works with diff hunks)
     -- line + side is for the newer API but requires the line to be in a diff hunk
     if opts.position then
       body.position = opts.position
-    else
+    elseif opts.subject_type ~= "file" then
       -- Try line-based (newer API)
       body.line = opts.line
       body.side = opts.side or "RIGHT"

@@ -631,6 +631,7 @@ local function send_new_thread(path, line)
     vim.notify(disable_reason, vim.log.levels.WARN)
     return
   end
+  local line_commentable = is_line_commentable(path, line)
 
   local function on_send_success()
     close_active_editor(true)
@@ -638,18 +639,24 @@ local function send_new_thread(path, line)
     require("raccoon.open").sync()
   end
 
-  local function send_via_rest(rest_error_prefix)
+  local function send_via_rest(rest_error_prefix, rest_opts)
+    rest_opts = rest_opts or {}
     if not ctx.pr or not ctx.pr.head or not ctx.pr.head.sha then
       vim.notify("Missing PR data (commit_id)", vim.log.levels.ERROR)
       return
     end
-    api.create_comment(ctx.owner, ctx.repo, ctx.number, {
+    local comment_opts = {
       body = body,
       path = path,
-      line = line,
       commit_id = ctx.pr.head.sha,
-      side = "RIGHT",
-    }, ctx.token, function(_result, err)
+    }
+    if rest_opts.subject_type == "file" then
+      comment_opts.subject_type = "file"
+    else
+      comment_opts.line = line
+      comment_opts.side = "RIGHT"
+    end
+    api.create_comment(ctx.owner, ctx.repo, ctx.number, comment_opts, ctx.token, function(_result, err)
       vim.schedule(function()
         if err then
           local prefix = rest_error_prefix or "Failed to send thread"
@@ -659,6 +666,11 @@ local function send_new_thread(path, line)
         on_send_success()
       end)
     end)
+  end
+
+  if not line_commentable then
+    send_via_rest(nil, { subject_type = "file" })
+    return
   end
 
   local pr_node_id = ctx.pr and ctx.pr.node_id
@@ -682,7 +694,7 @@ local function send_new_thread(path, line)
 
       -- Compatibility fallback: older backends may not support GraphQL thread
       -- creation, but REST still works for classic in-diff line comments.
-      if is_line_commentable(path, line) then
+      if line_commentable then
         send_via_rest("Failed to send thread via GraphQL (fallback to REST)")
         return
       end
