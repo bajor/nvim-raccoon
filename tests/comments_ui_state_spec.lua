@@ -61,9 +61,18 @@ local function current_win_title()
   return ""
 end
 
-local function feed_keys(lhs)
-  local keys = vim.api.nvim_replace_termcodes(lhs, true, false, true)
-  vim.api.nvim_feedkeys(keys, "xt", false)
+local function trigger_buffer_mapping(buf, mode, lhs)
+  local expected = vim.api.nvim_replace_termcodes(lhs, true, false, true)
+  local expected_suffix = lhs:sub(-1)
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
+    local actual = map.lhsraw or map.lhs or ""
+    local expanded = vim.api.nvim_replace_termcodes(actual, true, false, true)
+    if type(map.callback) == "function" and (expanded == expected or actual:sub(-1) == expected_suffix) then
+      map.callback()
+      return
+    end
+  end
+  error(string.format("mapping %q not found for mode %s", lhs, mode))
 end
 
 local function setup_session()
@@ -157,6 +166,7 @@ end
 
 describe("raccoon.comments UI state restore", function()
   local original_notify
+  local original_load_shortcuts
   local baseline_buffers
 
   before_each(function()
@@ -165,12 +175,17 @@ describe("raccoon.comments UI state restore", function()
       baseline_buffers[buf] = true
     end
     original_notify = vim.notify
+    original_load_shortcuts = config.load_shortcuts
+    config.load_shortcuts = function()
+      return vim.deepcopy(config.defaults.shortcuts)
+    end
     setup_session()
   end)
 
   after_each(function()
     comments.close_overlays(true)
     vim.notify = original_notify
+    config.load_shortcuts = original_load_shortcuts
     state.reset()
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       if not baseline_buffers[buf] and vim.api.nvim_buf_is_valid(buf) then
@@ -355,7 +370,6 @@ describe("raccoon.comments UI state restore", function()
     local original_config_load = config.load
     local original_get_token_entry = config.get_token_entry
     local original_api_init = api.init
-    local original_create_review_thread = api.create_review_thread
     local original_create_comment = api.create_comment
     local original_sync = open.sync
 
@@ -376,10 +390,6 @@ describe("raccoon.comments UI state restore", function()
       return { token = "ghp_fake" }
     end
     api.init = function() end
-    api.create_review_thread = function(_owner, _repo, _number, opts, _token, callback)
-      graphql_called = true
-      callback(nil, "GraphQL should not be used for file-level comments")
-    end
     api.create_comment = function(_owner, _repo, _number, opts, _token, callback)
       rest_called = true
       assert.equals("lua/a.lua", opts.path)
@@ -406,7 +416,8 @@ describe("raccoon.comments UI state restore", function()
     local editor_buf = vim.api.nvim_get_current_buf()
     local line_count = vim.api.nvim_buf_line_count(editor_buf)
     vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "graphQL send body" })
-    feed_keys(" s")
+    vim.cmd("stopinsert")
+    trigger_buffer_mapping(editor_buf, "n", " s")
     vim.wait(1000, function()
       return sync_called
     end, 10)
@@ -415,7 +426,6 @@ describe("raccoon.comments UI state restore", function()
     config.load = original_config_load
     config.get_token_entry = original_get_token_entry
     api.init = original_api_init
-    api.create_review_thread = original_create_review_thread
     api.create_comment = original_create_comment
     open.sync = original_sync
 
@@ -427,12 +437,11 @@ describe("raccoon.comments UI state restore", function()
     assert.matches("Thread sent", notifications[#notifications])
   end)
 
-  it("falls back to REST for in-diff lines when GraphQL thread creation fails", function()
+  it("sends in-diff line comments as persisted REST review comments", function()
     local original_notify = vim.notify
     local original_config_load = config.load
     local original_get_token_entry = config.get_token_entry
     local original_api_init = api.init
-    local original_create_review_thread = api.create_review_thread
     local original_create_comment = api.create_comment
     local original_sync = open.sync
 
@@ -451,10 +460,6 @@ describe("raccoon.comments UI state restore", function()
       return { token = "ghp_fake" }
     end
     api.init = function() end
-    api.create_review_thread = function(_owner, _repo, _number, _opts, _token, callback)
-      graphql_called = true
-      callback(nil, "GraphQL error: mutation unavailable")
-    end
     api.create_comment = function(_owner, _repo, _number, opts, _token, callback)
       rest_called = true
       assert.equals("lua/a.lua", opts.path)
@@ -480,7 +485,8 @@ describe("raccoon.comments UI state restore", function()
     local editor_buf = vim.api.nvim_get_current_buf()
     local line_count = vim.api.nvim_buf_line_count(editor_buf)
     vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "fallback body" })
-    feed_keys(" s")
+    vim.cmd("stopinsert")
+    trigger_buffer_mapping(editor_buf, "n", " s")
     vim.wait(1000, function()
       return sync_called
     end, 10)
@@ -489,11 +495,10 @@ describe("raccoon.comments UI state restore", function()
     config.load = original_config_load
     config.get_token_entry = original_get_token_entry
     api.init = original_api_init
-    api.create_review_thread = original_create_review_thread
     api.create_comment = original_create_comment
     open.sync = original_sync
 
-    assert.is_true(graphql_called)
+    assert.is_false(graphql_called)
     assert.is_true(rest_called)
     assert.is_true(sync_called)
   end)
@@ -590,7 +595,7 @@ describe("raccoon.comments UI state restore", function()
     comments.show_comment_thread()
     assert.equals("picker", comments.capture_ui_state().kind)
 
-    feed_keys(" q")
+    trigger_buffer_mapping(vim.api.nvim_get_current_buf(), "n", " q")
 
     assert.is_nil(comments.capture_ui_state())
     assert.equals(file_buf, vim.api.nvim_get_current_buf())

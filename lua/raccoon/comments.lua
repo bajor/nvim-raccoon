@@ -672,36 +672,7 @@ local function send_new_thread(path, line)
     send_via_rest(nil, { subject_type = "file" })
     return
   end
-
-  local pr_node_id = ctx.pr and ctx.pr.node_id
-  if type(pr_node_id) ~= "string" or pr_node_id == "" then
-    send_via_rest()
-    return
-  end
-
-  api.create_review_thread(ctx.owner, ctx.repo, ctx.number, {
-    pull_request_id = pr_node_id,
-    body = body,
-    path = path,
-    line = line,
-    side = "RIGHT",
-  }, ctx.token, function(_result, err)
-    vim.schedule(function()
-      if not err then
-        on_send_success()
-        return
-      end
-
-      -- Compatibility fallback: older backends may not support GraphQL thread
-      -- creation, but REST still works for classic in-diff line comments.
-      if line_commentable then
-        send_via_rest("Failed to send thread via GraphQL (fallback to REST)")
-        return
-      end
-
-      vim.notify("Failed to send thread: " .. err, vim.log.levels.ERROR)
-    end)
-  end)
+  send_via_rest()
 end
 
 ---@param path string
