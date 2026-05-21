@@ -1,6 +1,7 @@
 local comments = require("raccoon.comments")
 local state = require("raccoon.state")
 local api = require("raccoon.api")
+local comment_metadata = require("raccoon.comment_metadata")
 local config = require("raccoon.config")
 local open = require("raccoon.open")
 
@@ -395,6 +396,7 @@ describe("raccoon.comments UI state restore", function()
       assert.equals("lua/a.lua", opts.path)
       assert.equals("file", opts.subject_type)
       assert.is_nil(opts.line)
+      assert.equals(comment_metadata.encode_file_line_anchor(10, "graphQL send body"), opts.body)
       callback({ id = 777 }, nil)
     end
     open.sync = function()

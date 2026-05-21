@@ -3,6 +3,7 @@
 local M = {}
 
 local api = require("raccoon.api")
+local comment_metadata = require("raccoon.comment_metadata")
 local comments = require("raccoon.comments")
 local config = require("raccoon.config")
 local diff = require("raccoon.diff")
@@ -228,6 +229,7 @@ local function build_review_payload(owner, repo, number, token, callback)
           }
 
           for _, comment in ipairs(review_comments or {}) do
+            comment_metadata.normalize_file_level_comment(comment)
             if comment.path then
               table.insert(ensure_comments_bucket(payload.comments_by_path, comment.path), comment)
             end

@@ -3,6 +3,7 @@
 local M = {}
 
 local api = require("raccoon.api")
+local comment_metadata = require("raccoon.comment_metadata")
 local config = require("raccoon.config")
 local diff = require("raccoon.diff")
 local NORMAL_MODE = config.NORMAL
@@ -651,6 +652,7 @@ local function send_new_thread(path, line)
       commit_id = ctx.pr.head.sha,
     }
     if rest_opts.subject_type == "file" then
+      comment_opts.body = comment_metadata.encode_file_line_anchor(line, body)
       comment_opts.subject_type = "file"
     else
       comment_opts.line = line

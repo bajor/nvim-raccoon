@@ -2,9 +2,11 @@ local open = require("raccoon.open")
 local state = require("raccoon.state")
 local config = require("raccoon.config")
 local api = require("raccoon.api")
+local comment_metadata = require("raccoon.comment_metadata")
 local comments = require("raccoon.comments")
 local commits = require("raccoon.commits")
 local git = require("raccoon.git")
+local thread_index = require("raccoon.thread_index")
 
 describe("raccoon.open", function()
   -- Reset state before each test
@@ -347,6 +349,145 @@ describe("raccoon.open", function()
       assert.equals("editor", snapshot.kind)
       assert.equals("new_thread", snapshot.editor_kind)
       assert.same({ "draft new thread" }, snapshot.input_lines)
+    end)
+
+    it("reanchors file-level review comments to the selected file line during sync", function()
+      state.start({
+        owner = "test",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/test/repo/pull/1",
+        clone_path = "/tmp/raccoon-open-file-comment-sync",
+      })
+      state.set_pr({
+        number = 1,
+        title = "Test PR",
+        head = { ref = "feature", sha = "oldsha" },
+        base = { ref = "main" },
+      })
+      state.set_files({
+        {
+          filename = "lua/a.lua",
+          patch = "@@ -1,2 +1,3 @@\n line 1\n+line 2\n line 3",
+        },
+      })
+
+      local original_notify = vim.notify
+      local original_config_load = config.load
+      local original_get_token_entry = config.get_token_entry
+      local original_api_init = api.init
+      local original_get_pr = api.get_pr
+      local original_get_pr_files = api.get_pr_files
+      local original_get_pr_comments = api.get_pr_comments
+      local original_get_issue_comments = api.get_issue_comments
+      local original_get_pr_reviews = api.get_pr_reviews
+      local original_get_pr_review_threads = api.get_pr_review_threads
+      local original_fetch_reset = git.fetch_reset
+      local original_update_base_branch = git.update_base_branch
+
+      local sync_completed = false
+
+      vim.notify = function(message)
+        if message == "PR synced - new commits loaded" then
+          sync_completed = true
+        end
+      end
+      config.load = function()
+        return {
+          github_host = "github.com",
+          tokens = {
+            test = "ghp_fake",
+          },
+        }, nil
+      end
+      config.get_token_entry = function()
+        return { token = "ghp_fake" }
+      end
+      api.init = function() end
+      api.get_pr = function(_owner, _repo, _number, _token, callback)
+        callback({
+          number = 1,
+          title = "Test PR",
+          head = { ref = "feature", sha = "newsha" },
+          base = { ref = "main" },
+        }, nil)
+      end
+      api.get_pr_files = function(_owner, _repo, _number, _token, callback)
+        callback({
+          {
+            filename = "lua/a.lua",
+            patch = "@@ -1,2 +1,3 @@\n line 1\n+line 2\n line 3",
+          },
+        }, nil)
+      end
+      api.get_pr_comments = function(_owner, _repo, _number, _token, callback)
+        callback({
+          {
+            id = 41,
+            body = comment_metadata.encode_file_line_anchor(10, "persisted body"),
+            path = "lua/a.lua",
+            subject_type = "file",
+            diff_hunk = "",
+            line = 1,
+            original_line = 1,
+            position = 1,
+            resolved = false,
+            in_reply_to_id = vim.NIL,
+            created_at = "2026-01-01T00:00:00Z",
+            user = { login = "reviewer" },
+          },
+        }, nil)
+      end
+      api.get_issue_comments = function(_owner, _repo, _number, _token, callback)
+        callback({}, nil)
+      end
+      api.get_pr_reviews = function(_owner, _repo, _number, _token, callback)
+        callback({}, nil)
+      end
+      api.get_pr_review_threads = function(_owner, _repo, _number, _token, callback)
+        callback({
+          [41] = {
+            thread_id = "thread-file-1",
+            isResolved = false,
+            resolvedBy = vim.NIL,
+          },
+        }, nil)
+      end
+      git.fetch_reset = function(_clone_path, _branch, _repo_url, callback)
+        callback(true, nil)
+      end
+      git.update_base_branch = function(_clone_path, _base_branch, callback)
+        callback(true, nil)
+      end
+
+      open.sync()
+      vim.wait(1000, function()
+        return sync_completed
+      end, 10)
+
+      vim.notify = original_notify
+      config.load = original_config_load
+      config.get_token_entry = original_get_token_entry
+      api.init = original_api_init
+      api.get_pr = original_get_pr
+      api.get_pr_files = original_get_pr_files
+      api.get_pr_comments = original_get_pr_comments
+      api.get_issue_comments = original_get_issue_comments
+      api.get_pr_reviews = original_get_pr_reviews
+      api.get_pr_review_threads = original_get_pr_review_threads
+      git.fetch_reset = original_fetch_reset
+      git.update_base_branch = original_update_base_branch
+
+      assert.is_true(sync_completed)
+
+      local file_comments = state.get_comments("lua/a.lua")
+      assert.equals(1, #file_comments)
+      assert.equals("persisted body", file_comments[1].body)
+      assert.equals(10, file_comments[1].line)
+
+      local index, err = thread_index.build()
+      assert.is_nil(err)
+      assert.equals(10, index.thread_by_id["thread-file-1"].line)
     end)
   end)
 end)
