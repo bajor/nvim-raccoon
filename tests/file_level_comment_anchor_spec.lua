@@ -33,7 +33,7 @@ local function trigger_buffer_mapping(buf, mode, lhs)
   error(string.format("mapping %q not found for mode %s", lhs, mode))
 end
 
-describe("file-level review comment anchors", function()
+describe("file-level review comments", function()
   before_each(function()
     state.reset()
     state.start({
@@ -64,7 +64,7 @@ describe("file-level review comment anchors", function()
     state.reset()
   end)
 
-  it("stores the selected file line in file-level fallback bodies", function()
+  it("sends plain bodies for file-level fallback comments", function()
     local original_config_load = config.load
     local original_get_token_entry = config.get_token_entry
     local original_api_init = api.init
@@ -112,13 +112,13 @@ describe("file-level review comment anchors", function()
     api.create_comment = original_create_comment
     require("raccoon.open").sync = original_sync
 
-    assert.equals(comment_metadata.encode_file_line_anchor(10, "persist me here"), captured_body)
+    assert.equals("persist me here", captured_body)
   end)
 
-  it("reanchors file-level review comments away from GitHub's synthetic line one", function()
+  it("keeps file-level review comments at GitHub's file placement while stripping legacy anchors", function()
     local comment = {
       id = 41,
-      body = comment_metadata.encode_file_line_anchor(10, "persisted body"),
+      body = "<!-- raccoon:file-line 10 -->\npersisted body",
       path = "lua/a.lua",
       subject_type = "file",
       line = 1,
@@ -138,8 +138,9 @@ describe("file-level review comment anchors", function()
 
     assert.is_nil(err)
     assert.equals("persisted body", comment.body)
-    assert.equals(10, comment.line)
+    assert.equals(1, comment.line)
     assert.is_nil(comment.position)
-    assert.equals(10, index.thread_by_id["thread-file-1"].line)
+    assert.equals(1, index.thread_by_id["thread-file-1"].line)
+    assert.equals("FILE", index.thread_by_id["thread-file-1"].line_label)
   end)
 end)

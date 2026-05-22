@@ -1,17 +1,6 @@
 ---@class RaccoonCommentMetadata
----Helpers for preserving selected file lines when GitHub falls back to file-level review comments.
+---Helpers for normalizing GitHub file-level review comments.
 local M = {}
-
-local FILE_LINE_PREFIX = "<!-- raccoon:file-line "
-local FILE_LINE_SUFFIX = " -->"
-
----@param line number
----@param body string
----@return string
-function M.encode_file_line_anchor(line, body)
-  local normalized_body = body or ""
-  return string.format("%s%d%s\n%s", FILE_LINE_PREFIX, line, FILE_LINE_SUFFIX, normalized_body)
-end
 
 ---@param body string|nil
 ---@return number|nil
@@ -39,18 +28,18 @@ function M.normalize_file_level_comment(comment)
     return
   end
 
-  local anchored_line, clean_body = M.decode_file_line_anchor(comment.body)
+  local _, clean_body = M.decode_file_line_anchor(comment.body)
   comment.body = clean_body
   comment.position = nil
-
-  if anchored_line then
-    comment.line = anchored_line
-    comment.original_line = anchored_line
-    return
+  local file_line = comment.line
+  if type(file_line) ~= "number" or file_line < 1 then
+    file_line = comment.original_line
   end
-
-  comment.line = nil
-  comment.original_line = nil
+  if type(file_line) ~= "number" or file_line < 1 then
+    file_line = 1
+  end
+  comment.line = file_line
+  comment.original_line = file_line
 end
 
 return M

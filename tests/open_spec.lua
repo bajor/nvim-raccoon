@@ -2,7 +2,6 @@ local open = require("raccoon.open")
 local state = require("raccoon.state")
 local config = require("raccoon.config")
 local api = require("raccoon.api")
-local comment_metadata = require("raccoon.comment_metadata")
 local comments = require("raccoon.comments")
 local commits = require("raccoon.commits")
 local git = require("raccoon.git")
@@ -351,7 +350,7 @@ describe("raccoon.open", function()
       assert.same({ "draft new thread" }, snapshot.input_lines)
     end)
 
-    it("reanchors file-level review comments to the selected file line during sync", function()
+    it("keeps file-level review comments at GitHub's file placement during sync", function()
       state.start({
         owner = "test",
         repo = "repo",
@@ -424,7 +423,7 @@ describe("raccoon.open", function()
         callback({
           {
             id = 41,
-            body = comment_metadata.encode_file_line_anchor(10, "persisted body"),
+            body = "<!-- raccoon:file-line 10 -->\npersisted body",
             path = "lua/a.lua",
             subject_type = "file",
             diff_hunk = "",
@@ -483,11 +482,12 @@ describe("raccoon.open", function()
       local file_comments = state.get_comments("lua/a.lua")
       assert.equals(1, #file_comments)
       assert.equals("persisted body", file_comments[1].body)
-      assert.equals(10, file_comments[1].line)
+      assert.equals(1, file_comments[1].line)
 
       local index, err = thread_index.build()
       assert.is_nil(err)
-      assert.equals(10, index.thread_by_id["thread-file-1"].line)
+      assert.equals(1, index.thread_by_id["thread-file-1"].line)
+      assert.equals("FILE", index.thread_by_id["thread-file-1"].line_label)
     end)
   end)
 end)

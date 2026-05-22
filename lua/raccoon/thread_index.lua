@@ -166,6 +166,7 @@ function M.build()
               line = M.get_comment_line(comment),
               resolved = comment.resolved == true,
               root_comment_id = nil,
+              is_file_level = comment.subject_type == "file",
             }
             thread_by_id[comment.thread_id] = thread
           end
@@ -183,6 +184,10 @@ function M.build()
 
           if comment.resolved ~= nil then
             thread.resolved = comment.resolved == true
+          end
+
+          if comment.subject_type == "file" then
+            thread.is_file_level = true
           end
 
           if normalize_nil(comment.in_reply_to_id) == nil and is_real_number(comment.id) then
@@ -205,7 +210,13 @@ function M.build()
     thread.preview = thread.latest_comment and (thread.latest_comment.body or "") or ""
     thread.preview = thread.preview:gsub("\n", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     thread.preview = thread.preview:sub(1, 80)
-    thread.line_label = is_real_number(thread.line) and ("L" .. thread.line) or "L?"
+    if thread.is_file_level then
+      thread.line_label = "FILE"
+    elseif is_real_number(thread.line) then
+      thread.line_label = "L" .. thread.line
+    else
+      thread.line_label = "L?"
+    end
     thread.has_my_comment = false
     if viewer_login then
       for _, comment in ipairs(thread.comments) do

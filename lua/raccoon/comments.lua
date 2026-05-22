@@ -3,7 +3,6 @@
 local M = {}
 
 local api = require("raccoon.api")
-local comment_metadata = require("raccoon.comment_metadata")
 local config = require("raccoon.config")
 local diff = require("raccoon.diff")
 local NORMAL_MODE = config.NORMAL
@@ -652,7 +651,6 @@ local function send_new_thread(path, line)
       commit_id = ctx.pr.head.sha,
     }
     if rest_opts.subject_type == "file" then
-      comment_opts.body = comment_metadata.encode_file_line_anchor(line, body)
       comment_opts.subject_type = "file"
     else
       comment_opts.line = line
@@ -694,7 +692,12 @@ end
 open_new_thread_editor = function(path, line, prefill_lines, opts)
   opts = opts or {}
   local shortcuts = config.load_shortcuts()
-  local lines = { "New thread on this line", "" }
+  local line_commentable = is_line_commentable(path, line)
+  local title_prefix = line_commentable and "New Thread" or "New File Comment"
+  local intro_line = line_commentable
+    and "New thread on this line"
+    or "New file comment (GitHub shows it at the top of the file)"
+  local lines = { intro_line, "" }
   for _, extra in ipairs(prefill_lines or {}) do
     table.insert(lines, extra)
   end
@@ -705,7 +708,7 @@ open_new_thread_editor = function(path, line, prefill_lines, opts)
   table.insert(lines, "")
   local allow_send = not opts.disable_send_reason
   open_editor_window({
-    title = build_editor_title("New Thread L" .. tostring(line), shortcuts, allow_send, false, false),
+    title = build_editor_title(title_prefix .. " L" .. tostring(line), shortcuts, allow_send, false, false),
     lines = lines,
     input_start = input_start,
     kind = "new_thread",

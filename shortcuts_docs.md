@@ -22,7 +22,7 @@ Run `:Raccoon shortcuts` or press `<leader>?` to see the active bindings.
 - `[I]`: parsed PR issue comment tied to a file/line
 
 Resolved review threads are hidden from flat-diff markers and badges, but `comment` on that line still shows them in the same-line picker. Full history also remains available in `:Raccoon list`.
-New review threads can be started from any line in files that are part of the PR changed-file set. Raccoon uses persisted REST review comments for both in-diff lines and file-level fallbacks, and preserves the selected line locally when GitHub stores the fallback as a file comment.
+New review threads can be started from any line in files that are part of the PR changed-file set. Raccoon uses persisted REST review comments for both in-diff lines and file-level fallbacks. When GitHub stores the fallback as a file comment, raccoon shows it at the top of the file to match GitHub instead of treating it as a line comment.
 
 ## Config shape
 
