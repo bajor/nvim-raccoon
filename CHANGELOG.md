@@ -4,15 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.14.0] - 2026-05-18
-
-### Changed
-- Diff and sign highlights now inherit from the active colorscheme's `DiffAdd` and `DiffDelete` groups when those groups are defined, while keeping Raccoon fallback colors for terminals and themes that do not provide them.
-
-### Fixed
-- Windows terminals now show red/green diff highlighting more reliably instead of depending on less portable hard-coded highlight colors alone.
-- Added a regression test covering reuse of `DiffAdd` and `DiffDelete` colors during `setup()`.
-
 ## [0.13.0] - 2026-05-16
 
 ### Added
@@ -33,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Commit mode and local mode are explicitly read-only for comment/thread work; use flat diff for review actions.
 - Re-entering commit mode now restores the last commit/page/file-tree position for the current PR, and returning to flat diff restores the previous file/thread/composer context.
 - `:Raccoon config` now generates the current full starter config, including shortcut defaults and commit-viewer settings.
+- Diff and sign highlights now inherit from the active colorscheme's `DiffAdd` and `DiffDelete` groups when those groups are defined, while keeping Raccoon fallback colors for terminals and themes that do not provide them.
 
 ### Removed
 - Flat-diff fallback from new thread/reply actions to broad PR comments.
@@ -40,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - `:Raccoon` usage/help and command-line completion now advertise `open` consistently.
+- Windows terminals now show red/green diff highlighting more reliably instead of depending on less portable hard-coded highlight colors alone.
+- Added a regression test covering reuse of `DiffAdd` and `DiffDelete` colors during `setup()`.
 
 ## [0.12.0] - 2026-05-04
 
