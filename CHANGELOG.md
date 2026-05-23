@@ -12,7 +12,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `[NR/U/I]` badges in flat diff and file picker rows.
 - Optional per-token `login` config field to skip viewer lookup and power needs-reply detection.
 - Flat-diff/commit-viewer mode restore for the current PR, including preserved reply/new-thread drafts across toggles.
-- `ARCHITECTURE_DIFF.md` for the thread-indexed review flow.
 
 ### Changed
 - Flat diff now hides resolved review-thread markers and badges, but `<leader>c` on a line still includes resolved same-line threads in the picker; full history also remains in `:Raccoon list`.
