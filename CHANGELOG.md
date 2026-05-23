@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] - 2026-05-18
+
+### Changed
+- Diff and sign highlights now inherit from the active colorscheme's `DiffAdd` and `DiffDelete` groups when those groups are defined, while keeping Raccoon fallback colors for terminals and themes that do not provide them.
+
+### Fixed
+- Windows terminals now show red/green diff highlighting more reliably instead of depending on less portable hard-coded highlight colors alone.
+- Added a regression test covering reuse of `DiffAdd` and `DiffDelete` colors during `setup()`.
+
 ## [0.13.0] - 2026-05-16
 
 ### Added
