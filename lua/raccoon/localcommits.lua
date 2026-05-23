@@ -493,6 +493,11 @@ local function setup_keymaps()
   -- Apply keymaps buffer-locally
   local commit_bufs = ui.collect_bufs(local_state)
   ui.apply_keymaps_to_bufs(local_mode_keymaps, commit_bufs)
+  if state.is_active() then
+    for _, buf in ipairs(commit_bufs) do
+      keymaps.setup_buffer(buf)
+    end
+  end
 
   -- Sidebar-local keymaps
   ui.setup_sidebar_nav(local_state.sidebar_buf, {

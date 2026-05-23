@@ -1,6 +1,6 @@
 ---@class RaccoonConfig
 ---@field github_host string GitHub host (default: "github.com", set for GitHub Enterprise)
----@field tokens table<string, string|{token:string, host:string}> Per-owner/org tokens
+---@field tokens table<string, string|{token:string, host:string?, login:string?}> Per-owner/org tokens
 ---@field repos string[] Optional list of repos to show PRs from ("owner/repo" format)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field sync_interval number Auto-sync interval in seconds (default: 300, minimum: 10)
@@ -39,6 +39,7 @@ M.defaults = {
     -- Global
     pr_list = "<leader>pr",
     show_shortcuts = "<leader>?",
+    sync = "<leader>r",
     -- Review navigation
     next_point = "<leader>j",
     prev_point = "<leader>k",
@@ -46,16 +47,19 @@ M.defaults = {
     prev_file = "<leader>pf",
     next_thread = "<leader>nt",
     prev_thread = "<leader>pt",
+    next_needs_reply_thread = "<leader>nr",
     -- Review actions
     comment = "<leader>c",
     description = "<leader>dd",
     list_comments = "<leader>ll",
-    merge = "<leader>rr",
+    list_files = "<leader>lf",
+    list_threads = "<leader>lt",
+    merge = "<leader>mr",
     commit_viewer_toggle = "<leader>cm",
     -- Comment editor
-    comment_save = "<leader>s",
-    comment_resolve = "<leader>r",
-    comment_unresolve = "<leader>u",
+    comment_send = "<leader>s",
+    comment_resolve = "<leader>cr",
+    comment_unresolve = "<leader>cu",
     -- Common
     close = "<leader>q",
     -- Commit viewer mode
@@ -83,6 +87,106 @@ local function expand_path(path)
   return path
 end
 
+---@param path string
+---@return string
+local function shrink_home(path)
+  local home = vim.fn.expand("~")
+  if path:sub(1, #home) == home then
+    return "~" .. path:sub(#home + 1)
+  end
+  return path
+end
+
+---@return string
+function M.default_config_template()
+  local commit_viewer = M.defaults.commit_viewer
+  local shortcuts = M.defaults.shortcuts
+  local clone_root = shrink_home(M.defaults.clone_root)
+
+  return string.format([[{
+  "github_host": "github.com",
+  "tokens": {
+    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
+  },
+  "repos": [],
+  "clone_root": "%s",
+  "sync_interval": %d,
+  "commit_viewer": {
+    "grid": { "rows": %d, "cols": %d },
+    "base_commits_count": %d,
+    "sidebar_width": %d,
+    "commit_message_max_lines": %d,
+    "passthrough_keys": []
+  },
+  "shortcuts": {
+    "pr_list": "%s",
+    "show_shortcuts": "%s",
+    "sync": "%s",
+    "next_point": "%s",
+    "prev_point": "%s",
+    "next_file": "%s",
+    "prev_file": "%s",
+    "next_thread": "%s",
+    "prev_thread": "%s",
+    "next_needs_reply_thread": "%s",
+    "comment": "%s",
+    "description": "%s",
+    "list_comments": "%s",
+    "list_files": "%s",
+    "list_threads": "%s",
+    "merge": "%s",
+    "commit_viewer_toggle": "%s",
+    "comment_send": "%s",
+    "comment_resolve": "%s",
+    "comment_unresolve": "%s",
+    "close": "%s",
+    "commit_viewer": {
+      "next_page": "%s",
+      "prev_page": "%s",
+      "next_page_alt": "%s",
+      "exit": "%s",
+      "maximize_prefix": "%s",
+      "browse_files": "%s"
+    }
+  }
+}]],
+    clone_root,
+    M.defaults.sync_interval,
+    commit_viewer.grid.rows,
+    commit_viewer.grid.cols,
+    commit_viewer.base_commits_count,
+    commit_viewer.sidebar_width,
+    commit_viewer.commit_message_max_lines,
+    shortcuts.pr_list,
+    shortcuts.show_shortcuts,
+    shortcuts.sync,
+    shortcuts.next_point,
+    shortcuts.prev_point,
+    shortcuts.next_file,
+    shortcuts.prev_file,
+    shortcuts.next_thread,
+    shortcuts.prev_thread,
+    shortcuts.next_needs_reply_thread,
+    shortcuts.comment,
+    shortcuts.description,
+    shortcuts.list_comments,
+    shortcuts.list_files,
+    shortcuts.list_threads,
+    shortcuts.merge,
+    shortcuts.commit_viewer_toggle,
+    shortcuts.comment_send,
+    shortcuts.comment_resolve,
+    shortcuts.comment_unresolve,
+    shortcuts.close,
+    shortcuts.commit_viewer.next_page,
+    shortcuts.commit_viewer.prev_page,
+    shortcuts.commit_viewer.next_page_alt,
+    shortcuts.commit_viewer.exit,
+    shortcuts.commit_viewer.maximize_prefix,
+    shortcuts.commit_viewer.browse_files
+  )
+end
+
 --- Validate required fields in config
 ---@param config table
 ---@return boolean, string?
@@ -93,7 +197,7 @@ local function validate_config(config)
     return false, "tokens is required (maps owner/org name to GitHub token)"
   end
 
-  -- Validate each token entry is a string or {token, host} table
+  -- Validate each token entry is a string or {token, host, login} table
   for key, value in pairs(config.tokens) do
     if type(value) == "table" then
       if type(value.token) ~= "string" or value.token == "" then
@@ -102,8 +206,11 @@ local function validate_config(config)
       if value.host ~= nil and (type(value.host) ~= "string" or value.host == "") then
         return false, string.format("tokens['%s'].host must be a non-empty string", key)
       end
+      if value.login ~= nil and (type(value.login) ~= "string" or value.login == "") then
+        return false, string.format("tokens['%s'].login must be a non-empty string", key)
+      end
     elseif type(value) ~= "string" or value == "" then
-      return false, string.format("tokens['%s'] must be a non-empty string or {token, host} table", key)
+      return false, string.format("tokens['%s'] must be a non-empty string or {token, host, login} table", key)
     end
   end
 
@@ -150,9 +257,14 @@ function M.load()
   -- Normalize host in table token entries
   if config.tokens and type(config.tokens) == "table" then
     for key, value in pairs(config.tokens) do
-      if type(value) == "table" and value.host then
-        value.host = value.host:lower():gsub("^%s+", ""):gsub("%s+$", "")
-        value.host = value.host:gsub("^https?://", ""):gsub("/+$", "")
+      if type(value) == "table" then
+        if value.host then
+          value.host = value.host:lower():gsub("^%s+", ""):gsub("%s+$", "")
+          value.host = value.host:gsub("^https?://", ""):gsub("/+$", "")
+        end
+        if value.login then
+          value.login = value.login:gsub("^%s+", ""):gsub("%s+$", "")
+        end
         config.tokens[key] = value
       end
     end
@@ -185,27 +297,12 @@ function M.create_default()
     return false, "Config file already exists"
   end
 
-  local default = {
-    github_host = "github.com",
-    tokens = { ["your-username"] = "ghp_xxxxxxxxxxxxxxxxxxxx" },
-    clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
-    sync_interval = 300,
-    commit_viewer = {
-      grid = { rows = 2, cols = 2 },
-      base_commits_count = 20,
-    },
-  }
-
-  local json = vim.json.encode(default)
-  -- Pretty print JSON
-  local formatted = json:gsub(",", ",\n  "):gsub("{", "{\n  "):gsub("}", "\n}")
-
   local file = io.open(M.config_path, "w")
   if not file then
     return false, "Cannot create config file"
   end
 
-  file:write(formatted)
+  file:write(M.default_config_template())
   file:close()
 
   return true, nil
@@ -300,19 +397,39 @@ function M.load_commit_viewer()
   return viewer
 end
 
---- Get the token and host for a given owner/org from the tokens table
+--- Get the normalized token entry for a given owner/org from the tokens table.
+---@param config RaccoonConfig
+---@param owner string
+---@return {token: string, host: string, login: string|nil}? entry
+function M.get_token_entry(config, owner)
+  if not config.tokens or not config.tokens[owner] then
+    return nil
+  end
+  local value = config.tokens[owner]
+  if type(value) == "table" then
+    return {
+      token = value.token,
+      host = value.host or config.github_host,
+      login = value.login,
+    }
+  end
+  return {
+    token = value,
+    host = config.github_host,
+    login = nil,
+  }
+end
+
+--- Get the token and host for a given owner/org from the tokens table.
 ---@param config RaccoonConfig
 ---@param owner string
 ---@return string? token, string? host
 function M.get_token_for_owner(config, owner)
-  if not config.tokens or not config.tokens[owner] then
+  local entry = M.get_token_entry(config, owner)
+  if not entry then
     return nil, nil
   end
-  local value = config.tokens[owner]
-  if type(value) == "table" then
-    return value.token, value.host or config.github_host
-  end
-  return value, config.github_host
+  return entry.token, entry.host
 end
 
 --- Get the token and host for a repo string ("owner/repo")
@@ -328,9 +445,9 @@ function M.get_token_for_repo(config, repo)
   return M.get_token_for_owner(config, owner)
 end
 
---- Get all token entries normalized as {key, token, host}
+--- Get all token entries normalized as {key, token, host, login}
 ---@param config RaccoonConfig
----@return {key: string, token: string, host: string}[]
+---@return {key: string, token: string, host: string, login: string|nil}[]
 function M.get_all_tokens(config)
   local entries = {}
   if not config.tokens or type(config.tokens) ~= "table" then
@@ -338,9 +455,14 @@ function M.get_all_tokens(config)
   end
   for key, value in pairs(config.tokens) do
     if type(value) == "table" and value.token then
-      table.insert(entries, { key = key, token = value.token, host = value.host or config.github_host })
+      table.insert(entries, {
+        key = key,
+        token = value.token,
+        host = value.host or config.github_host,
+        login = value.login,
+      })
     elseif type(value) == "string" then
-      table.insert(entries, { key = key, token = value, host = config.github_host })
+      table.insert(entries, { key = key, token = value, host = config.github_host, login = nil })
     end
   end
   return entries

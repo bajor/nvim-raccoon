@@ -233,10 +233,10 @@ describe("E2E: PR review workflow", function()
       assert.equals(3, total)
     end)
 
-    it("can add pending comment", function()
+    it("counts comments regardless of legacy pending flags", function()
       local main_comments = state.get_comments("src/main.lua")
       table.insert(main_comments, {
-        id = nil, -- Pending comments have no ID yet
+        id = nil,
         path = "src/main.lua",
         line = 10,
         body = "My new comment",
@@ -245,34 +245,11 @@ describe("E2E: PR review workflow", function()
       })
       state.set_comments("src/main.lua", main_comments)
 
-      local pending = comments.get_pending_comments()
-      assert.equals(1, #pending)
-      assert.equals("My new comment", pending[1].body)
-    end)
-
-    it("can clear pending comments after submit", function()
-      local main_comments = state.get_comments("src/main.lua")
-      table.insert(main_comments, {
-        id = nil,
-        path = "src/main.lua",
-        line = 10,
-        body = "My pending comment",
-        pending = true,
-      })
-      state.set_comments("src/main.lua", main_comments)
-
-      -- Simulate submit - mark as not pending, add ID
-      main_comments = state.get_comments("src/main.lua")
-      for i, comment in ipairs(main_comments) do
-        if comment.pending then
-          main_comments[i].pending = false
-          main_comments[i].id = 999 -- ID from server
-        end
+      local total = 0
+      for _, file in ipairs(state.get_files()) do
+        total = total + #state.get_comments(file.filename)
       end
-      state.set_comments("src/main.lua", main_comments)
-
-      local pending = comments.get_pending_comments()
-      assert.equals(0, #pending)
+      assert.equals(4, total)
     end)
   end)
 

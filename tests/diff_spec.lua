@@ -413,6 +413,34 @@ describe("raccoon.diff", function()
     end)
   end)
 
+  describe("is_line_in_review_context", function()
+    it("accepts unchanged context lines inside a hunk", function()
+      local patch = "@@ -10,2 +10,3 @@\n line 10\n+line 11\n line 12"
+
+      assert.is_true(diff.is_line_in_review_context(patch, 10))
+      assert.is_true(diff.is_line_in_review_context(patch, 11))
+      assert.is_true(diff.is_line_in_review_context(patch, 12))
+    end)
+
+    it("rejects lines outside the diff context", function()
+      local patch = "@@ -10,2 +10,3 @@\n line 10\n+line 11\n line 12"
+
+      assert.is_false(diff.is_line_in_review_context(patch, 9))
+      assert.is_false(diff.is_line_in_review_context(patch, 13))
+      assert.is_false(diff.is_line_in_review_context(patch, 99))
+    end)
+
+    it("keeps correct line numbers across blank lines in a hunk", function()
+      local patch = "@@ -1,4 +1,5 @@\n line 1\n \n+line 3\n line 4\n line 5"
+
+      assert.is_true(diff.is_line_in_review_context(patch, 1))
+      assert.is_true(diff.is_line_in_review_context(patch, 2))
+      assert.is_true(diff.is_line_in_review_context(patch, 3))
+      assert.is_true(diff.is_line_in_review_context(patch, 4))
+      assert.is_true(diff.is_line_in_review_context(patch, 5))
+    end)
+  end)
+
   describe("apply_highlights edge cases", function()
     it("handles invalid buffer gracefully", function()
       -- Should not error

@@ -16,6 +16,7 @@ M.server_info = { is_ghes = false }
 
 --- Cache for viewer login per token (keyed by first 8 chars of token)
 local viewer_cache = {}
+local graphql_request
 
 --- Compute REST and GraphQL base URLs from a GitHub host
 ---@param host string GitHub host (e.g. "github.com" or "github.mycompany.com")
@@ -100,8 +101,37 @@ local function request(opts)
   end
 
   if response.status >= 400 then
-    local err_body = vim.json.decode(response.body or "{}") or {}
+    local ok, decoded = pcall(vim.json.decode, response.body or "{}")
+    local err_body = ok and decoded or {}
     local message = err_body.message or "Unknown error"
+    local details = {}
+    if type(err_body.errors) == "table" then
+      for _, item in ipairs(err_body.errors) do
+        if type(item) == "table" then
+          local field = item.field
+          local code = item.code
+          local detail = item.message
+          local parts = {}
+          if field and field ~= "" then
+            table.insert(parts, tostring(field))
+          end
+          if code and code ~= "" then
+            table.insert(parts, tostring(code))
+          end
+          if detail and detail ~= "" then
+            table.insert(parts, tostring(detail))
+          end
+          if #parts > 0 then
+            table.insert(details, table.concat(parts, ": "))
+          end
+        elseif type(item) == "string" and item ~= "" then
+          table.insert(details, item)
+        end
+      end
+    end
+    if #details > 0 then
+      message = message .. " [" .. table.concat(details, "; ") .. "]"
+    end
     return nil, ghes_hint(string.format("GitHub API error (%d): %s", response.status, message), response.status)
   end
 
@@ -328,7 +358,7 @@ end
 ---@param owner string Repository owner
 ---@param repo string Repository name
 ---@param number number PR number
----@param opts table Comment options: body, commit_id, path, line (or position for old API)
+---@param opts table Comment options: body, commit_id, path, line (or position for old API), subject_type
 ---@param token string GitHub token
 ---@param callback fun(comment: table|nil, err: string|nil)
 function M.create_comment(owner, repo, number, opts, token, callback)
@@ -342,12 +372,15 @@ function M.create_comment(owner, repo, number, opts, token, callback)
       commit_id = opts.commit_id,
       path = opts.path,
     }
+    if opts.subject_type then
+      body.subject_type = opts.subject_type
+    end
 
     -- Use position-based commenting (works with diff hunks)
     -- line + side is for the newer API but requires the line to be in a diff hunk
     if opts.position then
       body.position = opts.position
-    else
+    elseif opts.subject_type ~= "file" then
       -- Try line-based (newer API)
       body.line = opts.line
       body.side = opts.side or "RIGHT"
@@ -363,7 +396,9 @@ function M.create_comment(owner, repo, number, opts, token, callback)
     if err then
       -- Add hint for common 422 error
       if err:find("422") then
-        err = err .. " (Line must be in diff context - try commenting on a changed line)"
+        err = err
+          .. " (Line must be in PR diff context; "
+          .. "GitHub accepts changed lines and unchanged lines shown for context)"
       end
       callback(nil, err)
       return
@@ -387,6 +422,42 @@ function M.update_comment(owner, repo, comment_id, body, token, callback)
     local response, err = request({
       url = url,
       method = "PATCH",
+      token = token,
+      body = { body = body },
+    })
+
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    callback(response.data, nil)
+  end)
+end
+
+--- Create a reply on an existing review thread.
+--- GitHub requires the top-level review comment id for the thread.
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param number number PR number
+---@param comment_id number Top-level review comment ID for the thread
+---@param body string Reply body
+---@param token string GitHub token
+---@param callback fun(comment: table|nil, err: string|nil)
+function M.reply_to_comment(owner, repo, number, comment_id, body, token, callback)
+  vim.schedule(function()
+    local url = string.format(
+      "%s/repos/%s/%s/pulls/%d/comments/%d/replies",
+      M.base_url,
+      owner,
+      repo,
+      number,
+      comment_id
+    )
+
+    local response, err = request({
+      url = url,
+      method = "POST",
       token = token,
       body = { body = body },
     })
@@ -545,7 +616,7 @@ end
 ---@param variables table Query variables
 ---@param token string GitHub token
 ---@return table|nil response, string|nil error
-local function graphql_request(query, variables, token)
+graphql_request = function(query, variables, token)
   local headers = default_headers(token)
   headers["Content-Type"] = "application/json"
 

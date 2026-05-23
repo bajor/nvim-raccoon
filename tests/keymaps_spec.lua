@@ -2,9 +2,34 @@ local keymaps = require("raccoon.keymaps")
 local config = require("raccoon.config")
 
 describe("raccoon.keymaps", function()
+  local function has_buf_keymap(buf, mode, lhs)
+    for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
+      if map.lhs == lhs then
+        return true
+      end
+    end
+    return false
+  end
+
+  local function current_float_window()
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      local win_config = vim.api.nvim_win_get_config(win)
+      if win_config.relative ~= "" then
+        return win
+      end
+    end
+    return nil
+  end
+
   after_each(function()
     -- Clean up keymaps after each test
     keymaps.clear()
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      local win_config = vim.api.nvim_win_get_config(win)
+      if win_config.relative ~= "" then
+        vim.api.nvim_win_close(win, true)
+      end
+    end
   end)
 
 
@@ -162,6 +187,94 @@ describe("raccoon.keymaps", function()
     it("show_description does not error when no session", function()
       -- Should not error (just warns via ui module)
       keymaps.show_description()
+    end)
+  end)
+
+  describe("merge_picker", function()
+    local api = require("raccoon.api")
+    local state = require("raccoon.state")
+    local localcommits = require("raccoon.localcommits")
+    local original_notify
+    local original_config_load
+    local original_load_shortcuts
+    local original_get_token_for_owner
+    local original_api_init
+    local original_get_check_runs
+
+    before_each(function()
+      state.reset()
+      original_notify = vim.notify
+      original_config_load = config.load
+      original_load_shortcuts = config.load_shortcuts
+      original_get_token_for_owner = config.get_token_for_owner
+      original_api_init = api.init
+      original_get_check_runs = api.get_check_runs
+      vim.notify = function() end
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 42,
+        url = "https://github.com/owner/repo/pull/42",
+      })
+      state.set_pr({
+        head = { sha = "abc123" },
+      })
+      state.set_commit_mode(false)
+      localcommits._get_state().active = false
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+      config.load = original_config_load
+      config.load_shortcuts = original_load_shortcuts
+      config.get_token_for_owner = original_get_token_for_owner
+      api.init = original_api_init
+      api.get_check_runs = original_get_check_runs
+      state.reset()
+      localcommits._get_state().active = false
+    end)
+
+    it("uses picker navigation only and does not show footer hints", function()
+      config.load = function()
+        return { github_host = "https://github.com" }, nil
+      end
+      config.load_shortcuts = function()
+        return vim.deepcopy(config.defaults.shortcuts)
+      end
+      config.get_token_for_owner = function()
+        return "token"
+      end
+      api.init = function() end
+      api.get_check_runs = function(_, _, _, _, callback)
+        callback({ check_runs = {} }, nil)
+      end
+
+      keymaps.merge_picker()
+      vim.wait(100, function()
+        return current_float_window() ~= nil
+      end)
+
+      local win = current_float_window()
+      assert.is_not_nil(win)
+      local buf = vim.api.nvim_win_get_buf(win)
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+      assert.is_true(has_buf_keymap(buf, "n", "j"))
+      assert.is_true(has_buf_keymap(buf, "n", "k"))
+      assert.is_true(has_buf_keymap(buf, "n", "<CR>"))
+      assert.is_true(has_buf_keymap(buf, "n", " q"))
+      assert.is_false(has_buf_keymap(buf, "n", "1"))
+      assert.is_false(has_buf_keymap(buf, "n", "2"))
+      assert.is_false(has_buf_keymap(buf, "n", "3"))
+
+      for _, line in ipairs(lines) do
+        assert.is_nil(line:match("%[1%]"))
+        assert.is_nil(line:match("%[2%]"))
+        assert.is_nil(line:match("%[3%]"))
+        assert.is_nil(line:match("<leader>q"))
+        assert.is_nil(line:match("j/k: navigate"))
+        assert.is_nil(line:match("Enter: select"))
+      end
     end)
   end)
 

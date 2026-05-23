@@ -1,9 +1,38 @@
 local ui = require("raccoon.ui")
 local commit_ui = require("raccoon.commit_ui")
+local commits = require("raccoon.commits")
 local localcommits = require("raccoon.localcommits")
 local state = require("raccoon.state")
 
 describe("raccoon.ui", function()
+  local function has_buf_keymap(buf, mode, lhs)
+    for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
+      if map.lhs == lhs then
+        return true
+      end
+    end
+    return false
+  end
+
+  local function popup_title(win)
+    local title = vim.api.nvim_win_get_config(win).title
+    if type(title) == "string" then
+      return title
+    end
+    if type(title) == "table" then
+      local parts = {}
+      for _, chunk in ipairs(title) do
+        if type(chunk) == "table" then
+          table.insert(parts, chunk[1] or "")
+        elseif type(chunk) == "string" then
+          table.insert(parts, chunk)
+        end
+      end
+      return table.concat(parts)
+    end
+    return ""
+  end
+
   describe("create_floating_window", function()
     after_each(function()
       -- Clean up any open windows
@@ -38,7 +67,7 @@ describe("raccoon.ui", function()
     end)
 
     it("uses default dimensions if not provided", function()
-      local win, buf = ui.create_floating_window({})
+      local win, _ = ui.create_floating_window({})
 
       local config = vim.api.nvim_win_get_config(win)
       assert.equals(60, config.width)
@@ -135,6 +164,88 @@ describe("raccoon.ui", function()
     end)
   end)
 
+  describe("popup helpers", function()
+    it("decorates popup titles from configured and literal hints", function()
+      local title = ui.decorate_popup_title("Popup", {
+        { key = "close", label = "close" },
+        { literal = "Enter", label = "open" },
+      }, require("raccoon.config").defaults.shortcuts)
+
+      assert.equals("Popup (<leader>q=close, Enter=open)", title)
+    end)
+
+    it("binds configured close shortcut and escape", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      ui.bind_popup_close_keys(buf, function() end, {
+        shortcuts = require("raccoon.config").defaults.shortcuts,
+      })
+
+      assert.is_true(has_buf_keymap(buf, "n", " q"))
+      assert.is_true(has_buf_keymap(buf, "n", "<Esc>"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("can bind close keys for insert-mode popups too", function()
+      local cfg = require("raccoon.config")
+      local buf = vim.api.nvim_create_buf(false, true)
+      ui.bind_popup_close_keys(buf, function() end, {
+        shortcuts = cfg.defaults.shortcuts,
+        modes = { cfg.NORMAL, cfg.INSERT },
+      })
+
+      assert.is_true(has_buf_keymap(buf, "n", " q"))
+      assert.is_true(has_buf_keymap(buf, "i", " q"))
+      assert.is_true(has_buf_keymap(buf, "n", "<Esc>"))
+      assert.is_true(has_buf_keymap(buf, "i", "<Esc>"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("binds shared picker navigation keys", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      ui.bind_picker_navigation_keys(buf, {
+        move_down = function() end,
+        move_up = function() end,
+        select = function() end,
+      })
+
+      assert.is_true(has_buf_keymap(buf, "n", "j"))
+      assert.is_true(has_buf_keymap(buf, "n", "<Down>"))
+      assert.is_true(has_buf_keymap(buf, "n", "k"))
+      assert.is_true(has_buf_keymap(buf, "n", "<Up>"))
+      assert.is_true(has_buf_keymap(buf, "n", "<CR>"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("fits popup lines to content width", function()
+      local lines, width = ui.fit_popup_lines({
+        "short",
+        "a bit longer",
+      }, {
+        title = "Popup",
+        min_width = 10,
+        max_width = 80,
+      })
+
+      assert.same({ "short", "a bit longer" }, lines)
+      assert.equals(#("a bit longer"), width)
+    end)
+
+    it("truncates popup lines when they exceed max width", function()
+      local lines, width = ui.fit_popup_lines({
+        "01234567890123456789",
+      }, {
+        min_width = 10,
+        max_width = 12,
+      })
+
+      assert.equals(12, width)
+      assert.equals("012345678...", lines[1])
+    end)
+  end)
+
   describe("create_floating_window with percentages", function()
     after_each(function()
       for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -176,7 +287,6 @@ describe("raccoon.ui", function()
         border = "single",
       })
 
-      local config = vim.api.nvim_win_get_config(win)
       -- Border config varies by Neovim version, just check window is valid
       assert.is_true(vim.api.nvim_win_is_valid(win))
 
@@ -268,6 +378,7 @@ describe("raccoon.ui", function()
   describe("show_pr_list", function()
     after_each(function()
       ui.close_pr_list()
+      commits.clear_mode_restore_state()
     end)
 
     it("has show_pr_list function", function()
@@ -282,6 +393,38 @@ describe("raccoon.ui", function()
 
       assert.is_not_nil(ui.state.win)
       assert.is_true(vim.api.nvim_win_is_valid(ui.state.win))
+
+      ui.fetch_all_prs = original_fetch
+    end)
+
+    it("uses top title hints instead of footer hint lines", function()
+      local mock_prs = {
+        {
+          number = 42,
+          title = "Test PR",
+          html_url = "https://github.com/owner/repo/pull/42",
+          user = { login = "testuser" },
+          updated_at = "2026-01-01T00:00:00Z",
+          base = { repo = { full_name = "owner/repo" } },
+        },
+      }
+
+      local original_fetch = ui.fetch_all_prs
+      ui.fetch_all_prs = function(callback) callback(mock_prs, nil) end
+
+      ui.show_pr_list()
+
+      local title = popup_title(ui.state.win)
+      local lines = vim.api.nvim_buf_get_lines(ui.state.buf, 0, -1, false)
+
+      assert.matches("Enter=open", title)
+      assert.matches("<leader>q=close", title)
+      assert.matches("j/k=navigate", title)
+      for _, line in ipairs(lines) do
+        assert.is_nil(line:match("<leader>q"))
+        assert.is_nil(line:match("j/k: navigate"))
+        assert.is_nil(line:match("Enter: open"))
+      end
 
       ui.fetch_all_prs = original_fetch
     end)
@@ -378,6 +521,44 @@ describe("raccoon.ui", function()
       assert.equals(1, ui.state.selected)
 
       ui.fetch_all_prs = original_fetch
+    end)
+
+    it("blocks opening when commit mode is hiding an unsent draft", function()
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/owner/repo/pull/1",
+        clone_path = "/tmp/test",
+      })
+      commits._set_mode_restore_state({
+        session_key = state.get_url(),
+        overlay = {
+          kind = "editor",
+          input_lines = { "hidden draft" },
+        },
+      }, nil)
+
+      local original_fetch = ui.fetch_all_prs
+      local fetch_called = false
+      local notify_msg = nil
+      local original_notify = vim.notify
+      ui.fetch_all_prs = function(callback)
+        fetch_called = true
+        callback({}, nil)
+      end
+      vim.notify = function(msg)
+        notify_msg = msg
+      end
+
+      ui.show_pr_list()
+
+      vim.notify = original_notify
+      ui.fetch_all_prs = original_fetch
+
+      assert.is_false(fetch_called)
+      assert.is_nil(ui.state.win)
+      assert.equals("Cannot switch PRs with unsent text; clear it or send it first", notify_msg)
     end)
   end)
 

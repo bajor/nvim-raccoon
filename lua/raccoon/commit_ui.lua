@@ -16,6 +16,10 @@ local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separat
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
 local MIN_GRID_COL_WIDTH = 1
 
+local function popup_ui()
+  return require("raccoon.ui")
+end
+
 --- Effective header line cap used by both window height and truncation logic.
 ---@return number
 local function effective_header_line_cap()
@@ -325,6 +329,7 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
   local blocked = {
     "i", "I", "a", "A", "o", "O", "s", "S", "c", "C", "R",
     "d", "x", "p", "P", "u", "<C-r>",
+    "q",
     "Q", "gQ",
     "ZZ", "ZQ",
     "<C-z>",
@@ -1058,8 +1063,10 @@ function M.open_maximize(opts)
     M.apply_diff_highlights(opts.ns_id, buf, hl_lines)
 
     local shortcuts = config.load_shortcuts()
-    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
-    vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
+    local close_hint = popup_ui().popup_hint_text({
+      { key = "close", label = "close" },
+    }, shortcuts)
+    vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " %*"
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
 
@@ -1076,10 +1083,10 @@ function M.open_maximize(opts)
     local function close_fn()
       M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
     end
-    if config.is_enabled(shortcuts.close) then
-      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
-    end
-    vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+    popup_ui().bind_popup_close_keys(buf, close_fn, {
+      shortcuts = shortcuts,
+      keymap_opts = buf_opts,
+    })
 
     if #change_starts > 0 and config.is_enabled(shortcuts.commit_viewer.next_page) then
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_viewer.next_page, function()
@@ -1107,7 +1114,7 @@ function M.open_maximize(opts)
 end
 
 --- Open a floating picker list. Items are displayed in a bordered window; pressing
---- Enter calls on_select with the chosen item's value, q or the close shortcut closes.
+--- Enter calls on_select with the chosen item's value and the configured close shortcut dismisses it.
 ---@param opts { title: string, items: { display: string, value: any }[], state: table, on_select: fun(value: any) }
 function M.open_maximize_list(opts)
   local items = opts.items or {}
@@ -1148,8 +1155,10 @@ function M.open_maximize_list(opts)
   opts.state.maximize_buf = buf
 
   local shortcuts = config.load_shortcuts()
-  local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
-  vim.wo[win].winbar = " " .. opts.title .. "%=%#Comment# " .. close_hint .. " to exit %*"
+  local close_hint = popup_ui().popup_hint_text({
+    { key = "close", label = "close" },
+  }, shortcuts)
+  vim.wo[win].winbar = " " .. opts.title .. "%=%#Comment# " .. close_hint .. " %*"
   vim.wo[win].cursorline = true
 
   M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
@@ -1168,10 +1177,10 @@ function M.open_maximize_list(opts)
     end
   end
 
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
-  end
-  vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+  popup_ui().bind_popup_close_keys(buf, close_fn, {
+    shortcuts = shortcuts,
+    keymap_opts = buf_opts,
+  })
   vim.keymap.set(NORMAL_MODE, "<CR>", select_fn, buf_opts)
 end
 
@@ -1317,8 +1326,10 @@ function M.open_file_content(opts)
     opts.state.maximize_buf = buf
 
     local shortcuts = config.load_shortcuts()
-    local close_hint = config.is_enabled(shortcuts.close) and (shortcuts.close .. " or q") or "q"
-    vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " to exit %*"
+    local close_hint = popup_ui().popup_hint_text({
+      { key = "close", label = "close" },
+    }, shortcuts)
+    vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " %*"
     vim.wo[win].wrap = true
 
     M.lock_maximize_buf(buf, opts.state.grid_rows, opts.state.grid_cols)
@@ -1327,10 +1338,10 @@ function M.open_file_content(opts)
     local function close_fn()
       M.close_win_pair(opts.state, "maximize_win", "maximize_buf")
     end
-    if config.is_enabled(shortcuts.close) then
-      vim.keymap.set(NORMAL_MODE, shortcuts.close, close_fn, buf_opts)
-    end
-    vim.keymap.set(NORMAL_MODE, "q", close_fn, buf_opts)
+    popup_ui().bind_popup_close_keys(buf, close_fn, {
+      shortcuts = shortcuts,
+      keymap_opts = buf_opts,
+    })
   end)
 end
 

@@ -3,11 +3,11 @@
 local M = {}
 
 local api = require("raccoon.api")
-local comments = require("raccoon.comments")
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local INSERT_MODE = config.INSERT
 local state = require("raccoon.state")
+local ui = require("raccoon.ui")
 
 --- Review event types
 M.events = {
@@ -42,21 +42,10 @@ function M.submit_review(event, body, callback)
     return
   end
 
-  -- Submit review with comments
   api.submit_review(owner, repo, number, event, body, token, function(_result, err)
     if err then
       callback(err)
     else
-      -- Mark all pending comments as submitted
-      local files = state.get_files()
-      for _, file in ipairs(files) do
-        local file_comments = state.get_comments(file.filename)
-        for _, comment in ipairs(file_comments) do
-          if comment.pending then
-            comment.pending = false
-          end
-        end
-      end
       callback(nil)
     end
   end)
@@ -70,23 +59,21 @@ function M.show_submit_ui()
   end
 
   local pr = state.get_pr()
-  local pending = comments.get_pending_comments()
-
   -- Build prompt lines
   local lines = {
     "Submit Review for PR #" .. (state.get_number() or "?"),
     "",
     "Title: " .. (pr and pr.title or "Unknown"),
-    "Pending comments: " .. #pending,
-    "",
     "Select review type:",
     "",
     "  [a] Approve",
     "  [r] Request changes",
     "  [c] Comment only",
-    "",
-    "  [q] Cancel",
   }
+  ui.append_popup_footer(lines, {
+    { literal = "a/r/c", label = "choose" },
+    { key = "close", label = "close" },
+  })
 
   -- Create buffer
   local buf = vim.api.nvim_create_buf(false, true)
@@ -97,17 +84,19 @@ function M.show_submit_ui()
   local width = 50
   local height = #lines
 
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    row = (vim.o.lines - height) / 2,
-    col = (vim.o.columns - width) / 2,
+  local shortcuts = config.load_shortcuts()
+  local win, float_buf = ui.create_floating_window({
     width = width,
     height = height,
-    style = "minimal",
+    title = ui.decorate_popup_title("Submit Review", {
+      { key = "close", label = "close" },
+    }, shortcuts),
     border = "rounded",
-    title = " Submit Review ",
-    title_pos = "center",
   })
+  if float_buf ~= buf then
+    vim.api.nvim_win_set_buf(win, buf)
+    pcall(vim.api.nvim_buf_delete, float_buf, { force = true })
+  end
 
   -- Handle key presses
   local function handle_selection(event)
@@ -127,18 +116,10 @@ function M.show_submit_ui()
     handle_selection(M.events.COMMENT)
   end, { buffer = buf, noremap = true, silent = true })
 
-  local shortcuts = config.load_shortcuts()
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-      vim.notify("Review cancelled", vim.log.levels.INFO)
-    end, { buffer = buf, noremap = true, silent = true })
-  end
-
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  ui.bind_popup_close_keys(buf, function()
     vim.api.nvim_win_close(win, true)
     vim.notify("Review cancelled", vim.log.levels.INFO)
-  end, { buffer = buf, noremap = true, silent = true })
+  end, { shortcuts = shortcuts })
 end
 
 --- Prompt for review body and submit
@@ -167,17 +148,20 @@ function M.prompt_review_body(event)
   local width = 70
   local height = 15
 
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    row = (vim.o.lines - height) / 2,
-    col = (vim.o.columns - width) / 2,
+  local shortcuts = config.load_shortcuts()
+  local win, float_buf = ui.create_floating_window({
     width = width,
     height = height,
-    style = "minimal",
+    title = ui.decorate_popup_title(event_name, {
+      { literal = "Ctrl-S", label = "submit" },
+      { key = "close", label = "close" },
+    }, shortcuts),
     border = "rounded",
-    title = string.format(" %s (Ctrl-S to submit, q to cancel) ", event_name),
-    title_pos = "center",
   })
+  if float_buf ~= buf then
+    vim.api.nvim_win_set_buf(win, buf)
+    pcall(vim.api.nvim_buf_delete, float_buf, { force = true })
+  end
 
   -- Move cursor to empty line and start insert
   vim.api.nvim_win_set_cursor(win, { 5, 0 })
@@ -214,13 +198,10 @@ function M.prompt_review_body(event)
   end, { buffer = buf, noremap = true, silent = true })
 
   -- Cancel in normal mode
-  local shortcuts = config.load_shortcuts()
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-      vim.notify("Review cancelled", vim.log.levels.INFO)
-    end, { buffer = buf, noremap = true, silent = true })
-  end
+  ui.bind_popup_close_keys(buf, function()
+    vim.api.nvim_win_close(win, true)
+    vim.notify("Review cancelled", vim.log.levels.INFO)
+  end, { shortcuts = shortcuts })
 end
 
 --- Quick approve - approve without comments
@@ -255,16 +236,14 @@ function M.quick_approve(force)
 end
 
 --- Get the current review status summary
----@return table summary { files_reviewed, total_files, pending_comments, pr_title }
+---@return table summary { files_reviewed, total_files, pr_title }
 function M.get_status()
   local files = state.get_files()
-  local pending = comments.get_pending_comments()
   local pr = state.get_pr()
 
   return {
     files_reviewed = state.get_current_file_index(),
     total_files = #files,
-    pending_comments = #pending,
     pr_title = pr and pr.title,
     pr_number = state.get_number(),
     owner = state.get_owner(),
@@ -287,7 +266,6 @@ function M.show_status()
     string.format("Repo: %s/%s", status.owner or "?", status.repo or "?"),
     "",
     string.format("Files: %d/%d reviewed", status.files_reviewed, status.total_files),
-    string.format("Pending comments: %d", status.pending_comments),
   }
 
   -- Create buffer
@@ -299,28 +277,23 @@ function M.show_status()
   local width = 50
   local height = #lines
 
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    row = (vim.o.lines - height) / 2,
-    col = (vim.o.columns - width) / 2,
+  local shortcuts = config.load_shortcuts()
+  local win, float_buf = ui.create_floating_window({
     width = width,
     height = height,
-    style = "minimal",
+    title = ui.decorate_popup_title("Review Status", {
+      { key = "close", label = "close" },
+    }, shortcuts),
     border = "rounded",
-    title = " Review Status ",
-    title_pos = "center",
   })
-
-  local shortcuts = config.load_shortcuts()
-  if config.is_enabled(shortcuts.close) then
-    vim.keymap.set(NORMAL_MODE, shortcuts.close, function()
-      vim.api.nvim_win_close(win, true)
-    end, { buffer = buf, noremap = true, silent = true })
+  if float_buf ~= buf then
+    vim.api.nvim_win_set_buf(win, buf)
+    pcall(vim.api.nvim_buf_delete, float_buf, { force = true })
   end
 
-  vim.keymap.set(NORMAL_MODE, "<Esc>", function()
+  ui.bind_popup_close_keys(buf, function()
     vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, noremap = true, silent = true })
+  end, { shortcuts = shortcuts })
 end
 
 return M

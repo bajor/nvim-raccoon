@@ -32,11 +32,16 @@ function M.parse_patch(patch)
     return {}
   end
 
+  local normalized_patch = patch
+  if normalized_patch:sub(-1) ~= "\n" then
+    normalized_patch = normalized_patch .. "\n"
+  end
+
   local hunks = {}
   local current_hunk = nil
   local line_num = 0
 
-  for line in patch:gmatch("[^\n]+") do
+  for line in normalized_patch:gmatch("(.-)\n") do
     if line:match("^@@") then
       -- New hunk
       if current_hunk then
@@ -62,7 +67,7 @@ function M.parse_patch(patch)
         -- Store the content for virtual text display
         table.insert(current_hunk.lines, { type = "del", content = line:sub(2), line_num = line_num })
         table.insert(current_hunk.changes, { type = "del", line_num = line_num, content = line:sub(2) })
-      elseif line:match("^%s") or line == "" then
+      elseif not line:match("^\\ No newline at end of file$") and (line:match("^%s") or line == "") then
         -- Context line
         line_num = line_num + 1
         table.insert(current_hunk.lines, { type = "ctx", content = line:sub(2), line_num = line_num })
@@ -96,6 +101,29 @@ function M.get_changed_lines(patch)
   end
 
   return changes
+end
+
+--- Check whether a file line is in GitHub PR review diff context.
+--- GitHub accepts review comments on added lines and unchanged context lines
+--- that are shown inside a diff hunk.
+---@param patch string|nil
+---@param target_line number|nil
+---@return boolean
+function M.is_line_in_review_context(patch, target_line)
+  if type(target_line) ~= "number" or target_line < 1 then
+    return false
+  end
+
+  local hunks = M.parse_patch(patch)
+  for _, hunk in ipairs(hunks) do
+    for _, line in ipairs(hunk.lines) do
+      if line.line_num == target_line and (line.type == "add" or line.type == "ctx") then
+        return true
+      end
+    end
+  end
+
+  return false
 end
 
 --- Apply diff highlights to a buffer

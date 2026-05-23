@@ -11,7 +11,10 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
 
   if not subcommand then
     vim.notify(
-      "Usage: :Raccoon <prs|list|description|sync|merge|squash|rebase|commits|local|shortcuts|close|config>",
+      table.concat({
+        "Usage: :Raccoon",
+        "<open|prs|list|threads|files|description|sync|merge|squash|rebase|commits|local|shortcuts|close|config>",
+      }, " "),
       vim.log.levels.WARN
     )
     return
@@ -42,22 +45,40 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
   elseif subcommand == "list" then
     local pr_comments = require("raccoon.comments")
     pr_comments.list_comments()
+  elseif subcommand == "threads" then
+    local pr_comments = require("raccoon.comments")
+    pr_comments.list_threads()
+  elseif subcommand == "files" then
+    local pr_comments = require("raccoon.comments")
+    pr_comments.list_files()
   elseif subcommand == "description" or subcommand == "desc" then
     local ui = require("raccoon.ui")
     ui.show_description()
   elseif subcommand == "sync" or subcommand == "update" or subcommand == "refresh" then
-    local pr_open = require("raccoon.open")
-    pr_open.sync()
+    local state = require("raccoon.state")
+    if state.is_active() then
+      require("raccoon.open").sync()
+    elseif require("raccoon.ui").is_pr_list_open() then
+      require("raccoon.ui").refresh_pr_list()
+    else
+      vim.notify("No active raccoon view to sync", vim.log.levels.WARN)
+    end
   elseif subcommand == "close" then
     local pr_open = require("raccoon.open")
     pr_open.close_pr()
   elseif subcommand == "merge" or subcommand == "squash" or subcommand == "rebase" then
     local state = require("raccoon.state")
+    local localcommits = require("raccoon.localcommits")
     local api = require("raccoon.api")
     local config = require("raccoon.config")
 
     if not state.is_active() then
       vim.notify("No active PR review session", vim.log.levels.WARN)
+      return
+    end
+
+    if state.is_commit_mode() or localcommits.is_active() then
+      vim.notify("Available only in flat diff review mode", vim.log.levels.INFO)
       return
     end
 
@@ -80,8 +101,8 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     end
 
     api.init(state.get_github_host() or cfg.github_host)
-    local token = config.get_token_for_owner(cfg, owner)
-    if not token then
+    local token_entry = config.get_token_entry(cfg, owner)
+    if not token_entry then
       vim.notify(
         string.format("No token configured for '%s'. Add it to tokens in config.", owner),
         vim.log.levels.ERROR
@@ -105,7 +126,7 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     api.merge_pr(owner, repo, number, {
       merge_method = merge_method,
       commit_title = pr.title,
-    }, token, function(_result, err)
+    }, token_entry.token, function(_result, err)
       vim.schedule(function()
         if err then
           vim.notify("Merge failed: " .. err, vim.log.levels.ERROR)
@@ -128,7 +149,8 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     localcommits.toggle()
   elseif subcommand == "config" then
     -- Open config file in current buffer
-    local config_path = require("raccoon.config").config_path
+    local config = require("raccoon.config")
+    local config_path = config.config_path
     -- Create directory if it doesn't exist
     local config_dir = vim.fn.fnamemodify(config_path, ":h")
     if vim.fn.isdirectory(config_dir) == 0 then
@@ -136,52 +158,10 @@ vim.api.nvim_create_user_command("Raccoon", function(opts)
     end
     -- Create default config if file doesn't exist
     if vim.fn.filereadable(config_path) == 0 then
-      local clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos")
-      local home = vim.fn.expand("~")
-      clone_root = clone_root:gsub("^" .. vim.pesc(home), "~")
-      local default_config = string.format([[{
-  "github_host": "github.com",
-  "tokens": {
-    "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
-  },
-  "clone_root": "%s",
-  "sync_interval": 300,
-  "commit_viewer": {
-    "grid": { "rows": 2, "cols": 2 },
-    "base_commits_count": 20
-  },
-  "shortcuts": {
-    "pr_list": "<leader>pr",
-    "show_shortcuts": "<leader>?",
-    "next_point": "<leader>j",
-    "prev_point": "<leader>k",
-    "next_file": "<leader>nf",
-    "prev_file": "<leader>pf",
-    "next_thread": "<leader>nt",
-    "prev_thread": "<leader>pt",
-    "comment": "<leader>c",
-    "description": "<leader>dd",
-    "list_comments": "<leader>ll",
-    "merge": "<leader>rr",
-    "commit_viewer_toggle": "<leader>cm",
-    "comment_save": "<leader>s",
-    "comment_resolve": "<leader>r",
-    "comment_unresolve": "<leader>u",
-    "close": "<leader>q",
-    "commit_viewer": {
-      "next_page": "<leader>j",
-      "prev_page": "<leader>k",
-      "next_page_alt": "<leader>l",
-      "exit": "<leader>cm",
-      "maximize_prefix": "<leader>m",
-      "browse_files": "<leader>f"
-    }
-  }
-}]], clone_root)
-      local file = io.open(config_path, "w")
-      if file then
-        file:write(default_config)
-        file:close()
+      local ok, err = config.create_default()
+      if not ok and err ~= "Config file already exists" then
+        vim.notify("Failed to create config file: " .. err, vim.log.levels.ERROR)
+        return
       end
     end
     vim.cmd("edit " .. config_path)
@@ -195,7 +175,7 @@ end, {
     if #args == 2 then
       -- Complete subcommands
       return {
-        "prs", "list", "description", "sync", "merge", "squash",
+        "open", "prs", "list", "threads", "files", "description", "sync", "merge", "squash",
         "rebase", "commits", "local", "shortcuts", "close", "config",
       }
     end

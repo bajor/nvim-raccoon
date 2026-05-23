@@ -1,32 +1,30 @@
 # Keyboard Shortcuts Reference
 
-All keyboard shortcuts in raccoon.nvim are configurable via the `shortcuts` field in `~/.config/raccoon/config.json`. You only need to specify the keys you want to change — unspecified keys keep their defaults. Set any shortcut to `false` to disable it entirely.
+All shortcuts live under `shortcuts` in `~/.config/raccoon/config.json`. Override only the keys you want to change; everything else keeps the default. Set any shortcut to `false` to disable its keymap without removing the underlying `:Raccoon` command.
 
-Run `:Raccoon shortcuts` (or press `<leader>?` by default) to see your active bindings in a floating window.
+Run `:Raccoon shortcuts` or press `<leader>?` to see the active bindings.
 
-## Terminology
+## Scope
 
-The `commit_viewer` keyword is reused across three different parts of the config tree. They are distinct on purpose:
+- `flat diff review mode`: inline diff review, comment/thread navigation, thread/file pickers, commenting
+- `commit mode`: read-only commit viewer for understanding code history
+- `local mode`: read-only local commit viewer
 
-| Where | What |
-|-------|------|
-| `commit_viewer.*` (top level) | **Layout config** for commit viewer mode (`grid`, `sidebar_width`, `passthrough_keys`, etc.) — see [config_docs.md](config_docs.md). |
-| `shortcuts.commit_viewer_toggle` | **Toggle keymap** that enters and exits commit viewer mode (default `<leader>cm`). |
-| `shortcuts.commit_viewer.*` | **In-mode shortcuts** — keys that are active *inside* commit viewer mode (`next_page`, `maximize_prefix`, `browse_files`, etc.). |
-| `:Raccoon commits` | **Subcommand** equivalent to the toggle keymap. |
+`comment`, `list`, `threads`, `files`, thread navigation, file navigation, and merge are flat-diff-only. In commit/local mode they show `Available only in flat diff review mode`.
 
-## How it works
+`description`, `prs`, and `sync` remain available in commit mode. `prs` also remains available in local mode, and local mode keeps the same read-only boundary.
 
-Shortcuts are loaded from `config.json` at startup and whenever a floating window opens. The plugin merges your overrides with the built-in defaults using a deep merge, so you can override a single key without affecting the rest.
+## Abbreviations
 
-Values are validated on load:
-- **Strings** are accepted as keybindings (e.g. `"<leader>j"`, `"<C-n>"`, `"gj"`)
-- **`false`** disables the shortcut — the keymap is not registered, but the feature remains available via `:Raccoon` commands
-- **Invalid values** (numbers, `null`, empty strings) are silently replaced with the default
+- `[NR]`: unresolved thread where you commented and somebody replied after you
+- `[U]`: other unresolved thread
+- `[R]`: resolved thread row in `:Raccoon list`
+- `[I]`: parsed PR issue comment tied to a file/line
 
-Every floating window always responds to `Esc`, so disabling `close` won't lock you out.
+Resolved review threads are hidden from flat-diff markers and badges, but `comment` on that line still shows them in the same-line picker. Full history also remains available in `:Raccoon list`.
+Raccoon creates true line-level review threads only where GitHub's public PAT-authenticated review comment APIs can resolve them: changed lines and unchanged context lines already present in the PR diff. If you start a new thread on another line of a changed file, raccoon falls back to a file-level comment. GitHub shows that at the top of the file, and raccoon mirrors it there instead of pretending it stayed on the clicked line. GitHub's newer web UI can comment on more unchanged lines than the public APIs raccoon uses today.
 
-## Config structure
+## Config shape
 
 ```json
 {
@@ -34,128 +32,86 @@ Every floating window always responds to `Esc`, so disabling `close` won't lock 
     "pr_list": "<leader>pr",
     "show_shortcuts": "<leader>?",
     "next_point": "<leader>j",
-    "...": "...",
     "commit_viewer_toggle": "<leader>cm",
     "commit_viewer": {
-      "next_page": "<leader>j",
-      "...": "..."
+      "next_page": "<leader>j"
     }
   }
 }
 ```
 
-Top-level keys control global and review-session shortcuts. `commit_viewer_toggle` is the leaf keymap that enters/exits commit viewer mode. The nested `commit_viewer` object controls shortcuts that are only active inside commit viewer mode.
+`shortcuts.commit_viewer_toggle` is the flat-diff/commit-viewer toggle.
+It restores your last flat-diff location or composer draft when you come back, and restores your last commit-viewer position when you re-enter.
 
-## Global shortcuts
+`shortcuts.commit_viewer.*` are the keys active inside commit/local viewer layouts.
 
-These are registered at startup and work everywhere in Neovim while the plugin is loaded.
-
-| Config key | Default | Description |
-|------------|---------|-------------|
-| `pr_list` | `<leader>pr` | Open the PR list floating picker. Shows all open PRs across your configured repos, grouped by repository. Use `j`/`k` to navigate and `Enter` to open a PR for review. |
-| `show_shortcuts` | `<leader>?` | Open a floating window listing all active shortcuts grouped by category. Disabled shortcuts appear as `(disabled)`. The window closes on any keystroke. |
-
-## Review navigation
-
-Active during a PR review session. These shortcuts navigate between diff hunks, files, and comment threads.
+## Global
 
 | Config key | Default | Description |
 |------------|---------|-------------|
-| `next_point` | `<leader>j` | Jump to the next navigation point in the current file. Points include diff hunk starts and comment locations, sorted by line number. Wraps to the next file when reaching the end. |
-| `prev_point` | `<leader>k` | Jump to the previous navigation point. Wraps to the previous file when reaching the beginning. |
-| `next_file` | `<leader>nf` | Switch to the next changed file in the PR. Files are ordered as returned by the GitHub API (typically alphabetical by path). |
-| `prev_file` | `<leader>pf` | Switch to the previous changed file in the PR. |
-| `next_thread` | `<leader>nt` | Jump to the next comment thread in the current file. Threads are groups of comments on the same line. |
-| `prev_thread` | `<leader>pt` | Jump to the previous comment thread in the current file. |
+| `pr_list` | `<leader>pr` | Open the PR picker. |
+| `show_shortcuts` | `<leader>?` | Show the shortcuts help popup. |
 
-## Review actions
-
-Active during a PR review session. These open floating windows for specific actions.
+## Review Navigation
 
 | Config key | Default | Description |
 |------------|---------|-------------|
-| `comment` | `<leader>c` | Open a comment editor at the current cursor line. The comment is attached to the diff position in the PR. Press the `comment_save` shortcut to submit. |
-| `description` | `<leader>dd` | Toggle the PR description floating window. Shows the PR title, author, labels, and full body text rendered as markdown. |
-| `list_comments` | `<leader>ll` | Open a floating window listing all comments in the PR, grouped by file and line. Press `Enter` on a comment to view its full thread. |
-| `merge` | `<leader>rr` | Open the merge method picker. Shows CI status at the top, then three options: merge, squash, or rebase. Press `1`/`2`/`3` or navigate with `Enter`. |
-| `commit_viewer_toggle` *(formerly `commit_viewer` as a string leaf)* | `<leader>cm` | Toggle commit viewer mode. Enters a grid layout showing individual commit diffs with a sidebar listing all commits. Press again to exit back to normal review. |
+| `next_point` | `<leader>j` | Next diff hunk or visible comment point. Flat diff only. |
+| `prev_point` | `<leader>k` | Previous diff hunk or visible comment point. Flat diff only. |
+| `next_file` | `<leader>nf` | Next changed file, using smart landing inside that file. Flat diff only. |
+| `prev_file` | `<leader>pf` | Previous changed file, using smart landing inside that file. Flat diff only. |
+| `next_thread` | `<leader>nt` | Next unresolved review thread in flat-diff order. Flat diff only. |
+| `prev_thread` | `<leader>pt` | Previous unresolved review thread in flat-diff order. Flat diff only. |
+| `next_needs_reply_thread` | `<leader>nr` | Next unresolved thread that needs your reply. Flat diff only. |
 
-## Comment editor
-
-Active inside comment floating windows (new comment, thread view).
-
-| Config key | Default | Description |
-|------------|---------|-------------|
-| `comment_save` | `<leader>s` | Save and submit the comment. In a thread view, this adds a reply to the existing thread. In a new comment window, this creates a new inline comment on the PR. |
-| `comment_resolve` | `<leader>r` | Mark the current comment thread as resolved. Only works in the thread view window, not when creating a new comment. |
-| `comment_unresolve` | `<leader>u` | Mark the current comment thread as unresolved. Reverses a previous resolve action. |
-
-## Common
-
-Used across multiple contexts.
+## Review Actions
 
 | Config key | Default | Description |
 |------------|---------|-------------|
-| `close` | `<leader>q` | Close the current floating window or exit the review session. Used in the PR list, comment windows, description window, merge picker, and other floating UI. `Esc` always works as a fallback. |
+| `comment` | `<leader>c` | Open the current line's exact-thread picker or a new-thread composer. Resolved same-line threads are included there even though flat diff hides their inline markers. Only lines GitHub can resolve in the current PR diff become true line comments; other lines in changed files fall back to file-level comments shown at the top of the file. Flat diff only. |
+| `description` | `<leader>dd` | Toggle the PR description popup. Also available in commit mode. |
+| `list_comments` | `<leader>ll` | Open the broad PR comment history. Exact threads get separate rows even on the same line. Flat diff only. |
+| `list_threads` | `<leader>lt` | Open unresolved-thread picker. Flat diff only. |
+| `list_files` | `<leader>lf` | Open changed-file picker with `[NR/U/I]` counts. Flat diff only. |
+| `sync` | `<leader>r` | Full sync of the current raccoon context. In review sessions this is always a full PR sync. |
+| `merge` | `<leader>mr` | Open merge method picker. Flat diff only. |
+| `commit_viewer_toggle` | `<leader>cm` | Enter or exit commit viewer mode, preserving the last flat-diff draft/location and the last commit-viewer position for the current PR. |
 
-## Commit viewer mode *(formerly `shortcuts.commit_mode.*`)*
-
-These shortcuts are nested under `shortcuts.commit_viewer` in config and are only active inside commit viewer mode. Normal vim keybindings are mostly disabled in this mode to prevent breaking the grid layout.
+## Thread / Composer
 
 | Config key | Default | Description |
 |------------|---------|-------------|
-| `next_page` | `<leader>j` | Show the next page of diff hunks in the grid. When a commit has more hunks than grid cells, they are paginated. |
-| `prev_page` | `<leader>k` | Show the previous page of diff hunks. |
-| `next_page_alt` | `<leader>l` | Alias for `next_page`. Provides an alternative key for forward navigation. |
-| `exit` | `<leader>cm` | Exit commit viewer mode and return to the normal PR review view. |
-| `maximize_prefix` | `<leader>m` | Prefix for maximizing a grid cell. Followed by a cell number (1-9), e.g. `<leader>m1` maximizes cell 1 into a full floating window with the complete file diff. Inside the maximized view, normal vim navigation works (scrolling, search). Close with `q` or the `close` shortcut. |
-| `browse_files` | `<leader>f` | Toggle focus between the commit sidebar and the file tree. While in file tree mode, navigate with j/k, jump with gg/G, search with `/`, and press Enter to view a file's content at the current commit state. |
+| `comment_send` | `<leader>s` | Send the current reply or new thread immediately. |
+| `comment_resolve` | `<leader>cr` | Resolve the current thread. |
+| `comment_unresolve` | `<leader>cu` | Unresolve the current thread. |
+| `close` | `<leader>q` | Close the current popup when allowed. `Esc` always works as a fallback. |
 
-Note: `j`/`k` for navigating commits in the sidebar and `Enter` for selecting a commit are hardcoded and not configurable.
+If a composer contains text, close is blocked until you clear the message or send it.
 
-## Example: custom config
+## Commit / Local Viewer
 
-Override only the keys you want to change:
+These live under `shortcuts.commit_viewer`.
 
-```json
-{
-  "shortcuts": {
-    "next_point": "<C-n>",
-    "prev_point": "<C-p>",
-    "close": "<leader>x",
-    "commit_viewer": {
-      "exit": "<leader>ce"
-    }
-  }
-}
-```
+| Config key | Default | Description |
+|------------|---------|-------------|
+| `next_page` | `<leader>j` | Next page of diff hunks. |
+| `prev_page` | `<leader>k` | Previous page of diff hunks. |
+| `next_page_alt` | `<leader>l` | Alternate next-page binding. |
+| `exit` | `<leader>cm` | Exit commit/local viewer. |
+| `maximize_prefix` | `<leader>m` | Prefix for maximize actions such as `<leader>m1`. |
+| `browse_files` | `<leader>f` | Toggle focus to the file tree. |
 
-## Example: disabling shortcuts
+Commit/local viewer remains read-only. Use flat diff for commenting and thread work.
 
-```json
-{
-  "shortcuts": {
-    "show_shortcuts": false,
-    "merge": false,
-    "commit_viewer": {
-      "maximize_prefix": false
-    }
-  }
-}
-```
-
-Disabled shortcuts show as `(disabled)` in the `:Raccoon shortcuts` window.
-
-## Corresponding commands
-
-Every shortcut has a `:Raccoon` command equivalent that works regardless of whether the shortcut is enabled:
+## Command equivalents
 
 | Shortcut | Command |
 |----------|---------|
 | `pr_list` | `:Raccoon prs` |
-| `show_shortcuts` | `:Raccoon shortcuts` |
 | `description` | `:Raccoon description` |
 | `list_comments` | `:Raccoon list` |
+| `list_threads` | `:Raccoon threads` |
+| `list_files` | `:Raccoon files` |
+| `sync` | `:Raccoon sync` |
 | `merge` | `:Raccoon merge` / `:Raccoon squash` / `:Raccoon rebase` |
 | `commit_viewer_toggle` | `:Raccoon commits` |
-| `close` | `:Raccoon close` |

@@ -35,6 +35,7 @@ end
 --- Migrations (each obeys the new-wins conflict rule):
 ---   * shortcuts.commit_viewer (string|false) -> shortcuts.commit_viewer_toggle
 ---   * shortcuts.commit_mode   (table)     -> shortcuts.commit_viewer
+---   * shortcuts.comment_save               -> shortcuts.comment_send
 ---   * passthrough_keymaps     (top-level) -> commit_viewer.passthrough_keys
 ---   * pull_changes_interval               -> sync_interval
 ---
@@ -61,6 +62,13 @@ function M.normalize(parsed)
         sc.commit_viewer = sc.commit_mode
       end
       sc.commit_mode = nil
+    end
+
+    if sc.comment_save ~= nil then
+      if sc.comment_send == nil then
+        sc.comment_send = sc.comment_save
+      end
+      sc.comment_save = nil
     end
   end
 

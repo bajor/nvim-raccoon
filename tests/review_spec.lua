@@ -42,7 +42,6 @@ describe("raccoon.review", function()
       local status = review.get_status()
       assert.is_table(status)
       assert.equals(0, status.total_files)
-      assert.equals(0, status.pending_comments)
     end)
 
     it("returns status with session data", function()
@@ -59,23 +58,9 @@ describe("raccoon.review", function()
       local status = review.get_status()
       assert.equals(1, status.files_reviewed)
       assert.equals(2, status.total_files)
-      assert.equals(0, status.pending_comments)
       assert.equals(123, status.pr_number)
       assert.equals("test-owner", status.owner)
       assert.equals("test-repo", status.repo)
-    end)
-
-    it("counts pending comments", function()
-      state.start({ owner = "o", repo = "r", number = 1 })
-      state.set_files({ { filename = "test.lua" } })
-      state.set_comments("test.lua", {
-        { line = 1, body = "pending", pending = true },
-        { line = 2, body = "not pending", pending = false },
-        { line = 3, body = "also pending", pending = true },
-      })
-
-      local status = review.get_status()
-      assert.equals(2, status.pending_comments)
     end)
   end)
 

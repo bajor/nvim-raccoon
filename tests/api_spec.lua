@@ -1,4 +1,5 @@
 local api = require("raccoon.api")
+local mocks = require("tests.helpers.mocks")
 
 describe("raccoon.api", function()
   describe("parse_pr_url", function()
@@ -241,6 +242,52 @@ describe("raccoon.api edge cases", function()
     it("is a table with is_ghes field", function()
       assert.is_table(api.server_info)
       assert.is_boolean(api.server_info.is_ghes)
+    end)
+  end)
+
+  describe("create_comment", function()
+    after_each(function()
+      mocks.restore()
+      api.init("github.com")
+    end)
+
+    it("sends file-level review comments without line coordinates", function()
+      local recorded = mocks.mock_curl({
+        ["api%.github%.com/repos/owner/repo/pulls/1/comments"] = mocks.api_response({
+          id = 999,
+          body = "file level body",
+          path = "lua/a.lua",
+        }),
+      })
+
+      local done = false
+      local result_comment
+      local result_err
+
+      api.create_comment("owner", "repo", 1, {
+        body = "file level body",
+        commit_id = "abc123",
+        path = "lua/a.lua",
+        subject_type = "file",
+      }, "ghp_fake", function(comment, err)
+        result_comment = comment
+        result_err = err
+        done = true
+      end)
+
+      vim.wait(5000, function()
+        return done
+      end, 10)
+
+      assert.is_true(done)
+      assert.equals(1, #recorded)
+      local request_body = vim.json.decode(recorded[1].body or "{}")
+      assert.equals("file", request_body.subject_type)
+      assert.is_nil(request_body.line)
+      assert.is_nil(request_body.side)
+      assert.is_nil(result_err)
+      assert.is_table(result_comment)
+      assert.equals("file level body", result_comment.body)
     end)
   end)
 end)

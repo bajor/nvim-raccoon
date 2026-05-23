@@ -2,6 +2,8 @@
 
 All configuration for raccoon.nvim lives in a single JSON file at `~/.config/raccoon/config.json`. Run `:Raccoon config` to create it with defaults and open it for editing.
 
+The generated starter file includes the current shortcut defaults and commit-viewer block explicitly. You can delete fields you do not care about; the loader still merges with built-in defaults on read.
+
 ## How it works
 
 On every PR operation (opening, syncing, merging), the plugin reads `config.json`, merges it with built-in defaults, validates required fields, and uses the result. You only need to specify fields you want to set or override — everything else falls back to sensible defaults.
@@ -44,7 +46,7 @@ Each owner/org you want to access needs a matching token entry.
 
 Tokens are used for both API authentication (`Authorization: Bearer <token>`) and HTTPS git operations (cloning, fetching).
 
-Each token value can be either a **string** (uses the default `github_host`) or an **object** with `token` and `host` fields (for multi-host setups):
+Each token value can be either a **string** (uses the default `github_host`) or an **object** with `token`, optional `host`, and optional `login` fields:
 
 ```json
 {
@@ -61,12 +63,18 @@ Each token value can be either a **string** (uses the default `github_host`) or 
 {
   "tokens": {
     "my-username": "ghp_personal_xxxxxxxxxxxx",
-    "work-org": { "token": "ghp_work_xxxxxxxxxxxx", "host": "github.mycompany.com" }
+    "work-org": {
+      "token": "ghp_work_xxxxxxxxxxxx",
+      "host": "github.mycompany.com",
+      "login": "my-work-login"
+    }
   }
 }
 ```
 
 String tokens use the `github_host` setting (default `"github.com"`). Table tokens with a `host` field override the default host for that owner/org. The host is normalized the same way as `github_host` (lowercased, protocol stripped).
+
+`login` is optional. When present, raccoon uses it as the viewer login for that token instead of calling the GitHub API to discover it. Its only purpose is exact-thread review features such as `[NR]` detection.
 
 To create a token:
 - **Classic token** ([github.com/settings/tokens](https://github.com/settings/tokens)): enable the `repo` scope
@@ -150,7 +158,7 @@ How often (in seconds) the plugin checks for new commits pushed to the PR branch
 }
 ```
 
-The sync check compares the HEAD SHA — if nothing changed, no further API calls are made. Auto-sync is paused while commit viewer mode is active and resumes when you exit. You can also manually sync with `:Raccoon sync` at any time.
+The sync check compares the HEAD SHA — if nothing changed, no further API calls are made. Auto-sync is paused while commit/local viewer mode is active and resumes when you exit. In flat diff, auto-sync also skips cycles while a reply/new-thread composer contains unsent text. You can manually sync at any time with `:Raccoon sync` or the configured `shortcuts.sync` binding. Toggling between flat diff and PR commit mode preserves the last flat-diff file/thread/composer state and the last commit-viewer selection for the current PR.
 
 ### `commit_viewer`
 
@@ -252,7 +260,7 @@ Empty strings, duplicates, and non-string entries are silently dropped.
 |------|---------|
 | object | see [shortcuts_docs.md](shortcuts_docs.md) |
 
-Custom keyboard shortcuts. See [shortcuts_docs.md](shortcuts_docs.md) for the full reference of all 23 configurable shortcuts with descriptions and examples.
+Custom keyboard shortcuts. See [shortcuts_docs.md](shortcuts_docs.md) for the full reference with mode boundaries, defaults, and examples.
 
 Partial overrides are merged with defaults — you only need to specify keys you want to change. Set any shortcut to `false` to disable it.
 
