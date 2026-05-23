@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.13.0] - 2026-05-16
+## [0.13.0] - 2026-05-23
 
 ### Added
 - Exact-thread flat diff review based on GitHub `thread_id`, including unresolved-only inline rendering and exact-thread replies.
