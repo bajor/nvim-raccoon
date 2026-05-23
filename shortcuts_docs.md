@@ -22,7 +22,7 @@ Run `:Raccoon shortcuts` or press `<leader>?` to see the active bindings.
 - `[I]`: parsed PR issue comment tied to a file/line
 
 Resolved review threads are hidden from flat-diff markers and badges, but `comment` on that line still shows them in the same-line picker. Full history also remains available in `:Raccoon list`.
-New review threads can be started from any line in files that are part of the PR changed-file set. Raccoon uses persisted REST review comments for both in-diff lines and file-level fallbacks. When GitHub stores the fallback as a file comment, raccoon shows it at the top of the file to match GitHub instead of treating it as a line comment.
+Raccoon creates true line-level review threads only where GitHub's public PAT-authenticated review comment APIs can resolve them: changed lines and unchanged context lines already present in the PR diff. If you start a new thread on another line of a changed file, raccoon falls back to a file-level comment. GitHub shows that at the top of the file, and raccoon mirrors it there instead of pretending it stayed on the clicked line. GitHub's newer web UI can comment on more unchanged lines than the public APIs raccoon uses today.
 
 ## Config shape
 
@@ -68,7 +68,7 @@ It restores your last flat-diff location or composer draft when you come back, a
 
 | Config key | Default | Description |
 |------------|---------|-------------|
-| `comment` | `<leader>c` | Open the current line's exact-thread picker or `New thread on this line`. Resolved same-line threads are included there even though flat diff hides their inline markers. New threads are available on any line in PR-changed files, via GraphQL-first thread creation with REST fallback for classic in-diff lines. Flat diff only. |
+| `comment` | `<leader>c` | Open the current line's exact-thread picker or a new-thread composer. Resolved same-line threads are included there even though flat diff hides their inline markers. Only lines GitHub can resolve in the current PR diff become true line comments; other lines in changed files fall back to file-level comments shown at the top of the file. Flat diff only. |
 | `description` | `<leader>dd` | Toggle the PR description popup. Also available in commit mode. |
 | `list_comments` | `<leader>ll` | Open the broad PR comment history. Exact threads get separate rows even on the same line. Flat diff only. |
 | `list_threads` | `<leader>lt` | Open unresolved-thread picker. Flat diff only. |
