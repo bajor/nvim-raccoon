@@ -41,7 +41,8 @@ function M.parse_patch(patch)
   local current_hunk = nil
   local line_num = 0
 
-  for line in normalized_patch:gmatch("(.-)\n") do
+  for raw_line in normalized_patch:gmatch("(.-)\n") do
+    local line = raw_line:gsub("\r$", "")
     if line:match("^@@") then
       -- New hunk
       if current_hunk then
@@ -240,6 +241,12 @@ function M.open_file(file)
     -- File may still be open despite the error, continue if buffer exists
   end
   local buf = vim.api.nvim_get_current_buf()
+  local win = vim.api.nvim_get_current_win()
+
+  -- Keep diff signs visible even when the user has signcolumn=auto/no.
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].signcolumn = "yes:1"
+  end
 
   -- Track buffer in session
   state.add_buffer(buf)

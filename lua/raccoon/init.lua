@@ -11,29 +11,56 @@ M.config = {
 --- Setup highlight groups for diff display
 --- Uses dark green/red backgrounds for added/deleted lines
 local function setup_highlights()
+  local function get_highlight(name)
+    local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
+    if not ok or type(hl) ~= "table" then
+      return {}
+    end
+    return hl
+  end
+
+  local function merge_highlight(base, keys, fallback)
+    local merged = vim.deepcopy(fallback)
+    for _, key in ipairs(keys) do
+      if base[key] ~= nil then
+        merged[key] = base[key]
+      end
+    end
+    return merged
+  end
+
+  local diff_add = get_highlight("DiffAdd")
+  local diff_delete = get_highlight("DiffDelete")
+
   -- Green background for added lines (high contrast)
-  vim.api.nvim_set_hl(0, "RaccoonAdd", {
+  vim.api.nvim_set_hl(0, "RaccoonAdd", merge_highlight(diff_add, { "bg", "ctermbg" }, {
     bg = "#2d5a2d",
-    default = true,
-  })
+    ctermbg = 22,
+  }))
 
   -- Red background for deleted lines (high contrast)
-  vim.api.nvim_set_hl(0, "RaccoonDelete", {
+  vim.api.nvim_set_hl(0, "RaccoonDelete", merge_highlight(diff_delete, {
+    "fg",
+    "bg",
+    "ctermfg",
+    "ctermbg",
+  }, {
     bg = "#5a2020",
     fg = "#e88888",
-    default = true,
-  })
+    ctermbg = 52,
+    ctermfg = 174,
+  }))
 
   -- Sign column colors
-  vim.api.nvim_set_hl(0, "RaccoonAddSign", {
+  vim.api.nvim_set_hl(0, "RaccoonAddSign", merge_highlight(diff_add, { "fg", "ctermfg" }, {
     fg = "#98c379", -- Green
-    default = true,
-  })
+    ctermfg = 114,
+  }))
 
-  vim.api.nvim_set_hl(0, "RaccoonDeleteSign", {
+  vim.api.nvim_set_hl(0, "RaccoonDeleteSign", merge_highlight(diff_delete, { "fg", "ctermfg" }, {
     fg = "#e06c75", -- Red
-    default = true,
-  })
+    ctermfg = 173,
+  }))
 
   -- File tree highlights (commit viewer)
   vim.api.nvim_set_hl(0, "RaccoonFileNormal", {

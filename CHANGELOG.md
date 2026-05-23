@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- Diff highlight groups now inherit colors from `DiffAdd` and `DiffDelete` when available, with explicit fallback `cterm` colors for terminals/themes that do not define them.
+- Flat diff file views now force `signcolumn=yes:1` so `+` and `-` markers stay visible on terminals where automatic sign columns hide them.
+- Unified diff parsing now tolerates Windows CRLF line endings (`\r\n`) while keeping line mapping consistent.
+
 ## [0.13.0] - 2026-05-23
 
 ### Added
