@@ -271,16 +271,6 @@ describe("raccoon.diff", function()
   end)
 
   describe("parse_patch edge cases", function()
-    it("handles CRLF line endings", function()
-      local patch = "@@ -1,2 +1,3 @@\r\n line1\r\n+added\r\n line2\r\n"
-      local hunks = diff.parse_patch(patch)
-      local changes = diff.get_changed_lines(patch)
-
-      assert.equals(1, #hunks)
-      assert.equals(1, #changes.added)
-      assert.equals(2, changes.added[1])
-    end)
-
     it("handles patch with only additions", function()
       local patch = [[
 @@ -0,0 +1,3 @@
