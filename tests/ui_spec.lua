@@ -95,6 +95,20 @@ describe("raccoon.ui", function()
 
       vim.api.nvim_win_close(win, true)
     end)
+
+    it("uses the editor background instead of NormalFloat for floating windows", function()
+      vim.api.nvim_set_hl(0, "Normal", { bg = "#282828" })
+      vim.api.nvim_set_hl(0, "NormalFloat", { bg = "#000000" })
+
+      local win, _ = ui.create_floating_window({})
+
+      local winhl = vim.wo[win].winhl
+      assert.truthy(winhl:find("Normal:Normal", 1, true))
+      assert.truthy(winhl:find("NormalFloat:Normal", 1, true))
+      assert.truthy(winhl:find("FloatBorder:Normal", 1, true))
+
+      vim.api.nvim_win_close(win, true)
+    end)
   end)
 
   describe("close_pr_list", function()

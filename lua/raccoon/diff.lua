@@ -7,6 +7,57 @@ local state = require("raccoon.state")
 --- Namespace for diff highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
 
+local CHANGE_HIGHLIGHTS = {
+  add = {
+    line = "RaccoonAdd",
+    sign = "+",
+    sign_hl = "RaccoonAddSign",
+  },
+  del = {
+    line = "RaccoonDelete",
+    sign = "-",
+    sign_hl = "RaccoonDeleteSign",
+  },
+}
+
+local function line_end_col(buf, line_idx)
+  local ok, lines = pcall(vim.api.nvim_buf_get_lines, buf, line_idx, line_idx + 1, false)
+  if not ok or not lines[1] then
+    return 0
+  end
+  return #lines[1]
+end
+
+--- Apply sign and full-row change highlighting to one buffer line.
+---@param buf number Buffer ID
+---@param namespace number Namespace ID
+---@param line_idx number Zero-based buffer line index
+---@param change_type "add"|"del"
+function M.set_change_line_extmark(buf, namespace, line_idx, change_type)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  local change = CHANGE_HIGHLIGHTS[change_type]
+  if not change then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  if line_idx < 0 or line_idx >= line_count then
+    return
+  end
+
+  pcall(vim.api.nvim_buf_set_extmark, buf, namespace, line_idx, 0, {
+    line_hl_group = change.line,
+    hl_group = change.line,
+    end_col = line_end_col(buf, line_idx),
+    hl_eol = true,
+    sign_text = change.sign,
+    sign_hl_group = change.sign_hl,
+  })
+end
+
 --- Parse a unified diff hunk header
 --- Returns start_line, count for the new file (right side)
 ---@param header string Hunk header like "@@ -1,4 +1,5 @@"
@@ -147,13 +198,7 @@ function M.apply_highlights(buf, patch)
   -- Apply green highlight to added lines
   for _, line_num in ipairs(changes.added) do
     local line_idx = line_num - 1
-    if line_idx >= 0 and line_idx < line_count then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
-    end
+    M.set_change_line_extmark(buf, ns_id, line_idx, "add")
   end
 
   -- For deleted lines, show virtual text with red background

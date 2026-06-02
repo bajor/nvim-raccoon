@@ -18,6 +18,40 @@ describe("raccoon.commit_ui", function()
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
   end
 
+  describe("apply_diff_highlights", function()
+    it("adds terminal-visible range highlights to changed commit lines", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+        "+added line",
+        "-deleted line",
+      })
+      local ns = vim.api.nvim_create_namespace("raccoon_commit_ui_test")
+
+      commit_ui.apply_diff_highlights(ns, buf, {
+        { type = "add", content = "+added line" },
+        { type = "del", content = "-deleted line" },
+      })
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      local by_line = {}
+      for _, mark in ipairs(marks) do
+        by_line[mark[2]] = mark[4]
+      end
+
+      assert.equals("RaccoonAdd", by_line[0].line_hl_group)
+      assert.equals("RaccoonAdd", by_line[0].hl_group)
+      assert.is_true(by_line[0].hl_eol)
+      assert.equals(#"+added line", by_line[0].end_col)
+
+      assert.equals("RaccoonDelete", by_line[1].line_hl_group)
+      assert.equals("RaccoonDelete", by_line[1].hl_group)
+      assert.is_true(by_line[1].hl_eol)
+      assert.equals(#"-deleted line", by_line[1].end_col)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+  end)
+
   it("header shows subject then updates to full multiline body", function()
     local buf, win = make_header(80)
 

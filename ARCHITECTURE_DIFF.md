@@ -1,7 +1,7 @@
 # Architecture Diff
 
 ## Summary
-Improve cross-platform diff rendering reliability by deriving Raccoon's existing diff highlight groups from Neovim's built-in diff highlights, with terminal fallback colors when the colorscheme does not provide them.
+Improve PowerShell/terminal rendering by refreshing diff highlight groups from the active colorscheme, applying real changed-row highlight ranges, and making picker floats inherit the editor background.
 
 ## Diagram(s)
 ```mermaid
@@ -10,9 +10,12 @@ flowchart TD
     D[Fallback RGB + cterm values] --> B
     B --> C[RaccoonAdd / RaccoonDelete]
     B --> E[RaccoonAddSign / RaccoonDeleteSign]
-    C --> F[raccoon.diff apply_highlights]
+    C --> F[raccoon.diff set_change_line_extmark]
     E --> F
-    F --> G[Extmarks + Signs + Virtual delete lines]
+    F --> G[Flat diff added lines]
+    F --> H[Commit diff add/delete lines]
+    I[Normal highlight group] --> J[raccoon.ui create_floating_window]
+    J --> K[PR picker and popups]
 ```
 
 ## Changes
@@ -21,9 +24,12 @@ flowchart TD
 - No new modules.
 
 ### Modified
-- `lua/raccoon/init.lua`: derive raccoon diff/sign highlight values from `DiffAdd`/`DiffDelete` with fallback RGB + cterm values.
-- `tests/init_spec.lua`: add coverage for inherited highlight colors and fallback colors.
-- `CHANGELOG.md`: add an unreleased note for applying the Windows diff highlight fix to the current main code path.
+- `lua/raccoon/init.lua`: refresh raccoon diff/sign highlight values from `DiffAdd`/`DiffDelete` with fallback RGB + cterm values.
+- `lua/raccoon/diff.lua`: centralize changed-line extmarks so signs and full-row highlight ranges are applied together.
+- `lua/raccoon/commit_ui.lua`: reuse the shared changed-line extmark helper for commit diff rows.
+- `lua/raccoon/ui.lua`: make floating windows inherit `Normal` instead of a potentially black `NormalFloat`.
+- `tests/init_spec.lua`, `tests/diff_spec.lua`, `tests/commit_ui_spec.lua`, `tests/ui_spec.lua`: add regression coverage for terminal-safe highlights and picker backgrounds.
+- `CHANGELOG.md`: add an unreleased note for the PowerShell/terminal highlight fix.
 
 ### Removed
 - Nothing removed.

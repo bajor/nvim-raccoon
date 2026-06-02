@@ -113,7 +113,7 @@ describe("raccoon", function()
     assert.equals(173, delete_sign.ctermfg)
   end)
 
-  it("preserves explicit Raccoon highlight overrides", function()
+  it("refreshes existing Raccoon highlight groups from active diff colors", function()
     vim.api.nvim_set_hl(0, "DiffAdd", {
       bg = "#134013",
       ctermbg = 22,
@@ -125,27 +125,25 @@ describe("raccoon", function()
       ctermbg = 52,
     })
     vim.api.nvim_set_hl(0, "RaccoonAdd", {
-      bg = "#123456",
-      ctermbg = 24,
+      fg = "#ffffff",
     })
     vim.api.nvim_set_hl(0, "RaccoonDelete", {
-      fg = "#654321",
-      bg = "#241310",
-      ctermfg = 25,
-      ctermbg = 26,
+      fg = "#ffffff",
     })
 
     local raccoon = require("raccoon")
     raccoon.setup()
 
+    local diff_add = vim.api.nvim_get_hl(0, { name = "DiffAdd", link = false })
+    local diff_delete = vim.api.nvim_get_hl(0, { name = "DiffDelete", link = false })
     local add = vim.api.nvim_get_hl(0, { name = "RaccoonAdd", link = false })
     local delete = vim.api.nvim_get_hl(0, { name = "RaccoonDelete", link = false })
 
-    assert.equals(tonumber("123456", 16), add.bg)
-    assert.equals(24, add.ctermbg)
-    assert.equals(tonumber("654321", 16), delete.fg)
-    assert.equals(tonumber("241310", 16), delete.bg)
-    assert.equals(25, delete.ctermfg)
-    assert.equals(26, delete.ctermbg)
+    assert.equals(diff_add.bg, add.bg)
+    assert.equals(diff_add.ctermbg, add.ctermbg)
+    assert.equals(diff_delete.fg, delete.fg)
+    assert.equals(diff_delete.bg, delete.bg)
+    assert.equals(diff_delete.ctermfg, delete.ctermfg)
+    assert.equals(diff_delete.ctermbg, delete.ctermbg)
   end)
 end)

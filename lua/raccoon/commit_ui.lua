@@ -386,17 +386,9 @@ function M.apply_diff_highlights(ns_id, buf, line_list)
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
   for idx, line_data in ipairs(line_list) do
     if line_data.type == "add" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
+      diff.set_change_line_extmark(buf, ns_id, idx - 1, "add")
     elseif line_data.type == "del" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonDelete",
-        sign_text = "-",
-        sign_hl_group = "RaccoonDeleteSign",
-      })
+      diff.set_change_line_extmark(buf, ns_id, idx - 1, "del")
     end
   end
 end

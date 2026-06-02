@@ -72,6 +72,7 @@ function M.create_floating_window(opts)
   vim.wo[win].wrap = opts.wrap == true
   vim.wo[win].scrolloff = 3
   vim.wo[win].sidescrolloff = 1
+  vim.wo[win].winhl = "Normal:Normal,NormalFloat:Normal,FloatBorder:Normal,FloatTitle:Title"
 
   return win, buf
 end

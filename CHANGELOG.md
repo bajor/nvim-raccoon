@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
-- Windows diff highlights now follow Neovim's `DiffAdd` and `DiffDelete` groups on the current flat-diff code path, while retaining explicit terminal color fallbacks.
+- PowerShell/terminal rendering now keeps PR picker floats on the editor background and applies visible add/delete row backgrounds alongside diff signs.
 
 ## [0.13.0] - 2026-05-23
 

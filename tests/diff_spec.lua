@@ -222,6 +222,41 @@ describe("raccoon.diff", function()
       diff.apply_highlights(buf, "")
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    it("applies terminal-visible range highlights to added lines", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+        "line 1",
+        "new line",
+        "line 2",
+      })
+
+      local patch = [[
+@@ -1,2 +1,3 @@
+ line 1
++new line
+ line 2]]
+
+      diff.apply_highlights(buf, patch)
+
+      local ns = diff.get_namespace()
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      local added_mark
+      for _, mark in ipairs(marks) do
+        if mark[2] == 1 and mark[4].sign_text then
+          added_mark = mark
+          break
+        end
+      end
+
+      assert.is_not_nil(added_mark)
+      assert.equals("RaccoonAdd", added_mark[4].line_hl_group)
+      assert.equals("RaccoonAdd", added_mark[4].hl_group)
+      assert.is_true(added_mark[4].hl_eol)
+      assert.equals(#"new line", added_mark[4].end_col)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 
   describe("open_file", function()

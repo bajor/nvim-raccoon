@@ -43,7 +43,6 @@ local function setup_highlights()
   vim.api.nvim_set_hl(0, "RaccoonAdd", merge_highlight(diff_add, { "bg", "ctermbg" }, {
     bg = "#2d5a2d",
     ctermbg = 22,
-    default = true,
   }))
 
   -- Red background for deleted lines (high contrast)
@@ -57,20 +56,17 @@ local function setup_highlights()
     fg = "#e88888",
     ctermbg = 52,
     ctermfg = 174,
-    default = true,
   }))
 
   -- Sign column colors
   vim.api.nvim_set_hl(0, "RaccoonAddSign", merge_sign_highlight(diff_add, {
     fg = "#98c379", -- Green
     ctermfg = 114,
-    default = true,
   }))
 
   vim.api.nvim_set_hl(0, "RaccoonDeleteSign", merge_sign_highlight(diff_delete, {
     fg = "#e06c75", -- Red
     ctermfg = 173,
-    default = true,
   }))
 
   -- File tree highlights (commit viewer)
