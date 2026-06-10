@@ -1,53 +1,45 @@
 # Architecture Diff
 
 ## Summary
-Flat PR review now renders a read-only full-file split diff buffer with side-aware row metadata for comments and navigation.
+Combined diff/comment navigation now uses side-aware diff change points, and split inline range highlights are layered above syntax and full-line diff highlights.
 
 ## Diagram(s)
 
 ```mermaid
 flowchart TD
-    A[PR file metadata] --> B[diff.parse_patch]
-    C[PR checkout file] --> D[new-side lines]
-    B --> E[old-side reconstruction]
-    D --> E
-    E --> F[split semantic rows]
-    D --> F
-    F --> G[wrapped display rows]
-    G --> H[split scratch buffer]
-    G --> I[row metadata]
-    I --> J[cursor target resolver]
-    J --> K[comment editor]
-```
+    subgraph Navigation
+        A[Unified patch] --> B[diff.parse_patch]
+        B --> C[diff.get_change_points]
+        C --> D{Change block}
+        D -->|Add or replacement| E[RIGHT new line]
+        D -->|Delete only| F[LEFT old line]
+        E --> G[keymaps get_file_points]
+        F --> G
+        H[Thread index comments] --> G
+        G --> I[Sorted combined points]
+        I --> J[diff.find_split_row]
+        J --> K[Rendered row and side column]
+    end
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Buffer as Split Diff Buffer
-    participant Comments
-    participant Diff as diff.resolve_cursor_target
-    participant GitHub
-
-    User->>Buffer: Place cursor on old or new side
-    User->>Comments: Start comment
-    Comments->>Diff: Resolve path, line, side, context
-    Diff-->>Comments: Target metadata
-    Comments->>GitHub: Create review comment
-    alt LEFT line rejected by GitHub validation
-        Comments->>GitHub: Retry as file-level comment
+    subgraph HighlightLayering
+        L[Split rows] --> M[Full-line diff extmarks priority 90]
+        L --> N[Syntax projection priority 110]
+        L --> O[Inline add/delete ranges priority 200]
+        M --> P[apply_split_render]
+        N --> P
+        O --> P
     end
 ```
 
 ## Changes
 
 ### Added
-- `lua/raccoon/diff.lua`: split diff model, full-file row alignment, wrapping, metadata attachment, cursor target resolution, inline span helper, and Tree-sitter projection caps.
-- `ARCHITECTURE_DIFF.md`: documents the rendering and comment submission flow.
+- `diff.get_change_points(patch)`: returns one `{ line, side, type = "diff" }` point per contiguous add/delete block.
+- Split range highlight priorities for syntax and inline diff entries.
 
 ### Modified
-- `lua/raccoon/comments.lua`: resolves comment targets from split row metadata, renders side-local badges, submits `LEFT` comments, and falls back to file-level comments on GitHub validation failures.
-- `lua/raccoon/commit_ui.lua`: reuses shared inline character spans for stacked commit and local commit diff buffers.
-- `lua/raccoon/init.lua`: adds split change and inline highlight groups.
+- `keymaps`: uses `diff.get_change_points()` for diff navigation while preserving side-aware comment navigation.
+- `diff.apply_split_render()`: applies range highlights with extmarks so priority is explicit.
 
 ### Removed
-- The flat review path no longer opens the PR checkout file directly as the primary review surface.
+- Mixed old/new changed-line grouping from combined point navigation.

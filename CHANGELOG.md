@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] - 2026-06-10
+
+### Fixed
+- Combined diff/comment navigation now lands replacement hunks on the right-side changed row instead of the paired left-side deletion row.
+- Split diff inline add/delete character highlights now use higher-priority range extmarks so they remain visible over syntax and full-line diff highlights.
+
+### Added
+- Internal `diff.get_change_points(patch)` helper for side-aware first-change navigation points per contiguous diff block.
+
 ## [0.13.0] - 2026-05-23
 
 ### Added

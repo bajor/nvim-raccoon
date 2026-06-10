@@ -192,6 +192,66 @@ describe("raccoon.diff", function()
     end)
   end)
 
+  describe("get_change_points", function()
+    it("returns the first right-side line for replacement blocks", function()
+      local patch = [[
+@@ -10,3 +10,3 @@
+ line 10
+-old value
++new value
+ line 12]]
+
+      assert.same({
+        { line = 11, side = "RIGHT", type = "diff" },
+      }, diff.get_change_points(patch))
+    end)
+
+    it("returns the first right-side line for add-only blocks", function()
+      local patch = [[
+@@ -3,2 +3,4 @@
+ line 3
++line 4
++line 5
+ line 6]]
+
+      assert.same({
+        { line = 4, side = "RIGHT", type = "diff" },
+      }, diff.get_change_points(patch))
+    end)
+
+    it("returns the first left-side line for delete-only blocks", function()
+      local patch = [[
+@@ -3,4 +3,2 @@
+ line 3
+-old line 4
+-old line 5
+ line 6]]
+
+      assert.same({
+        { line = 4, side = "LEFT", type = "diff" },
+      }, diff.get_change_points(patch))
+    end)
+
+    it("returns each separated change block in rendered order", function()
+      local patch = [[
+@@ -1,7 +1,8 @@
+ shared one
+-old value
++new value
+ shared two
++added value
+ shared three
+-removed value
+ shared four]]
+
+      assert.same({
+        { line = 2, side = "RIGHT", type = "diff" },
+        { line = 4, side = "RIGHT", type = "diff" },
+        { line = 5, side = "LEFT", type = "diff" },
+      }, diff.get_change_points(patch))
+    end)
+  end)
+
   describe("navigation", function()
     local original_notify
 
@@ -620,6 +680,103 @@ describe("raccoon.diff", function()
 
       assert.is_false(rendered.syntax_enabled)
       assert.equals("row cap", rendered.syntax_skip_reason)
+    end)
+
+    it("applies inline split range highlights above syntax and line overlays", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "local value = 1" },
+        new_lines = { "local value = 42" },
+        patch = "@@ -1 +1 @@\n-local value = 1\n+local value = 42",
+        width = 80,
+      })
+      table.insert(rendered.highlights, {
+        line = 0,
+        start_col = rendered.right_range.content_start_col,
+        end_col = rendered.right_range.content_start_col + 5,
+        hl = "@keyword",
+        priority = 110,
+      })
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      diff.apply_split_render(buf, rendered)
+
+      local inline_priority
+      local syntax_priority
+      for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })) do
+        local details = mark[4] or {}
+        if details.hl_group == "RaccoonInlineAdd" or details.hl_group == "RaccoonInlineDelete" then
+          inline_priority = math.max(inline_priority or 0, details.priority or 0)
+        elseif details.hl_group == "@keyword" then
+          syntax_priority = details.priority or 0
+        end
+      end
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+
+      assert.is_number(inline_priority)
+      assert.is_number(syntax_priority)
+      assert.is_true(inline_priority > syntax_priority)
+    end)
+  end)
+
+  describe("find_split_row", function()
+    it("finds LEFT old-only deletion rows", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "one", "two", "three" },
+        new_lines = { "one", "three" },
+        patch = "@@ -1,3 +1,2 @@\n one\n-two\n three",
+        width = 80,
+      })
+
+      local row, col = diff.find_split_row(rendered, {
+        path = "lua/a.lua",
+        line = 2,
+        side = "LEFT",
+      })
+
+      assert.equals(2, row)
+      assert.equals(rendered.left_range.content_start_col, col)
+    end)
+
+    it("finds RIGHT rows after a prior deletion", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "one", "two", "three" },
+        new_lines = { "one", "three" },
+        patch = "@@ -1,3 +1,2 @@\n one\n-two\n three",
+        width = 80,
+      })
+
+      local row, col = diff.find_split_row(rendered, {
+        path = "lua/a.lua",
+        line = 2,
+        side = "RIGHT",
+      })
+
+      assert.equals(3, row)
+      assert.equals(rendered.right_range.content_start_col, col)
+    end)
+
+    it("ignores continuation rows for wrapped split lines", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "before", "old " .. string.rep("x", 24), "after" },
+        new_lines = { "before", "new " .. string.rep("y", 24), "after" },
+        patch = "@@ -1,3 +1,3 @@\n before\n-old xxxxxxxxxxxxxxxxxxxxxxxx\n+new yyyyyyyyyyyyyyyyyyyyyyyy\n after",
+        width = 42,
+      })
+
+      local row = diff.find_split_row(rendered, {
+        path = "lua/a.lua",
+        line = 2,
+        side = "RIGHT",
+      })
+
+      assert.is_not_nil(rendered.rows[row + 1])
+      assert.is_false(rendered.rows[row].right_continuation)
+      assert.is_true(rendered.rows[row + 1].right_continuation)
     end)
   end)
 

@@ -164,6 +164,7 @@ function M.build()
               path = path,
               file_index = file_index_by_path[path] or math.huge,
               line = M.get_comment_line(comment),
+              side = "RIGHT",
               resolved = comment.resolved == true,
               root_comment_id = nil,
               is_file_level = comment.subject_type == "file",
@@ -192,6 +193,7 @@ function M.build()
 
           if normalize_nil(comment.in_reply_to_id) == nil and is_real_number(comment.id) then
             thread.root_comment_id = comment.id
+            thread.side = comment.side == "LEFT" and "LEFT" or "RIGHT"
           end
         end
       end

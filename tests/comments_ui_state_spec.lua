@@ -43,6 +43,12 @@ local function make_file_buffer(path, line_count)
   return buf
 end
 
+local function write_checkout_file(path, lines)
+  local full_path = vim.fs.joinpath(CLONE_PATH, path)
+  vim.fn.mkdir(vim.fs.dirname(full_path), "p")
+  vim.fn.writefile(lines, full_path)
+end
+
 local function make_split_buffer(opts)
   local rendered = diff.render_split_file({
     path = opts.path or "lua/a.lua",
@@ -185,6 +191,7 @@ describe("raccoon.comments UI state restore", function()
   local baseline_buffers
 
   before_each(function()
+    vim.fn.delete(CLONE_PATH, "rf")
     baseline_buffers = {}
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       baseline_buffers[buf] = true
@@ -207,6 +214,7 @@ describe("raccoon.comments UI state restore", function()
         pcall(vim.api.nvim_buf_delete, buf, { force = true })
       end
     end
+    vim.fn.delete(CLONE_PATH, "rf")
   end)
 
   it("captures and restores unresolved-thread picker selection", function()
@@ -587,6 +595,75 @@ describe("raccoon.comments UI state restore", function()
     assert.is_true(sync_called)
   end)
 
+  it("sends split left-side tail deletion comments with old line beyond checkout bounds", function()
+    local original_notify = vim.notify
+    local original_config_load = config.load
+    local original_get_token_entry = config.get_token_entry
+    local original_api_init = api.init
+    local original_create_comment = api.create_comment
+    local original_sync = open.sync
+
+    local captured_opts
+    local sync_called = false
+
+    vim.notify = function() end
+    config.load = function()
+      return {
+        github_host = "github.com",
+        tokens = { owner = "ghp_fake" },
+      }, nil
+    end
+    config.get_token_entry = function()
+      return { token = "ghp_fake" }
+    end
+    api.init = function() end
+    api.create_comment = function(_owner, _repo, _number, opts, _token, callback)
+      captured_opts = opts
+      callback({ id = 59 }, nil)
+    end
+    open.sync = function()
+      sync_called = true
+    end
+
+    local patch = "@@ -1,5 +1,3 @@\n line 1\n line 2\n line 3\n-line 4\n-line 5"
+    state.set_files({
+      {
+        filename = "lua/a.lua",
+        patch = patch,
+      },
+    })
+    write_checkout_file("lua/a.lua", { "line 1", "line 2", "line 3" })
+    make_split_buffer({
+      old_lines = { "line 1", "line 2", "line 3", "line 4", "line 5" },
+      new_lines = { "line 1", "line 2", "line 3" },
+      patch = patch,
+    })
+    local rendered = diff.get_split_metadata(vim.api.nvim_get_current_buf())
+    vim.api.nvim_win_set_cursor(0, { 5, rendered.left_range.content_start_col })
+    comments.show_comment_thread()
+
+    local editor_buf = vim.api.nvim_get_current_buf()
+    local line_count = vim.api.nvim_buf_line_count(editor_buf)
+    vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "old tail body" })
+    vim.cmd("stopinsert")
+    trigger_buffer_mapping(editor_buf, "n", " s")
+    vim.wait(1000, function()
+      return sync_called
+    end, 10)
+
+    vim.notify = original_notify
+    config.load = original_config_load
+    config.get_token_entry = original_get_token_entry
+    api.init = original_api_init
+    api.create_comment = original_create_comment
+    open.sync = original_sync
+
+    assert.equals("lua/a.lua", captured_opts.path)
+    assert.equals(5, captured_opts.line)
+    assert.equals("LEFT", captured_opts.side)
+    assert.is_true(sync_called)
+  end)
+
   it("retries rejected split left-side line comments as file-level comments", function()
     local original_notify = vim.notify
     local original_config_load = config.load
@@ -724,6 +801,41 @@ describe("raccoon.comments UI state restore", function()
     assert.equals("file", captured_opts.subject_type)
     assert.is_nil(captured_opts.line)
     assert.is_true(sync_called)
+  end)
+
+  it("jumps to the left rendered row and column for LEFT threads", function()
+    local patch = "@@ -1,5 +1,5 @@\n line 1\n+inserted\n line 2\n line 3\n-old deleted\n line 5"
+    state.set_files({
+      {
+        filename = "lua/a.lua",
+        patch = patch,
+      },
+    })
+    state.set_comments("lua/a.lua", {
+      review_comment({
+        id = 60,
+        thread_id = "thread-left",
+        line = 4,
+        side = "LEFT",
+        body = "left deleted thread",
+      }),
+    })
+    write_checkout_file("lua/a.lua", { "line 1", "inserted", "line 2", "line 3", "line 5" })
+
+    assert.is_true(comments.jump_to_thread("thread-left", {}))
+
+    local rendered = diff.get_split_metadata(vim.api.nvim_get_current_buf())
+    local expected_row
+    for idx, row in ipairs(rendered.rows or {}) do
+      if row.path == "lua/a.lua" and row.old_line == 4 and not row.left_continuation then
+        expected_row = idx
+        break
+      end
+    end
+    local cursor = vim.api.nvim_win_get_cursor(0)
+
+    assert.equals(expected_row, cursor[1])
+    assert.equals(rendered.left_range.content_start_col, cursor[2])
   end)
 
   it("restores a thread reply draft and disables send when the thread becomes resolved", function()
