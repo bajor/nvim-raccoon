@@ -110,7 +110,12 @@ function M.parse_patch(patch)
           line_num = line_num,
           old_line = old_line_num,
         })
-        table.insert(current_hunk.changes, { type = "del", line_num = line_num, content = line:sub(2) })
+        table.insert(current_hunk.changes, {
+          type = "del",
+          line_num = line_num,
+          old_line = old_line_num,
+          content = line:sub(2),
+        })
         old_line_num = old_line_num + 1
       elseif not line:match("^\\ No newline at end of file$") and (line:match("^%s") or line == "") then
         -- Context line
@@ -148,7 +153,11 @@ function M.get_changed_lines(patch)
         table.insert(changes.added, change.line_num)
       elseif change.type == "del" then
         -- For deleted lines, we track the line after which they were deleted + content
-        table.insert(changes.deleted, { line_num = change.line_num, content = change.content })
+        table.insert(changes.deleted, {
+          line_num = change.line_num,
+          old_line = change.old_line,
+          content = change.content,
+        })
       end
     end
   end
@@ -881,17 +890,23 @@ local function resolve_active_target(buf)
   return M.resolve_cursor_target(buf, cursor[1], cursor[2])
 end
 
-local function find_rendered_row(rendered, target)
+--- Resolve a semantic split target to its rendered row and side content column.
+---@param rendered table|nil rendered split metadata
+---@param target table|nil {path:string, line:number, side:string}
+---@return number|nil row 1-based rendered row
+---@return number|nil col 0-based side content column
+function M.find_split_row(rendered, target)
   if not rendered or not target then
     return nil
   end
+  local side = target.side == "LEFT" and "LEFT" or "RIGHT"
   for idx, row in ipairs(rendered.rows or {}) do
     if row.path == target.path then
-      if target.side == "LEFT" and row.old_line == target.line and not row.left_continuation then
-        return idx
+      if side == "LEFT" and row.old_line == target.line and not row.left_continuation then
+        return idx, rendered.left_range and rendered.left_range.content_start_col or 0
       end
-      if target.side == "RIGHT" and row.new_line == target.line and not row.right_continuation then
-        return idx
+      if side == "RIGHT" and row.new_line == target.line and not row.right_continuation then
+        return idx, rendered.right_range and rendered.right_range.content_start_col or 0
       end
     end
   end
@@ -903,11 +918,10 @@ local function restore_target_cursor(buf, rendered, target)
   if win == -1 or not target then
     return
   end
-  local row = find_rendered_row(rendered, target)
+  local row, col = M.find_split_row(rendered, target)
   if not row then
     return
   end
-  local col = target.side == "LEFT" and rendered.left_range.content_start_col or rendered.right_range.content_start_col
   pcall(vim.api.nvim_win_set_cursor, win, { row, col })
 end
 

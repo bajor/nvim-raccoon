@@ -1,53 +1,33 @@
 # Architecture Diff
 
 ## Summary
-Flat PR review now renders a read-only full-file split diff buffer with side-aware row metadata for comments and navigation.
+Split diff comments and navigation now resolve semantic targets by path, line, and side before moving the cursor or validating a new thread.
 
 ## Diagram(s)
 
 ```mermaid
 flowchart TD
-    A[PR file metadata] --> B[diff.parse_patch]
-    C[PR checkout file] --> D[new-side lines]
-    B --> E[old-side reconstruction]
-    D --> E
-    E --> F[split semantic rows]
-    D --> F
-    F --> G[wrapped display rows]
-    G --> H[split scratch buffer]
-    G --> I[row metadata]
-    I --> J[cursor target resolver]
-    J --> K[comment editor]
-```
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Buffer as Split Diff Buffer
-    participant Comments
-    participant Diff as diff.resolve_cursor_target
-    participant GitHub
-
-    User->>Buffer: Place cursor on old or new side
-    User->>Comments: Start comment
-    Comments->>Diff: Resolve path, line, side, context
-    Diff-->>Comments: Target metadata
-    Comments->>GitHub: Create review comment
-    alt LEFT line rejected by GitHub validation
-        Comments->>GitHub: Retry as file-level comment
-    end
+    A[Review target<br/>{path, line, side}] --> B[diff.find_split_row]
+    C[Rendered split rows<br/>old_line/new_line + continuation flags] --> B
+    B --> D[Rendered row]
+    B --> E[Side content column]
+    D --> F[Cursor jump]
+    E --> F
+    A --> G[New-thread validation]
+    G --> H{side}
+    H -->|RIGHT| I[Check checkout line bounds]
+    H -->|LEFT| J[Skip checkout bounds]
 ```
 
 ## Changes
 
 ### Added
-- `lua/raccoon/diff.lua`: split diff model, full-file row alignment, wrapping, metadata attachment, cursor target resolution, inline span helper, and Tree-sitter projection caps.
-- `ARCHITECTURE_DIFF.md`: documents the rendering and comment submission flow.
+- `diff.find_split_row(rendered, target)`: shared semantic-to-rendered split row lookup for `LEFT` old-side and `RIGHT` new-side targets.
 
 ### Modified
-- `lua/raccoon/comments.lua`: resolves comment targets from split row metadata, renders side-local badges, submits `LEFT` comments, and falls back to file-level comments on GitHub validation failures.
-- `lua/raccoon/commit_ui.lua`: reuses shared inline character spans for stacked commit and local commit diff buffers.
-- `lua/raccoon/init.lua`: adds split change and inline highlight groups.
+- `comments`: validates new threads with side-aware bounds, stores/restores draft side, and jumps to review threads using `thread.side`.
+- `thread_index`: persists each review thread's root-comment side, defaulting to `RIGHT`.
+- `keymaps`: carries side on diff/comment points and resolves current split-buffer destinations through rendered metadata.
 
 ### Removed
-- The flat review path no longer opens the PR checkout file directly as the primary review surface.
+- Duplicate private split-row lookup logic from comment navigation.

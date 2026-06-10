@@ -38,9 +38,13 @@ local function build_thread_index()
   return index
 end
 
+local function point_key(line, side)
+  return (side or "RIGHT") .. ":" .. tostring(line)
+end
+
 --- Get all points of interest (diffs and comments) for a file
 ---@param file table File data with filename and patch
----@return table[] points Sorted list of {line, type} where type is "diff" or "comment"
+---@return table[] points Sorted list of {line, side, type} where type is "diff" or "comment"
 local function get_file_points(file)
   if not file then return {} end
 
@@ -54,40 +58,64 @@ local function get_file_points(file)
     -- Group consecutive changed lines into hunks
     local all_lines = {}
     for _, line in ipairs(changes.added) do
-      table.insert(all_lines, line)
+      table.insert(all_lines, { line = line, side = "RIGHT" })
     end
     for _, del in ipairs(changes.deleted) do
-      if del.line_num then
-        table.insert(all_lines, math.max(1, del.line_num))
+      local line = del.old_line or del.line_num
+      if line then
+        table.insert(all_lines, { line = math.max(1, line), side = "LEFT" })
       end
     end
-    table.sort(all_lines)
+    table.sort(all_lines, function(a, b)
+      if a.line ~= b.line then
+        return a.line < b.line
+      end
+      return a.side < b.side
+    end)
 
     -- Get hunk start lines (first line of consecutive groups)
     local prev_line = nil
-    for _, line in ipairs(all_lines) do
-      if prev_line == nil or line > prev_line + 1 then
-        if not seen[line] then
-          table.insert(points, { line = line, type = "diff" })
-          seen[line] = true
+    for _, target in ipairs(all_lines) do
+      if prev_line == nil or target.line > prev_line + 1 then
+        local key = point_key(target.line, target.side)
+        if not seen[key] then
+          table.insert(points, { line = target.line, side = target.side, type = "diff" })
+          seen[key] = true
         end
       end
-      prev_line = line
+      prev_line = target.line
     end
   end
 
   -- Get comments
   local index = build_thread_index()
   local line_map = index and index.line_state_by_file[file.filename] or {}
-  for line in pairs(line_map) do
-    if line and not seen[line] then
-      table.insert(points, { line = line, type = "comment" })
-      seen[line] = true
+  for line, bucket in pairs(line_map) do
+    if line then
+      local sides = {}
+      for _, thread in ipairs(bucket.threads or {}) do
+        sides[thread.side == "LEFT" and "LEFT" or "RIGHT"] = true
+      end
+      if #(bucket.issue_comments or {}) > 0 then
+        sides.RIGHT = true
+      end
+      for side in pairs(sides) do
+        local key = point_key(line, side)
+        if not seen[key] then
+          table.insert(points, { line = line, side = side, type = "comment" })
+          seen[key] = true
+        end
+      end
     end
   end
 
   -- Sort by line number
-  table.sort(points, function(a, b) return a.line < b.line end)
+  table.sort(points, function(a, b)
+    if a.line ~= b.line then
+      return a.line < b.line
+    end
+    return (a.side or "RIGHT") < (b.side or "RIGHT")
+  end)
 
   return points
 end
@@ -105,6 +133,7 @@ local function get_all_points()
         file_index = file_idx,
         file = file,
         line = point.line,
+        side = point.side,
         type = point.type,
       })
     end
@@ -113,8 +142,25 @@ local function get_all_points()
   return all_points
 end
 
+local function split_position_for_point(point)
+  local rendered = diff.get_split_metadata(vim.api.nvim_get_current_buf())
+  if not rendered then
+    return nil
+  end
+  return diff.find_split_row(rendered, {
+    path = point.file and point.file.filename,
+    line = point.line,
+    side = point.side,
+  })
+end
+
+local function rendered_line_for_current_point(point)
+  local row = split_position_for_point(point)
+  return row or point.line
+end
+
 --- Navigate to a point (opens file if needed)
----@param point table {file_index, file, line, type}
+---@param point table {file_index, file, line, side, type}
 local function goto_point(point)
   local current_file_idx = state.get_current_file_index()
 
@@ -133,15 +179,16 @@ local function goto_point(point)
 
   -- Go to line (clamped to valid range to prevent "cursor position outside buffer" errors)
   local line_count = vim.api.nvim_buf_line_count(0)
-  local target_line = math.max(1, math.min(point.line, line_count))
-  vim.api.nvim_win_set_cursor(0, { target_line, 0 })
+  local rendered_row, rendered_col = split_position_for_point(point)
+  local target_line = math.max(1, math.min(rendered_row or point.line, line_count))
+  vim.api.nvim_win_set_cursor(0, { target_line, rendered_col or 0 })
   vim.cmd("normal! zz")
 
   -- Show what we landed on with position in file
   local file_points = get_file_points(point.file)
   local point_idx = 1
   for i, p in ipairs(file_points) do
-    if p.line == point.line then
+    if p.line == point.line and (p.side or "RIGHT") == (point.side or "RIGHT") then
       point_idx = i
       break
     end
@@ -169,8 +216,12 @@ function M.next_point()
 
   -- Find next point after current position
   for _, point in ipairs(all_points) do
+    local point_line = point.line
+    if point.file_index == current_file_idx then
+      point_line = rendered_line_for_current_point(point)
+    end
     if point.file_index > current_file_idx or
-       (point.file_index == current_file_idx and point.line > current_line) then
+       (point.file_index == current_file_idx and point_line > current_line) then
       goto_point(point)
       return
     end
@@ -199,8 +250,12 @@ function M.prev_point()
   -- Find previous point before current position (iterate in reverse)
   for i = #all_points, 1, -1 do
     local point = all_points[i]
+    local point_line = point.line
+    if point.file_index == current_file_idx then
+      point_line = rendered_line_for_current_point(point)
+    end
     if point.file_index < current_file_idx or
-       (point.file_index == current_file_idx and point.line < current_line) then
+       (point.file_index == current_file_idx and point_line < current_line) then
       goto_point(point)
       return
     end

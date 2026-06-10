@@ -688,8 +688,10 @@ end
 
 ---@param path string
 ---@param line number
+---@param side? string
 ---@return string|nil
-local function new_thread_disable_reason(path, line)
+local function new_thread_disable_reason(path, line, side)
+  side = side == "LEFT" and "LEFT" or "RIGHT"
   if line == nil then
     return find_pr_file(path) and nil or file_outside_pr_changes_message()
   end
@@ -701,9 +703,11 @@ local function new_thread_disable_reason(path, line)
     return file_outside_pr_changes_message()
   end
 
-  local line_count = checkout_line_count(path)
-  if line_count and line > line_count then
-    return line_outside_file_bounds_message()
+  if side == "RIGHT" then
+    local line_count = checkout_line_count(path)
+    if line_count and line > line_count then
+      return line_outside_file_bounds_message()
+    end
   end
 
   return nil
@@ -732,12 +736,12 @@ local function send_new_thread(path, line, side, in_diff_context)
     vim.notify("Empty thread", vim.log.levels.WARN)
     return
   end
-  local disable_reason = new_thread_disable_reason(path, line)
+  side = side == "LEFT" and "LEFT" or "RIGHT"
+  local disable_reason = new_thread_disable_reason(path, line, side)
   if disable_reason then
     vim.notify(disable_reason, vim.log.levels.WARN)
     return
   end
-  side = side == "LEFT" and "LEFT" or "RIGHT"
   local line_commentable = in_diff_context
   if line_commentable == nil then
     line_commentable = is_line_commentable(path, line, side)
@@ -794,13 +798,14 @@ end
 ---@param prefill_lines string[]
 ---@return boolean
 local function open_new_thread_from_line(path, line, prefill_lines, target)
-  local disable_reason = new_thread_disable_reason(path, line)
+  local side = target and target.side == "LEFT" and "LEFT" or "RIGHT"
+  local disable_reason = new_thread_disable_reason(path, line, side)
   if disable_reason then
     vim.notify(disable_reason, vim.log.levels.WARN)
     return false
   end
   open_new_thread_editor(path, line, prefill_lines or {}, {
-    side = target and target.side,
+    side = side,
     in_diff_context = target and target.in_diff_context,
   })
   return true
@@ -978,24 +983,10 @@ end
 
 local function split_row_for_line(buf, path, line, side)
   local rendered = diff.get_split_metadata(buf)
-  if not rendered then
-    return nil
-  end
-  side = side == "LEFT" and "LEFT" or "RIGHT"
-  for idx, row in ipairs(rendered.rows or {}) do
-    if row.path == path then
-      if side == "LEFT" and row.old_line == line and not row.left_continuation then
-        return idx, rendered.left_range.content_start_col
-      end
-      if side == "RIGHT" and row.new_line == line and not row.right_continuation then
-        return idx, rendered.right_range.content_start_col
-      end
-    end
-  end
-  return nil
+  return diff.find_split_row(rendered, { path = path, line = line, side = side })
 end
 
-local function jump_to_path_and_line(path, line)
+local function jump_to_path_and_line(path, line, side)
   local files = state.get_files()
   local target_file = nil
   local target_index = nil
@@ -1015,7 +1006,7 @@ local function jump_to_path_and_line(path, line)
     M.show_comments(buf, state.get_comments(path))
   end
   if line then
-    local rendered_row, rendered_col = split_row_for_line(vim.api.nvim_get_current_buf(), path, line, "RIGHT")
+    local rendered_row, rendered_col = split_row_for_line(vim.api.nvim_get_current_buf(), path, line, side)
     local line_count = vim.api.nvim_buf_line_count(0)
     vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(rendered_row or line, line_count)), rendered_col or 0 })
     vim.cmd("normal! zz")
@@ -1033,7 +1024,7 @@ function M.jump_to_thread(thread_id, opts)
     return false
   end
   state.set_selected_thread_id(thread.thread_id)
-  if not jump_to_path_and_line(thread.path, thread.line) then
+  if not jump_to_path_and_line(thread.path, thread.line, thread.side) then
     return false
   end
   if opts and opts.open_window then
@@ -1084,7 +1075,7 @@ local function jump_to_file_target(path)
     end
   end
   if first_issue_line then
-    return jump_to_path_and_line(path, first_issue_line)
+    return jump_to_path_and_line(path, first_issue_line, "RIGHT")
   end
   local file = nil
   for _, entry in ipairs(state.get_files()) do
@@ -1094,7 +1085,7 @@ local function jump_to_file_target(path)
     end
   end
   local changed_line = first_changed_line(file)
-  return jump_to_path_and_line(path, changed_line or 1)
+  return jump_to_path_and_line(path, changed_line or 1, "RIGHT")
 end
 
 function M.jump_to_file(path)
@@ -1257,13 +1248,8 @@ end
 
 local function restore_new_thread_snapshot(snapshot)
   local disable_reason = nil
-  if not find_pr_file(snapshot.path) then
+  if new_thread_disable_reason(snapshot.path, snapshot.line, snapshot.side) then
     disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
-  else
-    local line_count = checkout_line_count(snapshot.path)
-    if line_count and snapshot.line and snapshot.line > line_count then
-      disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
-    end
   end
   open_new_thread_editor(
     snapshot.path,
@@ -1611,7 +1597,7 @@ local function issue_prefill_lines(issue_comments)
   return lines
 end
 
-local function open_same_line_picker(path, line, line_state)
+local function open_same_line_picker(path, line, line_state, target)
   local thread_rows = {}
   local selected_thread_id = state.get_selected_thread_id()
   local selected = 1
@@ -1648,7 +1634,7 @@ local function open_same_line_picker(path, line, line_state)
       key = "new_thread:" .. path .. ":" .. tostring(line),
       text = "[NEW] New thread on this line",
       on_select = function()
-        open_new_thread_editor(path, line, {})
+        open_new_thread_from_line(path, line, {}, target)
       end,
     })
   end
@@ -1683,7 +1669,7 @@ function M.show_comment_thread()
     return
   end
   if #line_state.threads > 0 then
-    open_same_line_picker(path, line, line_state)
+    open_same_line_picker(path, line, line_state, target)
     return
   end
   open_new_thread_from_line(path, line, issue_prefill_lines(line_state.issue_comments), target)

@@ -623,6 +623,66 @@ describe("raccoon.diff", function()
     end)
   end)
 
+  describe("find_split_row", function()
+    it("finds LEFT old-only deletion rows", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "one", "two", "three" },
+        new_lines = { "one", "three" },
+        patch = "@@ -1,3 +1,2 @@\n one\n-two\n three",
+        width = 80,
+      })
+
+      local row, col = diff.find_split_row(rendered, {
+        path = "lua/a.lua",
+        line = 2,
+        side = "LEFT",
+      })
+
+      assert.equals(2, row)
+      assert.equals(rendered.left_range.content_start_col, col)
+    end)
+
+    it("finds RIGHT rows after a prior deletion", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "one", "two", "three" },
+        new_lines = { "one", "three" },
+        patch = "@@ -1,3 +1,2 @@\n one\n-two\n three",
+        width = 80,
+      })
+
+      local row, col = diff.find_split_row(rendered, {
+        path = "lua/a.lua",
+        line = 2,
+        side = "RIGHT",
+      })
+
+      assert.equals(3, row)
+      assert.equals(rendered.right_range.content_start_col, col)
+    end)
+
+    it("ignores continuation rows for wrapped split lines", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "before", "old " .. string.rep("x", 24), "after" },
+        new_lines = { "before", "new " .. string.rep("y", 24), "after" },
+        patch = "@@ -1,3 +1,3 @@\n before\n-old xxxxxxxxxxxxxxxxxxxxxxxx\n+new yyyyyyyyyyyyyyyyyyyyyyyy\n after",
+        width = 42,
+      })
+
+      local row = diff.find_split_row(rendered, {
+        path = "lua/a.lua",
+        line = 2,
+        side = "RIGHT",
+      })
+
+      assert.is_not_nil(rendered.rows[row + 1])
+      assert.is_false(rendered.rows[row].right_continuation)
+      assert.is_true(rendered.rows[row + 1].right_continuation)
+    end)
+  end)
+
   describe("resolve_cursor_target", function()
     it("uses cursor column to choose left or right side", function()
       local buf = vim.api.nvim_create_buf(false, true)
