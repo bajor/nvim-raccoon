@@ -2,6 +2,7 @@ local comments = require("raccoon.comments")
 local state = require("raccoon.state")
 local api = require("raccoon.api")
 local config = require("raccoon.config")
+local diff = require("raccoon.diff")
 local open = require("raccoon.open")
 
 local CLONE_PATH = "/tmp/raccoon-ui-state"
@@ -40,6 +41,20 @@ local function make_file_buffer(path, line_count)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_set_current_buf(buf)
   return buf
+end
+
+local function make_split_buffer(opts)
+  local rendered = diff.render_split_file({
+    path = opts.path or "lua/a.lua",
+    old_lines = opts.old_lines,
+    new_lines = opts.new_lines,
+    patch = opts.patch,
+    width = opts.width or 100,
+  })
+  local buf = vim.api.nvim_create_buf(false, true)
+  diff.apply_split_render(buf, rendered)
+  vim.api.nvim_set_current_buf(buf)
+  return buf, rendered
 end
 
 local function current_win_title()
@@ -502,6 +517,212 @@ describe("raccoon.comments UI state restore", function()
 
     assert.is_false(graphql_called)
     assert.is_true(rest_called)
+    assert.is_true(sync_called)
+  end)
+
+  it("sends split-buffer left-side comments with LEFT side and old line", function()
+    local original_notify = vim.notify
+    local original_config_load = config.load
+    local original_get_token_entry = config.get_token_entry
+    local original_api_init = api.init
+    local original_create_comment = api.create_comment
+    local original_sync = open.sync
+
+    local captured_opts
+    local sync_called = false
+
+    vim.notify = function() end
+    config.load = function()
+      return {
+        github_host = "github.com",
+        tokens = { owner = "ghp_fake" },
+      }, nil
+    end
+    config.get_token_entry = function()
+      return { token = "ghp_fake" }
+    end
+    api.init = function() end
+    api.create_comment = function(_owner, _repo, _number, opts, _token, callback)
+      captured_opts = opts
+      callback({ id = 56 }, nil)
+    end
+    open.sync = function()
+      sync_called = true
+    end
+
+    state.set_files({
+      {
+        filename = "lua/a.lua",
+        patch = "@@ -1,3 +1,3 @@\n line 1\n-old value\n+new value\n line 3",
+      },
+    })
+    make_split_buffer({
+      old_lines = { "line 1", "old value", "line 3" },
+      new_lines = { "line 1", "new value", "line 3" },
+      patch = "@@ -1,3 +1,3 @@\n line 1\n-old value\n+new value\n line 3",
+    })
+    local rendered = diff.get_split_metadata(vim.api.nvim_get_current_buf())
+    vim.api.nvim_win_set_cursor(0, { 2, rendered.left_range.content_start_col })
+    comments.show_comment_thread()
+
+    local editor_buf = vim.api.nvim_get_current_buf()
+    local line_count = vim.api.nvim_buf_line_count(editor_buf)
+    vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "left body" })
+    vim.cmd("stopinsert")
+    trigger_buffer_mapping(editor_buf, "n", " s")
+    vim.wait(1000, function()
+      return sync_called
+    end, 10)
+
+    vim.notify = original_notify
+    config.load = original_config_load
+    config.get_token_entry = original_get_token_entry
+    api.init = original_api_init
+    api.create_comment = original_create_comment
+    open.sync = original_sync
+
+    assert.equals("lua/a.lua", captured_opts.path)
+    assert.equals(2, captured_opts.line)
+    assert.equals("LEFT", captured_opts.side)
+    assert.is_true(sync_called)
+  end)
+
+  it("retries rejected split left-side line comments as file-level comments", function()
+    local original_notify = vim.notify
+    local original_config_load = config.load
+    local original_get_token_entry = config.get_token_entry
+    local original_api_init = api.init
+    local original_create_comment = api.create_comment
+    local original_sync = open.sync
+
+    local calls = {}
+    local sync_called = false
+
+    vim.notify = function() end
+    config.load = function()
+      return {
+        github_host = "github.com",
+        tokens = { owner = "ghp_fake" },
+      }, nil
+    end
+    config.get_token_entry = function()
+      return { token = "ghp_fake" }
+    end
+    api.init = function() end
+    api.create_comment = function(_owner, _repo, _number, opts, _token, callback)
+      table.insert(calls, vim.deepcopy(opts))
+      if #calls == 1 then
+        callback(nil, "GitHub API error (422): Validation Failed")
+      else
+        callback({ id = 57 }, nil)
+      end
+    end
+    open.sync = function()
+      sync_called = true
+    end
+
+    state.set_files({
+      {
+        filename = "lua/a.lua",
+        patch = "@@ -1,3 +1,3 @@\n line 1\n-old value\n+new value\n line 3",
+      },
+    })
+    make_split_buffer({
+      old_lines = { "line 1", "old value", "line 3" },
+      new_lines = { "line 1", "new value", "line 3" },
+      patch = "@@ -1,3 +1,3 @@\n line 1\n-old value\n+new value\n line 3",
+    })
+    local rendered = diff.get_split_metadata(vim.api.nvim_get_current_buf())
+    vim.api.nvim_win_set_cursor(0, { 2, rendered.left_range.content_start_col })
+    comments.show_comment_thread()
+
+    local editor_buf = vim.api.nvim_get_current_buf()
+    local line_count = vim.api.nvim_buf_line_count(editor_buf)
+    vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "retry body" })
+    vim.cmd("stopinsert")
+    trigger_buffer_mapping(editor_buf, "n", " s")
+    vim.wait(1000, function()
+      return sync_called
+    end, 10)
+
+    vim.notify = original_notify
+    config.load = original_config_load
+    config.get_token_entry = original_get_token_entry
+    api.init = original_api_init
+    api.create_comment = original_create_comment
+    open.sync = original_sync
+
+    assert.equals(2, #calls)
+    assert.equals("LEFT", calls[1].side)
+    assert.equals("file", calls[2].subject_type)
+    assert.is_nil(calls[2].line)
+    assert.is_true(sync_called)
+  end)
+
+  it("sends split out-of-hunk rows as file-level comments", function()
+    local original_notify = vim.notify
+    local original_config_load = config.load
+    local original_get_token_entry = config.get_token_entry
+    local original_api_init = api.init
+    local original_create_comment = api.create_comment
+    local original_sync = open.sync
+
+    local captured_opts
+    local sync_called = false
+
+    vim.notify = function() end
+    config.load = function()
+      return {
+        github_host = "github.com",
+        tokens = { owner = "ghp_fake" },
+      }, nil
+    end
+    config.get_token_entry = function()
+      return { token = "ghp_fake" }
+    end
+    api.init = function() end
+    api.create_comment = function(_owner, _repo, _number, opts, _token, callback)
+      captured_opts = opts
+      callback({ id = 58 }, nil)
+    end
+    open.sync = function()
+      sync_called = true
+    end
+
+    state.set_files({
+      {
+        filename = "lua/a.lua",
+        patch = "@@ -2,1 +2,1 @@\n-old value\n+new value",
+      },
+    })
+    state.set_comments("lua/a.lua", {})
+    make_split_buffer({
+      old_lines = { "line 1", "old value", "line 3", "line 4" },
+      new_lines = { "line 1", "new value", "line 3", "line 4" },
+      patch = "@@ -2,1 +2,1 @@\n-old value\n+new value",
+    })
+    local rendered = diff.get_split_metadata(vim.api.nvim_get_current_buf())
+    vim.api.nvim_win_set_cursor(0, { 4, rendered.right_range.content_start_col })
+    comments.show_comment_thread()
+
+    local editor_buf = vim.api.nvim_get_current_buf()
+    local line_count = vim.api.nvim_buf_line_count(editor_buf)
+    vim.api.nvim_buf_set_lines(editor_buf, line_count - 1, line_count, false, { "file body" })
+    vim.cmd("stopinsert")
+    trigger_buffer_mapping(editor_buf, "n", " s")
+    vim.wait(1000, function()
+      return sync_called
+    end, 10)
+
+    vim.notify = original_notify
+    config.load = original_config_load
+    config.get_token_entry = original_get_token_entry
+    api.init = original_api_init
+    api.create_comment = original_create_comment
+    open.sync = original_sync
+
+    assert.equals("file", captured_opts.subject_type)
+    assert.is_nil(captured_opts.line)
     assert.is_true(sync_called)
   end)
 

@@ -45,6 +45,30 @@ describe("raccoon.diff", function()
     end)
   end)
 
+  describe("parse_hunk_ranges", function()
+    it("parses old and new hunk coordinates", function()
+      local ranges = diff.parse_hunk_ranges("@@ -10,2 +20,3 @@ function")
+
+      assert.same({
+        old_start = 10,
+        old_count = 2,
+        new_start = 20,
+        new_count = 3,
+      }, ranges)
+    end)
+
+    it("defaults omitted counts to one", function()
+      local ranges = diff.parse_hunk_ranges("@@ -7 +9 @@")
+
+      assert.same({
+        old_start = 7,
+        old_count = 1,
+        new_start = 9,
+        new_count = 1,
+      }, ranges)
+    end)
+  end)
+
   describe("parse_patch", function()
     it("returns empty array for nil patch", function()
       local hunks = diff.parse_patch(nil)
@@ -438,6 +462,207 @@ describe("raccoon.diff", function()
       assert.is_true(diff.is_line_in_review_context(patch, 3))
       assert.is_true(diff.is_line_in_review_context(patch, 4))
       assert.is_true(diff.is_line_in_review_context(patch, 5))
+    end)
+  end)
+
+  describe("render_stacked_inline_spans", function()
+    it("pairs delete and add lines by index within a contiguous change block", function()
+      local line_list = {
+        { type = "del", content = "local value = 1" },
+        { type = "del", content = "local other = true" },
+        { type = "add", content = "local value = 42" },
+        { type = "add", content = "local other = false" },
+      }
+
+      local spans = diff.render_stacked_inline_spans(line_list)
+
+      assert.equals(4, #spans)
+      assert.equals(1, spans[1].line)
+      assert.equals(2, spans[2].line)
+      assert.equals(3, spans[3].line)
+      assert.equals(4, spans[4].line)
+      assert.equals("RaccoonInlineDelete", spans[1].hl)
+      assert.equals("RaccoonInlineAdd", spans[3].hl)
+      assert.is_true(spans[1].start_col < spans[1].end_col)
+      assert.is_true(spans[3].start_col < spans[3].end_col)
+    end)
+
+    it("skips inline spans when either paired line exceeds the display cap", function()
+      local long = string.rep("x", diff.MAX_INLINE_DIFF_DISPLAY_CHARS + 1)
+      local spans = diff.render_stacked_inline_spans({
+        { type = "del", content = long },
+        { type = "add", content = long .. "y" },
+      })
+
+      assert.equals(0, #spans)
+    end)
+  end)
+
+  describe("render_split_file", function()
+    it("aligns full old and new file content with split row metadata", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "one", "old", "three" },
+        new_lines = { "one", "new", "three" },
+        patch = "@@ -1,3 +1,3 @@\n one\n-old\n+new\n three",
+        width = 80,
+      })
+
+      assert.equals(3, #rendered.lines)
+      assert.matches("one", rendered.lines[1])
+      assert.matches("old", rendered.lines[2])
+      assert.matches("new", rendered.lines[2])
+      assert.same({
+        path = "lua/a.lua",
+        old_line = 2,
+        new_line = 2,
+        kind = "change",
+        in_diff_context = true,
+        left_continuation = false,
+        right_continuation = false,
+      }, {
+        path = rendered.rows[2].path,
+        old_line = rendered.rows[2].old_line,
+        new_line = rendered.rows[2].new_line,
+        kind = rendered.rows[2].kind,
+        in_diff_context = rendered.rows[2].in_diff_context,
+        left_continuation = rendered.rows[2].left_continuation,
+        right_continuation = rendered.rows[2].right_continuation,
+      })
+      assert.is_true(rendered.separator_col > rendered.left_range.start_col)
+      assert.is_true(rendered.right_range.start_col > rendered.separator_col)
+    end)
+
+    it("wraps long split-side lines into continuation rows with stable semantic line numbers", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "before", "old " .. string.rep("x", 24), "after" },
+        new_lines = { "before", "new " .. string.rep("y", 24), "after" },
+        patch = "@@ -1,3 +1,3 @@\n before\n-old xxxxxxxxxxxxxxxxxxxxxxxx\n+new yyyyyyyyyyyyyyyyyyyyyyyy\n after",
+        width = 42,
+      })
+
+      assert.is_true(#rendered.lines > 3)
+      local continuation
+      for _, row in ipairs(rendered.rows) do
+        if row.old_line == 2 and row.new_line == 2 and (row.left_continuation or row.right_continuation) then
+          continuation = row
+          break
+        end
+      end
+
+      assert.is_not_nil(continuation)
+      assert.equals("change", continuation.kind)
+      assert.is_true(continuation.in_diff_context)
+    end)
+
+    it("renders added, deleted, and renamed files", function()
+      local added = diff.render_split_file({
+        path = "lua/new.lua",
+        status = "added",
+        old_lines = {},
+        new_lines = { "new line" },
+        patch = "@@ -0,0 +1 @@\n+new line",
+        width = 80,
+      })
+      local deleted = diff.render_split_file({
+        path = "lua/old.lua",
+        status = "removed",
+        old_lines = { "old line" },
+        new_lines = {},
+        patch = "@@ -1 +0,0 @@\n-old line",
+        width = 80,
+      })
+      local renamed = diff.render_split_file({
+        path = "lua/new-name.lua",
+        previous_path = "lua/old-name.lua",
+        status = "renamed",
+        old_lines = { "same" },
+        new_lines = { "same" },
+        patch = "",
+        width = 80,
+      })
+
+      assert.is_nil(added.rows[1].old_line)
+      assert.equals(1, added.rows[1].new_line)
+      assert.equals(1, deleted.rows[1].old_line)
+      assert.is_nil(deleted.rows[1].new_line)
+      assert.matches("renamed from lua/old%-name%.lua", renamed.lines[1])
+    end)
+
+    it("renders binary or unreadable files as file-level placeholder rows", function()
+      local rendered = diff.render_split_file({
+        path = "assets/logo.png",
+        binary = true,
+        width = 80,
+      })
+
+      assert.equals(1, #rendered.lines)
+      assert.matches("Binary or unreadable file", rendered.lines[1])
+      assert.equals("file", rendered.rows[1].kind)
+      assert.equals("assets/logo.png", rendered.rows[1].path)
+      assert.is_false(rendered.rows[1].in_diff_context)
+    end)
+
+    it("skips syntax projection above documented caps", function()
+      local lines = {}
+      for i = 1, diff.MAX_SYNTAX_ROWS + 1 do
+        lines[i] = "line " .. i
+      end
+
+      local rendered = diff.render_split_file({
+        path = "lua/big.lua",
+        old_lines = lines,
+        new_lines = lines,
+        patch = "",
+        width = 80,
+      })
+
+      assert.is_false(rendered.syntax_enabled)
+      assert.equals("row cap", rendered.syntax_skip_reason)
+    end)
+  end)
+
+  describe("resolve_cursor_target", function()
+    it("uses cursor column to choose left or right side", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "old" },
+        new_lines = { "new" },
+        patch = "@@ -1 +1 @@\n-old\n+new",
+        width = 80,
+      })
+      diff.attach_split_metadata(buf, rendered)
+
+      local left = diff.resolve_cursor_target(buf, 1, rendered.left_range.start_col)
+      local right = diff.resolve_cursor_target(buf, 1, rendered.right_range.start_col)
+
+      assert.equals("LEFT", left.side)
+      assert.equals(1, left.line)
+      assert.equals("RIGHT", right.side)
+      assert.equals(1, right.line)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("falls back to right side when the cursor is ambiguous", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "old" },
+        new_lines = { "new" },
+        patch = "@@ -1 +1 @@\n-old\n+new",
+        width = 80,
+      })
+      diff.attach_split_metadata(buf, rendered)
+
+      local target = diff.resolve_cursor_target(buf, 1, rendered.separator_col)
+
+      assert.equals("RIGHT", target.side)
+      assert.equals(1, target.line)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
     end)
   end)
 

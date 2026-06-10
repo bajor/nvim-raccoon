@@ -24,6 +24,23 @@ local function setup_highlights()
     default = true,
   })
 
+  vim.api.nvim_set_hl(0, "RaccoonChange", {
+    bg = "#4a3d16",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "RaccoonInlineAdd", {
+    bg = "#3f7a3f",
+    bold = true,
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "RaccoonInlineDelete", {
+    bg = "#7a3030",
+    bold = true,
+    default = true,
+  })
+
   -- Sign column colors
   vim.api.nvim_set_hl(0, "RaccoonAddSign", {
     fg = "#98c379", -- Green

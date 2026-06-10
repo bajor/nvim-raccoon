@@ -100,6 +100,8 @@ local editor_state = {
   thread_id = nil,
   path = nil,
   line = nil,
+  side = nil,
+  in_diff_context = nil,
   prefill_lines = nil,
   augroup = nil,
 }
@@ -111,6 +113,10 @@ local function trim(text)
 end
 
 local function current_buf_path(buf)
+  local rendered = diff.get_split_metadata(buf or 0)
+  if rendered and rendered.rows and rendered.rows[1] then
+    return rendered.rows[1].path
+  end
   local clone_path = state.get_clone_path()
   if not clone_path then
     return nil
@@ -181,6 +187,8 @@ local function close_active_editor(force)
     thread_id = nil,
     path = nil,
     line = nil,
+    side = nil,
+    in_diff_context = nil,
     prefill_lines = nil,
     augroup = nil,
   }
@@ -272,6 +280,29 @@ local function line_summary(bucket)
   return string.format("%d issue notes on this line", #bucket.issue_comments)
 end
 
+local function bucket_sides(bucket)
+  local sides = { LEFT = false, RIGHT = false }
+  for _, thread in ipairs(bucket.threads or {}) do
+    local saw_side = false
+    for _, comment in ipairs(thread.comments or {}) do
+      if comment.side == "LEFT" then
+        sides.LEFT = true
+        saw_side = true
+      elseif comment.side == "RIGHT" then
+        sides.RIGHT = true
+        saw_side = true
+      end
+    end
+    if not saw_side then
+      sides.RIGHT = true
+    end
+  end
+  if #(bucket.issue_comments or {}) > 0 then
+    sides.RIGHT = true
+  end
+  return sides
+end
+
 local function setup_override_highlights()
   vim.api.nvim_set_hl(0, "RaccoonCommentBadge", { default = true, bold = true })
   vim.api.nvim_set_hl(0, "RaccoonCommentBadgeStrong", { default = true, bold = true, link = "Title" })
@@ -317,6 +348,41 @@ function M.show_comments(buf, _comments)
   end)
 
   local line_map = index.line_state_by_file[path] or {}
+  local rendered = diff.get_split_metadata(buf)
+  if rendered then
+    for row_idx, row in ipairs(rendered.rows or {}) do
+      local specs = {}
+      if row.old_line and line_map[row.old_line] then
+        local bucket = line_map[row.old_line]
+        if bucket_sides(bucket).LEFT then
+          table.insert(specs, {
+            col = rendered.left_range.start_col,
+            bucket = bucket,
+          })
+        end
+      end
+      if row.new_line and line_map[row.new_line] then
+        local bucket = line_map[row.new_line]
+        if bucket_sides(bucket).RIGHT then
+          table.insert(specs, {
+            col = rendered.right_range.start_col,
+            bucket = bucket,
+          })
+        end
+      end
+      for _, spec in ipairs(specs) do
+        local badge = build_badge(spec.bucket.counts)
+        local badge_hl = (spec.bucket.counts.nr or 0) > 0 and "RaccoonCommentBadgeStrong" or "RaccoonCommentBadge"
+        pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row_idx - 1, 0, {
+          virt_text = { { badge, badge_hl } },
+          virt_text_pos = "overlay",
+          virt_text_win_col = spec.col,
+        })
+      end
+    end
+    return
+  end
+
   local line_count = vim.api.nvim_buf_line_count(buf)
   local ordered_lines = {}
   for line in pairs(line_map) do
@@ -476,6 +542,8 @@ local function open_editor_window(opts)
     thread_id = opts.thread_id,
     path = opts.path,
     line = opts.line,
+    side = opts.side,
+    in_diff_context = opts.in_diff_context,
     prefill_lines = opts.prefill_lines,
     augroup = nil,
   }
@@ -530,16 +598,37 @@ local function get_editor_input_lines()
   return vim.api.nvim_buf_get_lines(editor_state.buf, editor_state.input_start - 1, -1, false)
 end
 
-local function is_line_commentable(path, line)
+local function is_line_commentable(path, line, side)
   if type(line) ~= "number" or line < 1 then
     return false
   end
   for _, file in ipairs(state.get_files()) do
     if file.filename == path then
-      return diff.is_line_in_review_context(file.patch, line)
+      return diff.is_line_in_review_context(file.patch, line, side or "RIGHT")
     end
   end
   return false
+end
+
+local function current_review_target()
+  local buf = vim.api.nvim_get_current_buf()
+  local rendered = diff.get_split_metadata(buf)
+  if rendered then
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    return diff.resolve_cursor_target(buf, cursor[1], cursor[2])
+  end
+
+  local path = current_buf_path(buf)
+  if not path then
+    return nil
+  end
+  local line = vim.fn.line(".")
+  return {
+    path = path,
+    line = line,
+    side = "RIGHT",
+    in_diff_context = is_line_commentable(path, line, "RIGHT"),
+  }
 end
 
 ---@param path string
@@ -588,6 +677,9 @@ end
 ---@param line number
 ---@return boolean
 local function can_start_new_thread(path, line)
+  if line == nil then
+    return find_pr_file(path) ~= nil
+  end
   if type(line) ~= "number" or line < 1 then
     return false
   end
@@ -598,6 +690,9 @@ end
 ---@param line number
 ---@return string|nil
 local function new_thread_disable_reason(path, line)
+  if line == nil then
+    return find_pr_file(path) and nil or file_outside_pr_changes_message()
+  end
   if type(line) ~= "number" or line < 1 then
     return "Invalid line number for comment"
   end
@@ -614,7 +709,18 @@ local function new_thread_disable_reason(path, line)
   return nil
 end
 
-local function send_new_thread(path, line)
+local function is_anchor_validation_error(err)
+  if not err then
+    return false
+  end
+  local text = tostring(err):lower()
+  return text:match("422") ~= nil
+    or text:match("validation") ~= nil
+    or text:match("position") ~= nil
+    or text:match("context") ~= nil
+end
+
+local function send_new_thread(path, line, side, in_diff_context)
   local ctx, ctx_err = ensure_review_context()
   if ctx_err then
     vim.notify(ctx_err, vim.log.levels.ERROR)
@@ -631,7 +737,11 @@ local function send_new_thread(path, line)
     vim.notify(disable_reason, vim.log.levels.WARN)
     return
   end
-  local line_commentable = is_line_commentable(path, line)
+  side = side == "LEFT" and "LEFT" or "RIGHT"
+  local line_commentable = in_diff_context
+  if line_commentable == nil then
+    line_commentable = is_line_commentable(path, line, side)
+  end
 
   local function on_send_success()
     close_active_editor(true)
@@ -654,11 +764,15 @@ local function send_new_thread(path, line)
       comment_opts.subject_type = "file"
     else
       comment_opts.line = line
-      comment_opts.side = "RIGHT"
+      comment_opts.side = side
     end
     api.create_comment(ctx.owner, ctx.repo, ctx.number, comment_opts, ctx.token, function(_result, err)
       vim.schedule(function()
         if err then
+          if rest_opts.allow_file_retry and is_anchor_validation_error(err) then
+            send_via_rest(rest_error_prefix, { subject_type = "file" })
+            return
+          end
           local prefix = rest_error_prefix or "Failed to send thread"
           vim.notify(prefix .. ": " .. err, vim.log.levels.ERROR)
           return
@@ -672,27 +786,34 @@ local function send_new_thread(path, line)
     send_via_rest(nil, { subject_type = "file" })
     return
   end
-  send_via_rest()
+  send_via_rest(nil, { allow_file_retry = side == "LEFT" })
 end
 
 ---@param path string
 ---@param line number
 ---@param prefill_lines string[]
 ---@return boolean
-local function open_new_thread_from_line(path, line, prefill_lines)
+local function open_new_thread_from_line(path, line, prefill_lines, target)
   local disable_reason = new_thread_disable_reason(path, line)
   if disable_reason then
     vim.notify(disable_reason, vim.log.levels.WARN)
     return false
   end
-  open_new_thread_editor(path, line, prefill_lines or {})
+  open_new_thread_editor(path, line, prefill_lines or {}, {
+    side = target and target.side,
+    in_diff_context = target and target.in_diff_context,
+  })
   return true
 end
 
 open_new_thread_editor = function(path, line, prefill_lines, opts)
   opts = opts or {}
   local shortcuts = config.load_shortcuts()
-  local line_commentable = is_line_commentable(path, line)
+  local side = opts.side == "LEFT" and "LEFT" or "RIGHT"
+  local line_commentable = opts.in_diff_context
+  if line_commentable == nil then
+    line_commentable = is_line_commentable(path, line, side)
+  end
   local title_prefix = line_commentable and "New Thread" or "New File Comment"
   local intro_line = line_commentable
     and "New thread on this line"
@@ -707,17 +828,20 @@ open_new_thread_editor = function(path, line, prefill_lines, opts)
   local input_start = #lines + 1
   table.insert(lines, "")
   local allow_send = not opts.disable_send_reason
+  local line_label = line and (" L" .. tostring(line)) or " FILE"
   open_editor_window({
-    title = build_editor_title(title_prefix .. " L" .. tostring(line), shortcuts, allow_send, false, false),
+    title = build_editor_title(title_prefix .. line_label, shortcuts, allow_send, false, false),
     lines = lines,
     input_start = input_start,
     kind = "new_thread",
     path = path,
     line = line,
+    side = side,
+    in_diff_context = line_commentable,
     prefill_lines = prefill_lines,
     initial_input_lines = opts.initial_input_lines,
     on_send = opts.disable_send_reason and nil or function()
-      send_new_thread(path, line)
+      send_new_thread(path, line, side, line_commentable)
     end,
   })
   if opts.disable_send_reason then
@@ -852,6 +976,25 @@ local function open_thread_editor(thread_id, opts)
   end
 end
 
+local function split_row_for_line(buf, path, line, side)
+  local rendered = diff.get_split_metadata(buf)
+  if not rendered then
+    return nil
+  end
+  side = side == "LEFT" and "LEFT" or "RIGHT"
+  for idx, row in ipairs(rendered.rows or {}) do
+    if row.path == path then
+      if side == "LEFT" and row.old_line == line and not row.left_continuation then
+        return idx, rendered.left_range.content_start_col
+      end
+      if side == "RIGHT" and row.new_line == line and not row.right_continuation then
+        return idx, rendered.right_range.content_start_col
+      end
+    end
+  end
+  return nil
+end
+
 local function jump_to_path_and_line(path, line)
   local files = state.get_files()
   local target_file = nil
@@ -872,8 +1015,9 @@ local function jump_to_path_and_line(path, line)
     M.show_comments(buf, state.get_comments(path))
   end
   if line then
+    local rendered_row, rendered_col = split_row_for_line(vim.api.nvim_get_current_buf(), path, line, "RIGHT")
     local line_count = vim.api.nvim_buf_line_count(0)
-    vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(line, line_count)), 0 })
+    vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(rendered_row or line, line_count)), rendered_col or 0 })
     vim.cmd("normal! zz")
   end
   return true
@@ -1090,6 +1234,8 @@ function M.capture_ui_state()
       thread_id = editor_state.thread_id,
       path = editor_state.path,
       line = editor_state.line,
+      side = editor_state.side,
+      in_diff_context = editor_state.in_diff_context,
       prefill_lines = editor_state.prefill_lines,
       input_lines = get_editor_input_lines(),
     }
@@ -1115,7 +1261,7 @@ local function restore_new_thread_snapshot(snapshot)
     disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
   else
     local line_count = checkout_line_count(snapshot.path)
-    if line_count and snapshot.line > line_count then
+    if line_count and snapshot.line and snapshot.line > line_count then
       disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
     end
   end
@@ -1126,6 +1272,8 @@ local function restore_new_thread_snapshot(snapshot)
     {
       initial_input_lines = snapshot.input_lines,
       disable_send_reason = disable_reason,
+      side = snapshot.side,
+      in_diff_context = snapshot.in_diff_context,
     }
   )
 end
@@ -1301,8 +1449,9 @@ function M.list_comments(opts)
   local selected = resolve_selected_row(rows, opts.selection_key, opts.selected_index)
   if not opts.selection_key and not opts.selected_index then
     local current_thread_id = state.get_selected_thread_id()
-    local current_path = current_buf_path(0)
-    local current_line = vim.fn.line(".")
+    local target = current_review_target()
+    local current_path = target and target.path or current_buf_path(0)
+    local current_line = target and target.line or vim.fn.line(".")
     for row_idx, row in ipairs(rows) do
       if current_thread_id and row.thread_id == current_thread_id then
         selected = row_idx
@@ -1353,8 +1502,9 @@ function M.list_threads(opts)
   local rows = {}
   local selected = 1
   local current_thread_id = state.get_selected_thread_id()
-  local current_path = current_buf_path(0)
-  local current_line = vim.fn.line(".")
+  local target = current_review_target()
+  local current_path = target and target.path or current_buf_path(0)
+  local current_line = target and target.line or vim.fn.line(".")
   for row_idx, thread in ipairs(index.unresolved_threads) do
     if current_thread_id and thread.thread_id == current_thread_id then
       selected = row_idx
@@ -1516,26 +1666,27 @@ function M.show_comment_thread()
     flat_diff_only_message()
     return
   end
-  local path = current_buf_path(0)
-  if not path then
+  local target = current_review_target()
+  if not target or not target.path then
     vim.notify("Not in a PR file", vim.log.levels.WARN)
     return
   end
-  local line = vim.fn.line(".")
+  local path = target.path
+  local line = target.line
   local index = build_index()
   if not index then
     return
   end
   local line_state = thread_index.get_comment_line_state(index, path, line)
   if not line_state then
-    open_new_thread_from_line(path, line, {})
+    open_new_thread_from_line(path, line, {}, target)
     return
   end
   if #line_state.threads > 0 then
     open_same_line_picker(path, line, line_state)
     return
   end
-  open_new_thread_from_line(path, line, issue_prefill_lines(line_state.issue_comments))
+  open_new_thread_from_line(path, line, issue_prefill_lines(line_state.issue_comments), target)
 end
 
 --- Get the namespace ID

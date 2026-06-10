@@ -201,6 +201,39 @@ describe("raccoon.commit_ui", function()
     end)
   end)
 
+  describe("apply_diff_highlights", function()
+    it("adds inline character highlights for paired delete/add rows", function()
+      local ns = vim.api.nvim_create_namespace("raccoon_commit_ui_inline_test")
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+        "local value = 1",
+        "local value = 42",
+      })
+
+      commit_ui.apply_diff_highlights(ns, buf, {
+        { type = "del", content = "local value = 1" },
+        { type = "add", content = "local value = 42" },
+      })
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      local inline_delete = false
+      local inline_add = false
+      for _, mark in ipairs(marks) do
+        local details = mark[4] or {}
+        if details.hl_group == "RaccoonInlineDelete" then
+          inline_delete = true
+        elseif details.hl_group == "RaccoonInlineAdd" then
+          inline_add = true
+        end
+      end
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+
+      assert.is_true(inline_delete)
+      assert.is_true(inline_add)
+    end)
+  end)
+
   it("compute_grid_context matches rendered grid row height", function()
     local state = { grid_wins = {}, grid_bufs = {} }
     local saved_lines = vim.o.lines

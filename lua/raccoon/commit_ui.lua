@@ -399,6 +399,9 @@ function M.apply_diff_highlights(ns_id, buf, line_list)
       })
     end
   end
+  for _, span in ipairs(diff.render_stacked_inline_spans(line_list)) do
+    pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, span.hl, span.line - 1, span.start_col, span.end_col)
+  end
 end
 
 --- Clamp a config value to an integer within [min_val, max_val], or return default
@@ -916,7 +919,7 @@ function M.render_file_preview(s, opts)
       for _, hunk in ipairs(hunks) do
         for _, line_data in ipairs(hunk.lines) do
           table.insert(lines, line_data.content or "")
-          table.insert(hl_lines, { type = line_data.type })
+          table.insert(hl_lines, { type = line_data.type, content = line_data.content or "" })
         end
       end
       finalize_preview(buf, win, opts.filename, lines)
@@ -1001,7 +1004,7 @@ function M.open_maximize(opts)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, { type = line_data.type, content = line_data.content or "" })
       end
     end
 
@@ -1261,7 +1264,7 @@ function M.refresh_maximize(s)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, { type = line_data.type, content = line_data.content or "" })
       end
     end
 
