@@ -53,37 +53,12 @@ local function get_file_points(file)
 
   -- Get diff hunks
   if file.patch then
-    local changes = diff.get_changed_lines(file.patch)
-
-    -- Group consecutive changed lines into hunks
-    local all_lines = {}
-    for _, line in ipairs(changes.added) do
-      table.insert(all_lines, { line = line, side = "RIGHT" })
-    end
-    for _, del in ipairs(changes.deleted) do
-      local line = del.old_line or del.line_num
-      if line then
-        table.insert(all_lines, { line = math.max(1, line), side = "LEFT" })
+    for _, target in ipairs(diff.get_change_points(file.patch)) do
+      local key = point_key(target.line, target.side)
+      if not seen[key] then
+        table.insert(points, target)
+        seen[key] = true
       end
-    end
-    table.sort(all_lines, function(a, b)
-      if a.line ~= b.line then
-        return a.line < b.line
-      end
-      return a.side < b.side
-    end)
-
-    -- Get hunk start lines (first line of consecutive groups)
-    local prev_line = nil
-    for _, target in ipairs(all_lines) do
-      if prev_line == nil or target.line > prev_line + 1 then
-        local key = point_key(target.line, target.side)
-        if not seen[key] then
-          table.insert(points, { line = target.line, side = target.side, type = "diff" })
-          seen[key] = true
-        end
-      end
-      prev_line = target.line
     end
   end
 

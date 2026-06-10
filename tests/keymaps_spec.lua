@@ -239,6 +239,94 @@ describe("raccoon.keymaps", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    it("next_point lands replacement diffs on the right-side changed row", function()
+      local diff = require("raccoon.diff")
+      local patch = "@@ -1,3 +1,3 @@\n before\n-old value\n+new value\n after"
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/owner/repo/pull/1",
+        clone_path = "/tmp/raccoon-keymaps",
+      })
+      state.set_files({
+        {
+          filename = "lua/a.lua",
+          patch = patch,
+        },
+      })
+
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "before", "old value", "after" },
+        new_lines = { "before", "new value", "after" },
+        patch = patch,
+        width = 90,
+      })
+      local buf = vim.api.nvim_create_buf(false, true)
+      diff.apply_split_render(buf, rendered)
+      vim.api.nvim_set_current_buf(buf)
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      keymaps.next_point()
+
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      assert.equals(2, cursor[1])
+      assert.equals(rendered.right_range.content_start_col, cursor[2])
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("next_point keeps left-side thread comments on the left side", function()
+      local diff = require("raccoon.diff")
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/owner/repo/pull/1",
+        clone_path = "/tmp/raccoon-keymaps",
+      })
+      state.set_files({
+        {
+          filename = "lua/a.lua",
+          patch = "",
+        },
+      })
+      state.set_comments("lua/a.lua", {
+        {
+          id = 2000,
+          body = "left comment",
+          thread_id = "thread-left",
+          line = 2,
+          side = "LEFT",
+          resolved = false,
+          in_reply_to_id = vim.NIL,
+          created_at = "2026-01-01T00:00:00Z",
+          user = { login = "reviewer" },
+        },
+      })
+
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "before", "old value", "after" },
+        new_lines = { "before", "new value", "after" },
+        patch = "",
+        width = 90,
+      })
+      local buf = vim.api.nvim_create_buf(false, true)
+      diff.apply_split_render(buf, rendered)
+      vim.api.nvim_set_current_buf(buf)
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      keymaps.next_point()
+
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      assert.equals(2, cursor[1])
+      assert.equals(rendered.left_range.content_start_col, cursor[2])
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 
   describe("merge_picker", function()

@@ -11,6 +11,9 @@ M.MAX_SYNTAX_ROWS = 5000
 M.MAX_SYNTAX_SIDE_BYTES = 500 * 1024
 M.MAX_INLINE_DIFF_DISPLAY_CHARS = 1000
 
+local LINE_HIGHLIGHT_PRIORITY = 90
+local SYNTAX_HIGHLIGHT_PRIORITY = 110
+local INLINE_HIGHLIGHT_PRIORITY = 200
 local SPLIT_SEPARATOR = " │ "
 local split_metadata_by_buf = {}
 
@@ -163,6 +166,51 @@ function M.get_changed_lines(patch)
   end
 
   return changes
+end
+
+--- Get first navigable changed point for each contiguous add/delete block.
+---@param patch string The patch content
+---@return table[] points Array of {line, side, type = "diff"}
+function M.get_change_points(patch)
+  local points = {}
+  local hunks = M.parse_patch(patch)
+
+  for _, hunk in ipairs(hunks) do
+    local idx = 1
+    while idx <= #hunk.lines do
+      local line_data = hunk.lines[idx]
+      if line_data.type == "add" or line_data.type == "del" then
+        local first_add = nil
+        local first_del = nil
+        while idx <= #hunk.lines and (hunk.lines[idx].type == "add" or hunk.lines[idx].type == "del") do
+          if hunk.lines[idx].type == "add" and not first_add then
+            first_add = hunk.lines[idx]
+          elseif hunk.lines[idx].type == "del" and not first_del then
+            first_del = hunk.lines[idx]
+          end
+          idx = idx + 1
+        end
+
+        if first_add and (first_add.new_line or first_add.line_num) then
+          table.insert(points, {
+            line = first_add.new_line or first_add.line_num,
+            side = "RIGHT",
+            type = "diff",
+          })
+        elseif first_del and (first_del.old_line or first_del.line_num) then
+          table.insert(points, {
+            line = first_del.old_line or math.max(1, first_del.line_num),
+            side = "LEFT",
+            type = "diff",
+          })
+        end
+      else
+        idx = idx + 1
+      end
+    end
+  end
+
+  return points
 end
 
 --- Check whether a file line is in GitHub PR review diff context.
@@ -558,6 +606,7 @@ local function collect_syntax_highlights_for_side(lang, source_lines, line_map, 
             start_col = content_start_col + start_col,
             end_col = content_start_col + math.min(end_col, content_width),
             hl = "@" .. capture,
+            priority = SYNTAX_HIGHLIGHT_PRIORITY,
           })
         end
       end
@@ -635,6 +684,7 @@ function M.render_split_file(opts)
   local lines = {}
   local rows = {}
   local highlights = {}
+  local inline_highlights = {}
 
   local function append_rendered_row(row)
     local left_chunks = split_to_display_width(row.old_content or "", layout.content_width)
@@ -670,26 +720,32 @@ function M.render_split_file(opts)
       table.insert(rows, rendered_row)
       local hl = line_highlight(row.kind)
       if hl then
-        table.insert(highlights, { line = #lines - 1, line_hl_group = hl })
+        table.insert(highlights, {
+          line = #lines - 1,
+          line_hl_group = hl,
+          priority = LINE_HIGHLIGHT_PRIORITY,
+        })
       end
     end
 
     if row.kind == "change" and first_line == #lines then
       local old_span, new_span = changed_span(row.old_content or "", row.new_content or "")
       if old_span then
-        table.insert(highlights, {
+        table.insert(inline_highlights, {
           line = first_line - 1,
           start_col = layout.left_range.content_start_col + old_span.start_col,
           end_col = layout.left_range.content_start_col + old_span.end_col,
           hl = "RaccoonInlineDelete",
+          priority = INLINE_HIGHLIGHT_PRIORITY,
         })
       end
       if new_span then
-        table.insert(highlights, {
+        table.insert(inline_highlights, {
           line = first_line - 1,
           start_col = layout.right_range.content_start_col + new_span.start_col,
           end_col = layout.right_range.content_start_col + new_span.end_col,
           hl = "RaccoonInlineAdd",
+          priority = INLINE_HIGHLIGHT_PRIORITY,
         })
       end
     end
@@ -751,6 +807,9 @@ function M.render_split_file(opts)
       rendered.syntax_enabled = false
       rendered.syntax_skip_reason = "no parser"
     end
+  end
+  for _, hl in ipairs(inline_highlights) do
+    table.insert(rendered.highlights, hl)
   end
   return rendered
 end
@@ -829,9 +888,14 @@ function M.apply_split_render(buf, rendered)
     if hl.line_hl_group then
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, hl.line, 0, {
         line_hl_group = hl.line_hl_group,
+        priority = hl.priority or LINE_HIGHLIGHT_PRIORITY,
       })
     elseif hl.start_col and hl.end_col and hl.end_col > hl.start_col then
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, hl.hl, hl.line, hl.start_col, hl.end_col)
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, hl.line, hl.start_col, {
+        end_col = hl.end_col,
+        hl_group = hl.hl,
+        priority = hl.priority or SYNTAX_HIGHLIGHT_PRIORITY,
+      })
     end
   end
   M.attach_split_metadata(buf, rendered)
