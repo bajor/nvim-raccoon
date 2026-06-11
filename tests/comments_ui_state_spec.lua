@@ -1016,7 +1016,7 @@ describe("raccoon.comments UI state restore", function()
 
     local picker_lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, 2, false)
     assert.matches("^%[R%]", picker_lines[1])
-    assert.truthy(picker_lines[2] and picker_lines[2]:match("^%[NEW%]"))
+    assert.equals("[NEW] New file comment for this file", picker_lines[2])
 
     local width = vim.api.nvim_win_get_config(0).width
     vim.o.columns = original_columns

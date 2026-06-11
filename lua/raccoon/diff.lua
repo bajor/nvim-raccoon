@@ -303,6 +303,70 @@ local function append_changed_char_spans(spans, chars, changed)
   end
 end
 
+local function span_overlaps_token(span, token_start_col, token_end_col)
+  return span.start_col < token_end_col and span.end_col > token_start_col
+end
+
+local function expand_fragmented_identifier_spans(text, spans)
+  if #spans < 2 then
+    return spans
+  end
+
+  local remove = {}
+  local additions = {}
+  for token_start, token in (text or ""):gmatch("()([%w_]+)") do
+    local token_start_col = token_start - 1
+    local token_end_col = token_start_col + #token
+    local token_span_indices = {}
+    local changed_cols = {}
+    for span_idx, span in ipairs(spans) do
+      if span_overlaps_token(span, token_start_col, token_end_col) then
+        table.insert(token_span_indices, span_idx)
+        local start_col = math.max(span.start_col, token_start_col)
+        local end_col = math.min(span.end_col, token_end_col)
+        for col = start_col, end_col - 1 do
+          changed_cols[col] = true
+        end
+      end
+    end
+
+    local changed_count = 0
+    for _ in pairs(changed_cols) do
+      changed_count = changed_count + 1
+    end
+    if #token_span_indices > 1 and changed_count >= math.ceil(#token / 2) then
+      for _, span_idx in ipairs(token_span_indices) do
+        remove[span_idx] = true
+      end
+      table.insert(additions, {
+        start_col = token_start_col,
+        end_col = token_end_col,
+      })
+    end
+  end
+
+  if #additions == 0 then
+    return spans
+  end
+
+  local expanded = {}
+  for span_idx, span in ipairs(spans) do
+    if not remove[span_idx] then
+      table.insert(expanded, span)
+    end
+  end
+  for _, span in ipairs(additions) do
+    table.insert(expanded, span)
+  end
+  table.sort(expanded, function(left, right)
+    if left.start_col ~= right.start_col then
+      return left.start_col < right.start_col
+    end
+    return left.end_col < right.end_col
+  end)
+  return expanded
+end
+
 local function mark_lcs_matches(
   left_chars,
   left_start,
@@ -399,7 +463,7 @@ local function compute_inline_char_spans(left, right)
   local new_spans = {}
   append_changed_char_spans(old_spans, left_chars, left_changed)
   append_changed_char_spans(new_spans, right_chars, right_changed)
-  return old_spans, new_spans
+  return expand_fragmented_identifier_spans(left, old_spans), expand_fragmented_identifier_spans(right, new_spans)
 end
 
 local function append_pair_spans(spans, left_line, right_line, left_content, right_content, left_hl, right_hl)
@@ -590,25 +654,45 @@ local function split_to_display_width(text, width)
   width = math.max(1, width)
   text = text or ""
   if text == "" then
-    return { "" }
+    return {
+      {
+        text = "",
+        start_col = 0,
+        end_col = 0,
+      },
+    }
   end
   local chunks = {}
   local current = ""
   local current_width = 0
-  local char_count = vim.fn.strchars(text)
-  for idx = 0, char_count - 1 do
-    local char = vim.fn.strcharpart(text, idx, 1)
-    local char_width = math.max(1, vim.fn.strdisplaywidth(char))
+  local current_start_col = 0
+  local current_end_col = 0
+  for _, char in ipairs(split_utf8_chars(text)) do
+    local char_width = math.max(1, vim.fn.strdisplaywidth(char.value))
     if current ~= "" and current_width + char_width > width then
-      table.insert(chunks, current)
-      current = char
+      table.insert(chunks, {
+        text = current,
+        start_col = current_start_col,
+        end_col = current_end_col,
+      })
+      current = char.value
       current_width = char_width
+      current_start_col = char.start_col
+      current_end_col = char.end_col
     else
-      current = current .. char
+      if current == "" then
+        current_start_col = char.start_col
+      end
+      current = current .. char.value
       current_width = current_width + char_width
+      current_end_col = char.end_col
     end
   end
-  table.insert(chunks, current)
+  table.insert(chunks, {
+    text = current,
+    start_col = current_start_col,
+    end_col = current_end_col,
+  })
   return chunks
 end
 
@@ -625,6 +709,24 @@ local function format_side(line_num, chunk, line_num_width, content_width)
   local label = line_num and tostring(line_num) or ""
   label = string.rep(" ", math.max(0, line_num_width - #label)) .. label
   return label .. " " .. pad_to_display_width(chunk or "", content_width)
+end
+
+local function append_projected_inline_highlights(highlights, first_line, chunks, spans, range, hl)
+  for _, span in ipairs(spans) do
+    for chunk_idx, chunk in ipairs(chunks) do
+      local start_col = math.max(span.start_col, chunk.start_col)
+      local end_col = math.min(span.end_col, chunk.end_col)
+      if end_col > start_col then
+        table.insert(highlights, {
+          line = first_line + chunk_idx - 2,
+          start_col = range.content_start_col + start_col - chunk.start_col,
+          end_col = range.content_start_col + end_col - chunk.start_col,
+          hl = hl,
+          priority = INLINE_HIGHLIGHT_PRIORITY,
+        })
+      end
+    end
+  end
 end
 
 local function split_layout(width, max_line)
@@ -830,17 +932,19 @@ function M.render_split_file(opts)
     local chunk_count = math.max(#left_chunks, #right_chunks)
     local first_line = #lines + 1
     for chunk_idx = 1, chunk_count do
+      local left_chunk = left_chunks[chunk_idx] or { text = "", start_col = 0, end_col = 0 }
+      local right_chunk = right_chunks[chunk_idx] or { text = "", start_col = 0, end_col = 0 }
       local left_num = chunk_idx == 1 and row.old_line or nil
       local right_num = chunk_idx == 1 and row.new_line or nil
       local left_side = format_side(
         left_num,
-        left_chunks[chunk_idx] or "",
+        left_chunk.text,
         layout.line_num_width,
         layout.content_width
       )
       local right_side = format_side(
         right_num,
-        right_chunks[chunk_idx] or "",
+        right_chunk.text,
         layout.line_num_width,
         layout.content_width
       )
@@ -870,26 +974,24 @@ function M.render_split_file(opts)
       end
     end
 
-    if row.kind == "change" and first_line == #lines then
+    if row.kind == "change" then
       local old_spans, new_spans = compute_inline_char_spans(row.old_content or "", row.new_content or "")
-      for _, old_span in ipairs(old_spans) do
-        table.insert(inline_highlights, {
-          line = first_line - 1,
-          start_col = layout.left_range.content_start_col + old_span.start_col,
-          end_col = layout.left_range.content_start_col + old_span.end_col,
-          hl = "RaccoonInlineDelete",
-          priority = INLINE_HIGHLIGHT_PRIORITY,
-        })
-      end
-      for _, new_span in ipairs(new_spans) do
-        table.insert(inline_highlights, {
-          line = first_line - 1,
-          start_col = layout.right_range.content_start_col + new_span.start_col,
-          end_col = layout.right_range.content_start_col + new_span.end_col,
-          hl = "RaccoonInlineAdd",
-          priority = INLINE_HIGHLIGHT_PRIORITY,
-        })
-      end
+      append_projected_inline_highlights(
+        inline_highlights,
+        first_line,
+        left_chunks,
+        old_spans,
+        layout.left_range,
+        "RaccoonInlineDelete"
+      )
+      append_projected_inline_highlights(
+        inline_highlights,
+        first_line,
+        right_chunks,
+        new_spans,
+        layout.right_range,
+        "RaccoonInlineAdd"
+      )
     end
   end
 
