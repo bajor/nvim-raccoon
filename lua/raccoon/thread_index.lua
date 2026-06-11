@@ -117,6 +117,38 @@ local function ensure_line_bucket(path_map, path, line)
   return bucket
 end
 
+local function ensure_side_line_bucket(path_map, path, side, line)
+  local file_map = path_map[path]
+  if not file_map then
+    file_map = {}
+    path_map[path] = file_map
+  end
+  side = side == "LEFT" and "LEFT" or "RIGHT"
+  local side_map = file_map[side]
+  if not side_map then
+    side_map = {}
+    file_map[side] = side_map
+  end
+  local bucket = side_map[line]
+  if not bucket then
+    bucket = {
+      threads = {},
+      issue_comments = {},
+      counts = { nr = 0, u = 0, i = 0 },
+    }
+    side_map[line] = bucket
+  end
+  return bucket
+end
+
+local function increment_thread_count(bucket, thread)
+  if thread.needs_reply then
+    bucket.counts.nr = bucket.counts.nr + 1
+  else
+    bucket.counts.u = bucket.counts.u + 1
+  end
+end
+
 --- Build an exact review-thread index for the current session.
 --- Returns nil + error if any real review comment cannot be mapped to a thread.
 ---@return table|nil index, string|nil err
@@ -247,18 +279,24 @@ function M.build()
   local history_threads = {}
   local line_state_by_file = {}
   local comment_line_state_by_file = {}
+  local side_line_state_by_file = {}
+  local side_comment_line_state_by_file = {}
 
   for _, thread in ipairs(threads) do
     table.insert(history_threads, thread)
     if is_real_number(thread.line) and thread.path then
       local bucket = ensure_line_bucket(comment_line_state_by_file, thread.path, thread.line)
       table.insert(bucket.threads, thread)
+      local side_bucket = ensure_side_line_bucket(
+        side_comment_line_state_by_file,
+        thread.path,
+        thread.side,
+        thread.line
+      )
+      table.insert(side_bucket.threads, thread)
       if thread.resolved ~= true then
-        if thread.needs_reply then
-          bucket.counts.nr = bucket.counts.nr + 1
-        else
-          bucket.counts.u = bucket.counts.u + 1
-        end
+        increment_thread_count(bucket, thread)
+        increment_thread_count(side_bucket, thread)
       end
     end
     if thread.resolved ~= true then
@@ -266,11 +304,10 @@ function M.build()
       if is_real_number(thread.line) and thread.path then
         local bucket = ensure_line_bucket(line_state_by_file, thread.path, thread.line)
         table.insert(bucket.threads, thread)
-        if thread.needs_reply then
-          bucket.counts.nr = bucket.counts.nr + 1
-        else
-          bucket.counts.u = bucket.counts.u + 1
-        end
+        increment_thread_count(bucket, thread)
+        local side_bucket = ensure_side_line_bucket(side_line_state_by_file, thread.path, thread.side, thread.line)
+        table.insert(side_bucket.threads, thread)
+        increment_thread_count(side_bucket, thread)
       end
     end
   end
@@ -283,6 +320,19 @@ function M.build()
     local comment_bucket = ensure_line_bucket(comment_line_state_by_file, entry.path, entry.line)
     table.insert(comment_bucket.issue_comments, entry.comment)
     comment_bucket.counts.i = comment_bucket.counts.i + 1
+
+    local side_bucket = ensure_side_line_bucket(side_line_state_by_file, entry.path, "RIGHT", entry.line)
+    table.insert(side_bucket.issue_comments, entry.comment)
+    side_bucket.counts.i = side_bucket.counts.i + 1
+
+    local side_comment_bucket = ensure_side_line_bucket(
+      side_comment_line_state_by_file,
+      entry.path,
+      "RIGHT",
+      entry.line
+    )
+    table.insert(side_comment_bucket.issue_comments, entry.comment)
+    side_comment_bucket.counts.i = side_comment_bucket.counts.i + 1
   end
 
   table.sort(history_threads, compare_threads_for_history)
@@ -295,6 +345,8 @@ function M.build()
     thread_by_id = thread_by_id,
     line_state_by_file = line_state_by_file,
     comment_line_state_by_file = comment_line_state_by_file,
+    side_line_state_by_file = side_line_state_by_file,
+    side_comment_line_state_by_file = side_comment_line_state_by_file,
     issue_entries = issue_entries,
     review_comments = review_comments,
     review_bodies = state.get_comments("_reviews"),
@@ -306,8 +358,17 @@ end
 ---@param index table
 ---@param path string
 ---@param line number
+---@param side? string
 ---@return table|nil
-function M.get_line_state(index, path, line)
+function M.get_line_state(index, path, line, side)
+  if not index or not path or not is_real_number(line) then
+    return nil
+  end
+  if side then
+    local file_map = index.side_line_state_by_file and index.side_line_state_by_file[path]
+    local side_map = file_map and file_map[side == "LEFT" and "LEFT" or "RIGHT"]
+    return side_map and side_map[line] or nil
+  end
   local file_map = index.line_state_by_file[path]
   if not file_map then
     return nil
@@ -318,8 +379,17 @@ end
 ---@param index table
 ---@param path string
 ---@param line number
+---@param side? string
 ---@return table|nil
-function M.get_comment_line_state(index, path, line)
+function M.get_comment_line_state(index, path, line, side)
+  if not index or not path or not is_real_number(line) then
+    return nil
+  end
+  if side then
+    local file_map = index.side_comment_line_state_by_file and index.side_comment_line_state_by_file[path]
+    local side_map = file_map and file_map[side == "LEFT" and "LEFT" or "RIGHT"]
+    return side_map and side_map[line] or nil
+  end
   local file_map = index.comment_line_state_by_file[path]
   if not file_map then
     return nil

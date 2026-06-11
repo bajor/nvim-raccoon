@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.14.0] - 2026-06-10
 
 ### Fixed
+- Paired changed lines now highlight exact UTF-8 character add/delete ranges instead of one broad changed middle span.
+- Split diff navigation now keeps the visible cursor on the left content column while preserving the semantic LEFT/RIGHT target for comments.
+- Split diff comment badges and same-line thread pickers now keep LEFT and RIGHT threads with the same numeric line in separate buckets.
+- File-level split placeholder rows can open new file comments without a line coordinate.
 - Combined diff/comment navigation now lands replacement hunks on the right-side changed row instead of the paired left-side deletion row.
 - Split diff inline add/delete character highlights now use higher-priority range extmarks so they remain visible over syntax and full-line diff highlights.
 

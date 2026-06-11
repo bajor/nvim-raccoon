@@ -280,29 +280,6 @@ local function line_summary(bucket)
   return string.format("%d issue notes on this line", #bucket.issue_comments)
 end
 
-local function bucket_sides(bucket)
-  local sides = { LEFT = false, RIGHT = false }
-  for _, thread in ipairs(bucket.threads or {}) do
-    local saw_side = false
-    for _, comment in ipairs(thread.comments or {}) do
-      if comment.side == "LEFT" then
-        sides.LEFT = true
-        saw_side = true
-      elseif comment.side == "RIGHT" then
-        sides.RIGHT = true
-        saw_side = true
-      end
-    end
-    if not saw_side then
-      sides.RIGHT = true
-    end
-  end
-  if #(bucket.issue_comments or {}) > 0 then
-    sides.RIGHT = true
-  end
-  return sides
-end
-
 local function setup_override_highlights()
   vim.api.nvim_set_hl(0, "RaccoonCommentBadge", { default = true, bold = true })
   vim.api.nvim_set_hl(0, "RaccoonCommentBadgeStrong", { default = true, bold = true, link = "Title" })
@@ -352,23 +329,19 @@ function M.show_comments(buf, _comments)
   if rendered then
     for row_idx, row in ipairs(rendered.rows or {}) do
       local specs = {}
-      if row.old_line and line_map[row.old_line] then
-        local bucket = line_map[row.old_line]
-        if bucket_sides(bucket).LEFT then
-          table.insert(specs, {
-            col = rendered.left_range.start_col,
-            bucket = bucket,
-          })
-        end
+      local left_bucket = thread_index.get_line_state(index, path, row.old_line, "LEFT")
+      if left_bucket then
+        table.insert(specs, {
+          col = rendered.left_range.start_col,
+          bucket = left_bucket,
+        })
       end
-      if row.new_line and line_map[row.new_line] then
-        local bucket = line_map[row.new_line]
-        if bucket_sides(bucket).RIGHT then
-          table.insert(specs, {
-            col = rendered.right_range.start_col,
-            bucket = bucket,
-          })
-        end
+      local right_bucket = thread_index.get_line_state(index, path, row.new_line, "RIGHT")
+      if right_bucket then
+        table.insert(specs, {
+          col = rendered.right_range.start_col,
+          bucket = right_bucket,
+        })
       end
       for _, spec in ipairs(specs) do
         local badge = build_badge(spec.bucket.counts)
@@ -693,7 +666,10 @@ end
 local function new_thread_disable_reason(path, line, side)
   side = side == "LEFT" and "LEFT" or "RIGHT"
   if line == nil then
-    return find_pr_file(path) and nil or file_outside_pr_changes_message()
+    if find_pr_file(path) then
+      return nil
+    end
+    return file_outside_pr_changes_message()
   end
   if type(line) ~= "number" or line < 1 then
     return "Invalid line number for comment"
@@ -1008,6 +984,16 @@ local function jump_to_path_and_line(path, line, side)
   if line then
     local rendered_row, rendered_col = split_row_for_line(vim.api.nvim_get_current_buf(), path, line, side)
     local line_count = vim.api.nvim_buf_line_count(0)
+    if rendered_row then
+      diff.set_split_semantic_target(vim.api.nvim_get_current_buf(), {
+        path = path,
+        line = line,
+        side = side,
+        row = rendered_row,
+      })
+    else
+      diff.set_split_semantic_target(vim.api.nvim_get_current_buf(), nil)
+    end
     vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(rendered_row or line, line_count)), rendered_col or 0 })
     vim.cmd("normal! zz")
   end
@@ -1663,7 +1649,11 @@ function M.show_comment_thread()
   if not index then
     return
   end
-  local line_state = thread_index.get_comment_line_state(index, path, line)
+  if line == nil then
+    open_new_thread_from_line(path, nil, {}, target)
+    return
+  end
+  local line_state = thread_index.get_comment_line_state(index, path, line, target.side)
   if not line_state then
     open_new_thread_from_line(path, line, {}, target)
     return

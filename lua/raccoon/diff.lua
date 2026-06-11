@@ -257,41 +257,154 @@ local function line_or_hunk_content(lines, line_num, fallback)
   return fallback or ""
 end
 
-local function changed_span(left, right)
-  if #left > M.MAX_INLINE_DIFF_DISPLAY_CHARS or #right > M.MAX_INLINE_DIFF_DISPLAY_CHARS then
-    return nil, nil
+local function split_utf8_chars(text)
+  local chars = {}
+  local byte_idx = 1
+  text = text or ""
+  while byte_idx <= #text do
+    local byte = text:byte(byte_idx)
+    local char_len = 1
+    if byte and byte >= 0xF0 then
+      char_len = 4
+    elseif byte and byte >= 0xE0 then
+      char_len = 3
+    elseif byte and byte >= 0xC0 then
+      char_len = 2
+    end
+    local end_idx = math.min(#text, byte_idx + char_len - 1)
+    table.insert(chars, {
+      value = text:sub(byte_idx, end_idx),
+      start_col = byte_idx - 1,
+      end_col = end_idx,
+    })
+    byte_idx = end_idx + 1
+  end
+  return chars
+end
+
+local function append_changed_char_spans(spans, chars, changed)
+  local start_idx = nil
+  for idx = 1, #chars do
+    if changed[idx] then
+      start_idx = start_idx or idx
+    elseif start_idx then
+      table.insert(spans, {
+        start_col = chars[start_idx].start_col,
+        end_col = chars[idx - 1].end_col,
+      })
+      start_idx = nil
+    end
+  end
+  if start_idx then
+    table.insert(spans, {
+      start_col = chars[start_idx].start_col,
+      end_col = chars[#chars].end_col,
+    })
+  end
+end
+
+local function mark_lcs_matches(
+  left_chars,
+  left_start,
+  left_end,
+  right_chars,
+  right_start,
+  right_end,
+  left_changed,
+  right_changed
+)
+  local left_count = left_end - left_start + 1
+  local right_count = right_end - right_start + 1
+  if left_count <= 0 or right_count <= 0 then
+    return
   end
 
+  local dp = {}
+  for left_idx = 1, left_count + 1 do
+    dp[left_idx] = {}
+    for right_idx = 1, right_count + 1 do
+      dp[left_idx][right_idx] = 0
+    end
+  end
+
+  for left_idx = left_count, 1, -1 do
+    for right_idx = right_count, 1, -1 do
+      local actual_left = left_start + left_idx - 1
+      local actual_right = right_start + right_idx - 1
+      if left_chars[actual_left].value == right_chars[actual_right].value then
+        dp[left_idx][right_idx] = dp[left_idx + 1][right_idx + 1] + 1
+      else
+        dp[left_idx][right_idx] = math.max(dp[left_idx + 1][right_idx], dp[left_idx][right_idx + 1])
+      end
+    end
+  end
+
+  local left_idx = 1
+  local right_idx = 1
+  while left_idx <= left_count and right_idx <= right_count do
+    local actual_left = left_start + left_idx - 1
+    local actual_right = right_start + right_idx - 1
+    if left_chars[actual_left].value == right_chars[actual_right].value then
+      left_changed[actual_left] = false
+      right_changed[actual_right] = false
+      left_idx = left_idx + 1
+      right_idx = right_idx + 1
+    elseif dp[left_idx + 1][right_idx] >= dp[left_idx][right_idx + 1] then
+      left_idx = left_idx + 1
+    else
+      right_idx = right_idx + 1
+    end
+  end
+end
+
+local function compute_inline_char_spans(left, right)
+  if #left > M.MAX_INLINE_DIFF_DISPLAY_CHARS or #right > M.MAX_INLINE_DIFF_DISPLAY_CHARS then
+    return {}, {}
+  end
+
+  if left == right then
+    return {}, {}
+  end
+
+  local left_chars = split_utf8_chars(left)
+  local right_chars = split_utf8_chars(right)
   local prefix = 0
-  local max_prefix = math.min(#left, #right)
-  while prefix < max_prefix and left:sub(prefix + 1, prefix + 1) == right:sub(prefix + 1, prefix + 1) do
+  local max_prefix = math.min(#left_chars, #right_chars)
+  while prefix < max_prefix and left_chars[prefix + 1].value == right_chars[prefix + 1].value do
     prefix = prefix + 1
   end
 
-  local left_suffix = #left
-  local right_suffix = #right
-  while left_suffix > prefix
-    and right_suffix > prefix
-    and left:sub(left_suffix, left_suffix) == right:sub(right_suffix, right_suffix)
+  local left_end = #left_chars
+  local right_end = #right_chars
+  while left_end > prefix
+    and right_end > prefix
+    and left_chars[left_end].value == right_chars[right_end].value
   do
-    left_suffix = left_suffix - 1
-    right_suffix = right_suffix - 1
+    left_end = left_end - 1
+    right_end = right_end - 1
   end
 
-  local old_span = nil
-  if left_suffix > prefix then
-    old_span = { start_col = prefix, end_col = left_suffix }
+  local left_changed = {}
+  local right_changed = {}
+  for idx = prefix + 1, left_end do
+    left_changed[idx] = true
   end
-  local new_span = nil
-  if right_suffix > prefix then
-    new_span = { start_col = prefix, end_col = right_suffix }
+  for idx = prefix + 1, right_end do
+    right_changed[idx] = true
   end
-  return old_span, new_span
+
+  mark_lcs_matches(left_chars, prefix + 1, left_end, right_chars, prefix + 1, right_end, left_changed, right_changed)
+
+  local old_spans = {}
+  local new_spans = {}
+  append_changed_char_spans(old_spans, left_chars, left_changed)
+  append_changed_char_spans(new_spans, right_chars, right_changed)
+  return old_spans, new_spans
 end
 
 local function append_pair_spans(spans, left_line, right_line, left_content, right_content, left_hl, right_hl)
-  local old_span, new_span = changed_span(left_content or "", right_content or "")
-  if old_span then
+  local old_spans, new_spans = compute_inline_char_spans(left_content or "", right_content or "")
+  for _, old_span in ipairs(old_spans) do
     table.insert(spans, {
       line = left_line,
       start_col = old_span.start_col,
@@ -299,7 +412,7 @@ local function append_pair_spans(spans, left_line, right_line, left_content, rig
       hl = left_hl,
     })
   end
-  if new_span then
+  for _, new_span in ipairs(new_spans) do
     table.insert(spans, {
       line = right_line,
       start_col = new_span.start_col,
@@ -671,6 +784,20 @@ local function line_highlight(kind)
   return nil
 end
 
+local function split_position_key(path, side, line)
+  if not path or type(line) ~= "number" then
+    return nil
+  end
+  return path .. "|" .. side .. "|" .. tostring(line)
+end
+
+--- Return the visible cursor column for split diff jumps.
+---@param rendered table|nil
+---@return number col
+function M.left_cursor_col(rendered)
+  return rendered and rendered.left_range and rendered.left_range.content_start_col or 0
+end
+
 --- Render a changed file as a read-only full-file split diff.
 ---@param opts table {path, previous_path?, status?, old_lines?, new_lines?, patch?, width?, binary?}
 ---@return table rendered {lines, rows, highlights, separator_col, left_range, right_range}
@@ -685,6 +812,7 @@ function M.render_split_file(opts)
   local rows = {}
   local highlights = {}
   local inline_highlights = {}
+  local position_by_key = {}
 
   local function append_rendered_row(row)
     local left_chunks = split_to_display_width(row.old_content or "", layout.content_width)
@@ -718,6 +846,22 @@ function M.render_split_file(opts)
         hunk = row.hunk,
       }
       table.insert(rows, rendered_row)
+      if chunk_idx == 1 then
+        local left_key = split_position_key(rendered_row.path, "LEFT", rendered_row.old_line)
+        if left_key then
+          position_by_key[left_key] = {
+            row = #rows,
+            col = layout.left_range.content_start_col,
+          }
+        end
+        local right_key = split_position_key(rendered_row.path, "RIGHT", rendered_row.new_line)
+        if right_key then
+          position_by_key[right_key] = {
+            row = #rows,
+            col = layout.left_range.content_start_col,
+          }
+        end
+      end
       local hl = line_highlight(row.kind)
       if hl then
         table.insert(highlights, {
@@ -729,8 +873,8 @@ function M.render_split_file(opts)
     end
 
     if row.kind == "change" and first_line == #lines then
-      local old_span, new_span = changed_span(row.old_content or "", row.new_content or "")
-      if old_span then
+      local old_spans, new_spans = compute_inline_char_spans(row.old_content or "", row.new_content or "")
+      for _, old_span in ipairs(old_spans) do
         table.insert(inline_highlights, {
           line = first_line - 1,
           start_col = layout.left_range.content_start_col + old_span.start_col,
@@ -739,7 +883,7 @@ function M.render_split_file(opts)
           priority = INLINE_HIGHLIGHT_PRIORITY,
         })
       end
-      if new_span then
+      for _, new_span in ipairs(new_spans) do
         table.insert(inline_highlights, {
           line = first_line - 1,
           start_col = layout.right_range.content_start_col + new_span.start_col,
@@ -794,6 +938,7 @@ function M.render_split_file(opts)
     right_range = layout.right_range,
     side_width = layout.side_width,
     content_width = layout.content_width,
+    position_by_key = position_by_key,
     syntax_enabled = syntax_enabled,
     syntax_skip_reason = syntax_skip_reason,
   }
@@ -832,28 +977,8 @@ function M.get_split_metadata(buf)
   return split_metadata_by_buf[buf]
 end
 
---- Resolve a buffer row/column into a GitHub review target.
----@param buf number
----@param row number 1-based row
----@param col number 0-based column
----@return table|nil target {path, line, side, in_diff_context, row}
-function M.resolve_cursor_target(buf, row, col)
-  local rendered = M.get_split_metadata(buf)
-  if not rendered then
-    return nil
-  end
-  local meta = rendered.rows and rendered.rows[row]
-  if not meta then
-    return nil
-  end
-
-  local side = "RIGHT"
-  if col >= rendered.left_range.start_col and col <= rendered.left_range.end_col then
-    side = "LEFT"
-  elseif col >= rendered.right_range.start_col and col <= rendered.right_range.end_col then
-    side = "RIGHT"
-  end
-
+local function split_target_from_row(rendered, meta, row, side)
+  side = side == "LEFT" and "LEFT" or "RIGHT"
   local line = side == "LEFT" and meta.old_line or meta.new_line
   if not line and side == "LEFT" and meta.new_line then
     side = "RIGHT"
@@ -870,7 +995,69 @@ function M.resolve_cursor_target(buf, row, col)
     in_diff_context = meta.in_diff_context == true,
     kind = meta.kind,
     row = row,
+    rendered = rendered,
   }
+end
+
+--- Store the semantic side for a split jump whose visible cursor is placed left.
+---@param buf number
+---@param target table|nil {path:string, line:number|nil, side:string, row:number|nil}
+function M.set_split_semantic_target(buf, target)
+  local rendered = M.get_split_metadata(buf)
+  if not rendered then
+    return
+  end
+  if not target then
+    rendered.last_semantic_target = nil
+    return
+  end
+  local row = target.row
+  if not row then
+    row = M.find_split_row(rendered, target)
+  end
+  if not row then
+    rendered.last_semantic_target = nil
+    return
+  end
+  rendered.last_semantic_target = {
+    path = target.path,
+    line = target.line,
+    side = target.side == "LEFT" and "LEFT" or "RIGHT",
+    row = row,
+  }
+end
+
+--- Resolve a buffer row/column into a GitHub review target.
+---@param buf number
+---@param row number 1-based row
+---@param col number 0-based column
+---@return table|nil target {path, line, side, in_diff_context, row}
+function M.resolve_cursor_target(buf, row, col)
+  local rendered = M.get_split_metadata(buf)
+  if not rendered then
+    return nil
+  end
+  local meta = rendered.rows and rendered.rows[row]
+  if not meta then
+    return nil
+  end
+
+  local semantic = rendered.last_semantic_target
+  if semantic and semantic.row == row and semantic.path == meta.path then
+    local target = split_target_from_row(rendered, meta, row, semantic.side)
+    if semantic.line == nil or target.line == semantic.line then
+      return target
+    end
+  end
+
+  local side = "RIGHT"
+  if col >= rendered.left_range.start_col and col <= rendered.left_range.end_col then
+    side = "LEFT"
+  elseif col >= rendered.right_range.start_col and col <= rendered.right_range.end_col then
+    side = "RIGHT"
+  end
+
+  return split_target_from_row(rendered, meta, row, side)
 end
 
 --- Apply rendered split diff content and highlights to a buffer.
@@ -964,13 +1151,18 @@ function M.find_split_row(rendered, target)
     return nil
   end
   local side = target.side == "LEFT" and "LEFT" or "RIGHT"
+  local key = split_position_key(target.path, side, target.line)
+  local pos = key and rendered.position_by_key and rendered.position_by_key[key] or nil
+  if pos then
+    return pos.row, pos.col
+  end
   for idx, row in ipairs(rendered.rows or {}) do
     if row.path == target.path then
       if side == "LEFT" and row.old_line == target.line and not row.left_continuation then
-        return idx, rendered.left_range and rendered.left_range.content_start_col or 0
+        return idx, M.left_cursor_col(rendered)
       end
       if side == "RIGHT" and row.new_line == target.line and not row.right_continuation then
-        return idx, rendered.right_range and rendered.right_range.content_start_col or 0
+        return idx, M.left_cursor_col(rendered)
       end
     end
   end
@@ -986,6 +1178,7 @@ local function restore_target_cursor(buf, rendered, target)
   if not row then
     return
   end
+  M.set_split_semantic_target(buf, vim.tbl_extend("force", target, { row = row }))
   pcall(vim.api.nvim_win_set_cursor, win, { row, col })
 end
 
@@ -1350,12 +1543,20 @@ local function get_current_split_change_rows()
     local is_continuation = row.left_continuation or row.right_continuation
     if is_change and not is_continuation then
       local previous = rows[#rows]
-      if not previous or idx > previous + 1 then
-        table.insert(rows, idx)
+      if not previous or idx > previous.row + 1 then
+        table.insert(rows, {
+          row = idx,
+          target = {
+            path = row.path,
+            line = row.new_line or row.old_line,
+            side = row.new_line and "RIGHT" or "LEFT",
+            row = idx,
+          },
+        })
       end
     end
   end
-  return rows
+  return rendered, rows
 end
 
 --- Navigate to the next diff hunk in the current file
@@ -1366,16 +1567,17 @@ function M.next_diff()
     return false
   end
 
-  local split_rows = get_current_split_change_rows()
+  local rendered, split_rows = get_current_split_change_rows()
   if split_rows then
     if #split_rows == 0 then
       vim.notify("No changes in this file", vim.log.levels.INFO)
       return false
     end
     local current_line = vim.fn.line(".")
-    for _, line in ipairs(split_rows) do
-      if line > current_line then
-        vim.api.nvim_win_set_cursor(0, { line, 0 })
+    for _, entry in ipairs(split_rows) do
+      if entry.row > current_line then
+        M.set_split_semantic_target(vim.api.nvim_get_current_buf(), entry.target)
+        vim.api.nvim_win_set_cursor(0, { entry.row, M.left_cursor_col(rendered) })
         vim.cmd("normal! zz")
         return true
       end
@@ -1413,7 +1615,7 @@ function M.prev_diff()
     return false
   end
 
-  local split_rows = get_current_split_change_rows()
+  local rendered, split_rows = get_current_split_change_rows()
   if split_rows then
     if #split_rows == 0 then
       vim.notify("No changes in this file", vim.log.levels.INFO)
@@ -1421,9 +1623,10 @@ function M.prev_diff()
     end
     local current_line = vim.fn.line(".")
     for i = #split_rows, 1, -1 do
-      local line = split_rows[i]
-      if line < current_line then
-        vim.api.nvim_win_set_cursor(0, { line, 0 })
+      local entry = split_rows[i]
+      if entry.row < current_line then
+        M.set_split_semantic_target(vim.api.nvim_get_current_buf(), entry.target)
+        vim.api.nvim_win_set_cursor(0, { entry.row, M.left_cursor_col(rendered) })
         vim.cmd("normal! zz")
         return true
       end

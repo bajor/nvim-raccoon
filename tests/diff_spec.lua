@@ -526,6 +526,16 @@ describe("raccoon.diff", function()
   end)
 
   describe("render_stacked_inline_spans", function()
+    local function spans_for_hl(spans, hl)
+      local filtered = {}
+      for _, span in ipairs(spans) do
+        if span.hl == hl then
+          table.insert(filtered, span)
+        end
+      end
+      return filtered
+    end
+
     it("pairs delete and add lines by index within a contiguous change block", function()
       local line_list = {
         { type = "del", content = "local value = 1" },
@@ -555,6 +565,77 @@ describe("raccoon.diff", function()
       })
 
       assert.equals(0, #spans)
+    end)
+
+    it("highlights separated character changes without unchanged middle text", function()
+      local spans = diff.render_stacked_inline_spans({
+        { type = "del", content = "abc1def2ghi" },
+        { type = "add", content = "abcXdefYghi" },
+      })
+
+      local deletes = spans_for_hl(spans, "RaccoonInlineDelete")
+      local adds = spans_for_hl(spans, "RaccoonInlineAdd")
+
+      assert.same({
+        { line = 1, start_col = 3, end_col = 4, hl = "RaccoonInlineDelete" },
+        { line = 1, start_col = 7, end_col = 8, hl = "RaccoonInlineDelete" },
+      }, deletes)
+      assert.same({
+        { line = 2, start_col = 3, end_col = 4, hl = "RaccoonInlineAdd" },
+        { line = 2, start_col = 7, end_col = 8, hl = "RaccoonInlineAdd" },
+      }, adds)
+    end)
+
+    it("highlights only inserted characters inside a paired line", function()
+      local spans = diff.render_stacked_inline_spans({
+        { type = "del", content = "abcghi" },
+        { type = "add", content = "abcDEFghi" },
+      })
+
+      assert.same({}, spans_for_hl(spans, "RaccoonInlineDelete"))
+      assert.same({
+        { line = 2, start_col = 3, end_col = 6, hl = "RaccoonInlineAdd" },
+      }, spans_for_hl(spans, "RaccoonInlineAdd"))
+    end)
+
+    it("highlights only deleted characters inside a paired line", function()
+      local spans = diff.render_stacked_inline_spans({
+        { type = "del", content = "abcDEFghi" },
+        { type = "add", content = "abcghi" },
+      })
+
+      assert.same({
+        { line = 1, start_col = 3, end_col = 6, hl = "RaccoonInlineDelete" },
+      }, spans_for_hl(spans, "RaccoonInlineDelete"))
+      assert.same({}, spans_for_hl(spans, "RaccoonInlineAdd"))
+    end)
+
+    it("highlights full content when paired lines share no characters", function()
+      local spans = diff.render_stacked_inline_spans({
+        { type = "del", content = "abc" },
+        { type = "add", content = "XYZ" },
+      })
+
+      assert.same({
+        { line = 1, start_col = 0, end_col = 3, hl = "RaccoonInlineDelete" },
+      }, spans_for_hl(spans, "RaccoonInlineDelete"))
+      assert.same({
+        { line = 2, start_col = 0, end_col = 3, hl = "RaccoonInlineAdd" },
+      }, spans_for_hl(spans, "RaccoonInlineAdd"))
+    end)
+
+    it("uses byte columns for UTF-8 character changes", function()
+      local spans = diff.render_stacked_inline_spans({
+        { type = "del", content = "aéb" },
+        { type = "add", content = "a💡b" },
+      })
+
+      assert.same({
+        { line = 1, start_col = 1, end_col = 3, hl = "RaccoonInlineDelete" },
+      }, spans_for_hl(spans, "RaccoonInlineDelete"))
+      assert.same({
+        { line = 2, start_col = 1, end_col = 5, hl = "RaccoonInlineAdd" },
+      }, spans_for_hl(spans, "RaccoonInlineAdd"))
     end)
   end)
 
@@ -718,6 +799,32 @@ describe("raccoon.diff", function()
       assert.is_number(syntax_priority)
       assert.is_true(inline_priority > syntax_priority)
     end)
+
+    it("keeps add-only and delete-only rows as full-line highlights", function()
+      local added = diff.render_split_file({
+        path = "lua/new.lua",
+        old_lines = {},
+        new_lines = { "new line" },
+        patch = "@@ -0,0 +1 @@\n+new line",
+        width = 80,
+      })
+      local deleted = diff.render_split_file({
+        path = "lua/old.lua",
+        old_lines = { "old line" },
+        new_lines = {},
+        patch = "@@ -1 +0,0 @@\n-old line",
+        width = 80,
+      })
+
+      assert.equals("RaccoonAdd", added.highlights[1].line_hl_group)
+      assert.equals("RaccoonDelete", deleted.highlights[1].line_hl_group)
+      for _, rendered in ipairs({ added, deleted }) do
+        for _, highlight in ipairs(rendered.highlights) do
+          assert.is_not_equal("RaccoonInlineAdd", highlight.hl)
+          assert.is_not_equal("RaccoonInlineDelete", highlight.hl)
+        end
+      end
+    end)
   end)
 
   describe("find_split_row", function()
@@ -756,7 +863,7 @@ describe("raccoon.diff", function()
       })
 
       assert.equals(3, row)
-      assert.equals(rendered.right_range.content_start_col, col)
+      assert.equals(rendered.left_range.content_start_col, col)
     end)
 
     it("ignores continuation rows for wrapped split lines", function()
@@ -777,6 +884,31 @@ describe("raccoon.diff", function()
       assert.is_not_nil(rendered.rows[row + 1])
       assert.is_false(rendered.rows[row].right_continuation)
       assert.is_true(rendered.rows[row + 1].right_continuation)
+    end)
+
+    it("uses position_by_key before scanning rows", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "one", "two", "three" },
+        new_lines = { "one", "three" },
+        patch = "@@ -1,3 +1,2 @@\n one\n-two\n three",
+        width = 80,
+      })
+
+      assert.same({
+        row = 3,
+        col = rendered.left_range.content_start_col,
+      }, rendered.position_by_key["lua/a.lua|RIGHT|2"])
+
+      rendered.rows = {}
+      local row, col = diff.find_split_row(rendered, {
+        path = "lua/a.lua",
+        line = 2,
+        side = "RIGHT",
+      })
+
+      assert.equals(3, row)
+      assert.equals(rendered.left_range.content_start_col, col)
     end)
   end)
 

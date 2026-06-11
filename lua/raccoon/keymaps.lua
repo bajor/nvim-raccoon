@@ -122,16 +122,36 @@ local function split_position_for_point(point)
   if not rendered then
     return nil
   end
-  return diff.find_split_row(rendered, {
+  local row, col = diff.find_split_row(rendered, {
     path = point.file and point.file.filename,
     line = point.line,
     side = point.side,
   })
+  local semantic_col = point.side == "LEFT"
+    and rendered.left_range.content_start_col
+    or rendered.right_range.content_start_col
+  return row, col, semantic_col
 end
 
-local function rendered_line_for_current_point(point)
-  local row = split_position_for_point(point)
-  return row or point.line
+local function rendered_order_for_point(point)
+  local row, _, semantic_col = split_position_for_point(point)
+  return row or point.line, semantic_col or 0
+end
+
+local function current_rendered_order()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local rendered = diff.get_split_metadata(vim.api.nvim_get_current_buf())
+  if not rendered then
+    return cursor[1], cursor[2]
+  end
+  local target = diff.resolve_cursor_target(vim.api.nvim_get_current_buf(), cursor[1], cursor[2])
+  if target then
+    local semantic_col = target.side == "LEFT"
+      and rendered.left_range.content_start_col
+      or rendered.right_range.content_start_col
+    return cursor[1], semantic_col
+  end
+  return cursor[1], cursor[2]
 end
 
 --- Navigate to a point (opens file if needed)
@@ -156,6 +176,16 @@ local function goto_point(point)
   local line_count = vim.api.nvim_buf_line_count(0)
   local rendered_row, rendered_col = split_position_for_point(point)
   local target_line = math.max(1, math.min(rendered_row or point.line, line_count))
+  if rendered_row then
+    diff.set_split_semantic_target(vim.api.nvim_get_current_buf(), {
+      path = point.file and point.file.filename,
+      line = point.line,
+      side = point.side,
+      row = rendered_row,
+    })
+  else
+    diff.set_split_semantic_target(vim.api.nvim_get_current_buf(), nil)
+  end
   vim.api.nvim_win_set_cursor(0, { target_line, rendered_col or 0 })
   vim.cmd("normal! zz")
 
@@ -187,16 +217,18 @@ function M.next_point()
   end
 
   local current_file_idx = state.get_current_file_index()
-  local current_line = vim.fn.line(".")
+  local current_line, current_col = current_rendered_order()
 
   -- Find next point after current position
   for _, point in ipairs(all_points) do
     local point_line = point.line
+    local point_col = 0
     if point.file_index == current_file_idx then
-      point_line = rendered_line_for_current_point(point)
+      point_line, point_col = rendered_order_for_point(point)
     end
     if point.file_index > current_file_idx or
-       (point.file_index == current_file_idx and point_line > current_line) then
+       (point.file_index == current_file_idx
+         and (point_line > current_line or (point_line == current_line and point_col > current_col))) then
       goto_point(point)
       return
     end
@@ -220,17 +252,19 @@ function M.prev_point()
   end
 
   local current_file_idx = state.get_current_file_index()
-  local current_line = vim.fn.line(".")
+  local current_line, current_col = current_rendered_order()
 
   -- Find previous point before current position (iterate in reverse)
   for i = #all_points, 1, -1 do
     local point = all_points[i]
     local point_line = point.line
+    local point_col = 0
     if point.file_index == current_file_idx then
-      point_line = rendered_line_for_current_point(point)
+      point_line, point_col = rendered_order_for_point(point)
     end
     if point.file_index < current_file_idx or
-       (point.file_index == current_file_idx and point_line < current_line) then
+       (point.file_index == current_file_idx
+         and (point_line < current_line or (point_line == current_line and point_col < current_col))) then
       goto_point(point)
       return
     end

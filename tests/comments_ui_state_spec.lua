@@ -838,6 +838,106 @@ describe("raccoon.comments UI state restore", function()
     assert.equals(rendered.left_range.content_start_col, cursor[2])
   end)
 
+  it("renders split badges from side-specific line buckets", function()
+    state.set_comments("lua/a.lua", {
+      review_comment({
+        id = 61,
+        thread_id = "thread-left",
+        line = 2,
+        side = "LEFT",
+        body = "left thread",
+      }),
+      review_comment({
+        id = 62,
+        thread_id = "thread-right",
+        line = 2,
+        side = "RIGHT",
+        body = "right thread",
+      }),
+    })
+    local buf, rendered = make_split_buffer({
+      old_lines = { "before", "old value", "after" },
+      new_lines = { "before", "new value", "after" },
+      patch = "@@ -1,3 +1,3 @@\n before\n-old value\n+new value\n after",
+    })
+
+    comments.show_comments(buf, state.get_comments("lua/a.lua"))
+
+    local badges_by_col = {}
+    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, comments.get_namespace(), 0, -1, { details = true })) do
+      local details = mark[4] or {}
+      if details.virt_text_win_col == rendered.left_range.start_col
+          or details.virt_text_win_col == rendered.right_range.start_col
+      then
+        badges_by_col[details.virt_text_win_col] = details.virt_text[1][1]
+      end
+    end
+
+    assert.equals("[U1]", badges_by_col[rendered.left_range.start_col])
+    assert.equals("[U1]", badges_by_col[rendered.right_range.start_col])
+  end)
+
+  it("opens same-line picker with only the selected split side's threads", function()
+    state.set_comments("lua/a.lua", {
+      review_comment({
+        id = 63,
+        thread_id = "thread-left",
+        line = 2,
+        side = "LEFT",
+        body = "left side only",
+      }),
+      review_comment({
+        id = 64,
+        thread_id = "thread-right",
+        line = 2,
+        side = "RIGHT",
+        body = "right side only",
+      }),
+    })
+    local _buf, rendered = make_split_buffer({
+      old_lines = { "before", "old value", "after" },
+      new_lines = { "before", "new value", "after" },
+      patch = "@@ -1,3 +1,3 @@\n before\n-old value\n+new value\n after",
+    })
+    vim.api.nvim_win_set_cursor(0, { 2, rendered.right_range.content_start_col })
+
+    comments.show_comment_thread()
+
+    local snapshot = comments.capture_ui_state()
+    assert.equals("picker", snapshot.kind)
+    assert.equals("thread:thread-right", snapshot.row_key)
+    local picker_lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, -1, false)
+    assert.truthy(table.concat(picker_lines, "\n"):match("right side only"))
+    assert.is_nil(table.concat(picker_lines, "\n"):match("left side only"))
+  end)
+
+  it("opens file-level comments from split placeholder rows without a line", function()
+    state.set_files({
+      {
+        filename = "assets/logo.png",
+        patch = "",
+      },
+    })
+    local rendered = diff.render_split_file({
+      path = "assets/logo.png",
+      binary = true,
+      width = 100,
+    })
+    local buf = vim.api.nvim_create_buf(false, true)
+    diff.apply_split_render(buf, rendered)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_win_set_cursor(0, { 1, rendered.left_range.content_start_col })
+
+    comments.show_comment_thread()
+
+    local snapshot = comments.capture_ui_state()
+    assert.equals("editor", snapshot.kind)
+    assert.equals("new_thread", snapshot.editor_kind)
+    assert.equals("assets/logo.png", snapshot.path)
+    assert.is_nil(snapshot.line)
+    assert.is_false(snapshot.in_diff_context)
+  end)
+
   it("restores a thread reply draft and disables send when the thread becomes resolved", function()
     local notifications = {}
     vim.notify = function(message)

@@ -137,6 +137,60 @@ describe("raccoon.thread_index", function()
     assert.is_true(comment_line_state.threads[1].resolved)
   end)
 
+  it("keeps same-number LEFT and RIGHT threads in separate side buckets", function()
+    state.set_comments("lua/a.lua", {
+      review_comment({
+        id = 41,
+        thread_id = "thread-left",
+        line = 7,
+        side = "LEFT",
+        body = "left thread",
+      }),
+      review_comment({
+        id = 42,
+        thread_id = "thread-right",
+        line = 7,
+        side = "RIGHT",
+        body = "right thread",
+      }),
+    })
+
+    local index, err = thread_index.build()
+
+    assert.is_nil(err)
+    local aggregate = thread_index.get_line_state(index, "lua/a.lua", 7)
+    assert.equals(2, #aggregate.threads)
+    assert.same({ nr = 0, u = 2, i = 0 }, aggregate.counts)
+
+    local left = thread_index.get_line_state(index, "lua/a.lua", 7, "LEFT")
+    local right = thread_index.get_line_state(index, "lua/a.lua", 7, "RIGHT")
+    assert.equals(1, #left.threads)
+    assert.equals("thread-left", left.threads[1].thread_id)
+    assert.same({ nr = 0, u = 1, i = 0 }, left.counts)
+    assert.equals(1, #right.threads)
+    assert.equals("thread-right", right.threads[1].thread_id)
+    assert.same({ nr = 0, u = 1, i = 0 }, right.counts)
+
+    local left_comment = thread_index.get_comment_line_state(index, "lua/a.lua", 7, "LEFT")
+    local right_comment = thread_index.get_comment_line_state(index, "lua/a.lua", 7, "RIGHT")
+    assert.equals("thread-left", left_comment.threads[1].thread_id)
+    assert.equals("thread-right", right_comment.threads[1].thread_id)
+  end)
+
+  it("returns nil for guarded side and nil-line lookups", function()
+    local index, err = thread_index.build()
+
+    assert.is_nil(err)
+    assert.is_nil(thread_index.get_line_state(nil, "lua/a.lua", 7))
+    assert.is_nil(thread_index.get_line_state(index, nil, 7))
+    assert.is_nil(thread_index.get_line_state(index, "lua/a.lua", nil))
+    assert.is_nil(thread_index.get_line_state(index, "lua/a.lua", 7, "LEFT"))
+    assert.is_nil(thread_index.get_comment_line_state(nil, "lua/a.lua", 7))
+    assert.is_nil(thread_index.get_comment_line_state(index, nil, 7))
+    assert.is_nil(thread_index.get_comment_line_state(index, "lua/a.lua", nil))
+    assert.is_nil(thread_index.get_comment_line_state(index, "lua/a.lua", 7, "RIGHT"))
+  end)
+
   it("uses original_line and position when line is missing", function()
     local original_line_comment = review_comment({
       id = 11,

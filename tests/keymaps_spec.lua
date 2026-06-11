@@ -235,12 +235,15 @@ describe("raccoon.keymaps", function()
 
       local cursor = vim.api.nvim_win_get_cursor(0)
       assert.equals(5, cursor[1])
-      assert.equals(rendered.right_range.content_start_col, cursor[2])
+      assert.equals(rendered.left_range.content_start_col, cursor[2])
+      local target = diff.resolve_cursor_target(buf, cursor[1], cursor[2])
+      assert.equals("RIGHT", target.side)
+      assert.equals(4, target.line)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
-    it("next_point lands replacement diffs on the right-side changed row", function()
+    it("next_point lands replacement diffs visibly left while preserving RIGHT semantics", function()
       local diff = require("raccoon.diff")
       local patch = "@@ -1,3 +1,3 @@\n before\n-old value\n+new value\n after"
       state.start({
@@ -273,7 +276,10 @@ describe("raccoon.keymaps", function()
 
       local cursor = vim.api.nvim_win_get_cursor(0)
       assert.equals(2, cursor[1])
-      assert.equals(rendered.right_range.content_start_col, cursor[2])
+      assert.equals(rendered.left_range.content_start_col, cursor[2])
+      local target = diff.resolve_cursor_target(buf, cursor[1], cursor[2])
+      assert.equals("RIGHT", target.side)
+      assert.equals(2, target.line)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
@@ -324,6 +330,75 @@ describe("raccoon.keymaps", function()
       local cursor = vim.api.nvim_win_get_cursor(0)
       assert.equals(2, cursor[1])
       assert.equals(rendered.left_range.content_start_col, cursor[2])
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("navigates same-row LEFT and RIGHT points in semantic order", function()
+      local diff = require("raccoon.diff")
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        url = "https://github.com/owner/repo/pull/1",
+        clone_path = "/tmp/raccoon-keymaps",
+      })
+      state.set_files({
+        {
+          filename = "lua/a.lua",
+          patch = "",
+        },
+      })
+      state.set_comments("lua/a.lua", {
+        {
+          id = 3000,
+          body = "left comment",
+          thread_id = "thread-left",
+          line = 2,
+          side = "LEFT",
+          resolved = false,
+          in_reply_to_id = vim.NIL,
+          created_at = "2026-01-01T00:00:00Z",
+          user = { login = "reviewer" },
+        },
+        {
+          id = 3001,
+          body = "right comment",
+          thread_id = "thread-right",
+          line = 2,
+          side = "RIGHT",
+          resolved = false,
+          in_reply_to_id = vim.NIL,
+          created_at = "2026-01-02T00:00:00Z",
+          user = { login = "reviewer" },
+        },
+      })
+
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "before", "old value", "after" },
+        new_lines = { "before", "new value", "after" },
+        patch = "",
+        width = 90,
+      })
+      local buf = vim.api.nvim_create_buf(false, true)
+      diff.apply_split_render(buf, rendered)
+      vim.api.nvim_set_current_buf(buf)
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      keymaps.next_point()
+      local first_cursor = vim.api.nvim_win_get_cursor(0)
+      local first_target = diff.resolve_cursor_target(buf, first_cursor[1], first_cursor[2])
+      assert.equals(2, first_cursor[1])
+      assert.equals(rendered.left_range.content_start_col, first_cursor[2])
+      assert.equals("LEFT", first_target.side)
+
+      keymaps.next_point()
+      local second_cursor = vim.api.nvim_win_get_cursor(0)
+      local second_target = diff.resolve_cursor_target(buf, second_cursor[1], second_cursor[2])
+      assert.equals(2, second_cursor[1])
+      assert.equals(rendered.left_range.content_start_col, second_cursor[2])
+      assert.equals("RIGHT", second_target.side)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
