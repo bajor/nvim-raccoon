@@ -814,6 +814,16 @@ function M.render_split_file(opts)
   local inline_highlights = {}
   local position_by_key = {}
 
+  local function add_position(path_for_key, side, line_num, row_num)
+    local key = split_position_key(path_for_key, side, line_num)
+    if key then
+      position_by_key[key] = {
+        row = row_num,
+        col = layout.left_range.content_start_col,
+      }
+    end
+  end
+
   local function append_rendered_row(row)
     local left_chunks = split_to_display_width(row.old_content or "", layout.content_width)
     local right_chunks = split_to_display_width(row.new_content or "", layout.content_width)
@@ -847,20 +857,8 @@ function M.render_split_file(opts)
       }
       table.insert(rows, rendered_row)
       if chunk_idx == 1 then
-        local left_key = split_position_key(rendered_row.path, "LEFT", rendered_row.old_line)
-        if left_key then
-          position_by_key[left_key] = {
-            row = #rows,
-            col = layout.left_range.content_start_col,
-          }
-        end
-        local right_key = split_position_key(rendered_row.path, "RIGHT", rendered_row.new_line)
-        if right_key then
-          position_by_key[right_key] = {
-            row = #rows,
-            col = layout.left_range.content_start_col,
-          }
-        end
+        add_position(rendered_row.path, "LEFT", rendered_row.old_line, #rows)
+        add_position(rendered_row.path, "RIGHT", rendered_row.new_line, #rows)
       end
       local hl = line_highlight(row.kind)
       if hl then
@@ -977,7 +975,7 @@ function M.get_split_metadata(buf)
   return split_metadata_by_buf[buf]
 end
 
-local function split_target_from_row(rendered, meta, row, side)
+local function split_target_from_row(meta, row, side)
   side = side == "LEFT" and "LEFT" or "RIGHT"
   local line = side == "LEFT" and meta.old_line or meta.new_line
   if not line and side == "LEFT" and meta.new_line then
@@ -995,7 +993,6 @@ local function split_target_from_row(rendered, meta, row, side)
     in_diff_context = meta.in_diff_context == true,
     kind = meta.kind,
     row = row,
-    rendered = rendered,
   }
 end
 
@@ -1044,7 +1041,7 @@ function M.resolve_cursor_target(buf, row, col)
 
   local semantic = rendered.last_semantic_target
   if semantic and semantic.row == row and semantic.path == meta.path then
-    local target = split_target_from_row(rendered, meta, row, semantic.side)
+    local target = split_target_from_row(meta, row, semantic.side)
     if semantic.line == nil or target.line == semantic.line then
       return target
     end
@@ -1057,7 +1054,7 @@ function M.resolve_cursor_target(buf, row, col)
     side = "RIGHT"
   end
 
-  return split_target_from_row(rendered, meta, row, side)
+  return split_target_from_row(meta, row, side)
 end
 
 --- Apply rendered split diff content and highlights to a buffer.
