@@ -648,19 +648,6 @@ end
 
 ---@param path string
 ---@param line number
----@return boolean
-local function can_start_new_thread(path, line)
-  if line == nil then
-    return find_pr_file(path) ~= nil
-  end
-  if type(line) ~= "number" or line < 1 then
-    return false
-  end
-  return find_pr_file(path) ~= nil
-end
-
----@param path string
----@param line number
 ---@param side? string
 ---@return string|nil
 local function new_thread_disable_reason(path, line, side)
@@ -689,6 +676,30 @@ local function new_thread_disable_reason(path, line, side)
   return nil
 end
 
+local function resolve_new_thread_target(path, line, side, in_diff_context)
+  side = side == "LEFT" and "LEFT" or "RIGHT"
+  local disable_reason = new_thread_disable_reason(path, line, side)
+  if disable_reason then
+    return {
+      kind = "disabled",
+      side = side,
+      line_commentable = false,
+      disable_reason = disable_reason,
+    }
+  end
+
+  local line_commentable = in_diff_context
+  if line_commentable == nil then
+    line_commentable = is_line_commentable(path, line, side)
+  end
+
+  return {
+    kind = line_commentable and "line" or "file",
+    side = side,
+    line_commentable = line_commentable == true,
+  }
+end
+
 local function is_anchor_validation_error(err)
   if not err then
     return false
@@ -713,14 +724,10 @@ local function send_new_thread(path, line, side, in_diff_context)
     return
   end
   side = side == "LEFT" and "LEFT" or "RIGHT"
-  local disable_reason = new_thread_disable_reason(path, line, side)
-  if disable_reason then
-    vim.notify(disable_reason, vim.log.levels.WARN)
+  local target = resolve_new_thread_target(path, line, side, in_diff_context)
+  if target.kind == "disabled" then
+    vim.notify(target.disable_reason, vim.log.levels.WARN)
     return
-  end
-  local line_commentable = in_diff_context
-  if line_commentable == nil then
-    line_commentable = is_line_commentable(path, line, side)
   end
 
   local function on_send_success()
@@ -762,7 +769,7 @@ local function send_new_thread(path, line, side, in_diff_context)
     end)
   end
 
-  if not line_commentable then
+  if target.kind == "file" then
     send_via_rest(nil, { subject_type = "file" })
     return
   end
@@ -775,14 +782,14 @@ end
 ---@return boolean
 local function open_new_thread_from_line(path, line, prefill_lines, target)
   local side = target and target.side == "LEFT" and "LEFT" or "RIGHT"
-  local disable_reason = new_thread_disable_reason(path, line, side)
-  if disable_reason then
-    vim.notify(disable_reason, vim.log.levels.WARN)
+  local resolved = resolve_new_thread_target(path, line, side, target and target.in_diff_context)
+  if resolved.kind == "disabled" then
+    vim.notify(resolved.disable_reason, vim.log.levels.WARN)
     return false
   end
   open_new_thread_editor(path, line, prefill_lines or {}, {
-    side = side,
-    in_diff_context = target and target.in_diff_context,
+    side = resolved.side,
+    in_diff_context = resolved.line_commentable,
   })
   return true
 end
@@ -791,12 +798,10 @@ open_new_thread_editor = function(path, line, prefill_lines, opts)
   opts = opts or {}
   local shortcuts = config.load_shortcuts()
   local side = opts.side == "LEFT" and "LEFT" or "RIGHT"
-  local line_commentable = opts.in_diff_context
-  if line_commentable == nil then
-    line_commentable = is_line_commentable(path, line, side)
-  end
-  local title_prefix = line_commentable and "New Thread" or "New File Comment"
-  local intro_line = line_commentable
+  local target = resolve_new_thread_target(path, line, side, opts.in_diff_context)
+  local line_commentable = target.line_commentable
+  local title_prefix = target.kind == "line" and "New Thread" or "New File Comment"
+  local intro_line = target.kind == "line"
     and "New thread on this line"
     or "New file comment (GitHub shows it at the top of the file)"
   local lines = { intro_line, "" }
@@ -817,12 +822,12 @@ open_new_thread_editor = function(path, line, prefill_lines, opts)
     kind = "new_thread",
     path = path,
     line = line,
-    side = side,
+    side = target.side,
     in_diff_context = line_commentable,
     prefill_lines = prefill_lines,
     initial_input_lines = opts.initial_input_lines,
     on_send = opts.disable_send_reason and nil or function()
-      send_new_thread(path, line, side, line_commentable)
+      send_new_thread(path, line, target.side, line_commentable)
     end,
   })
   if opts.disable_send_reason then
@@ -1234,7 +1239,8 @@ end
 
 local function restore_new_thread_snapshot(snapshot)
   local disable_reason = nil
-  if new_thread_disable_reason(snapshot.path, snapshot.line, snapshot.side) then
+  local target = resolve_new_thread_target(snapshot.path, snapshot.line, snapshot.side, snapshot.in_diff_context)
+  if target.kind == "disabled" then
     disable_reason = "Thread is no longer commentable on this line; clear the text or close it"
   end
   open_new_thread_editor(
@@ -1244,8 +1250,8 @@ local function restore_new_thread_snapshot(snapshot)
     {
       initial_input_lines = snapshot.input_lines,
       disable_send_reason = disable_reason,
-      side = snapshot.side,
-      in_diff_context = snapshot.in_diff_context,
+      side = target.side,
+      in_diff_context = target.line_commentable,
     }
   )
 end
@@ -1615,10 +1621,13 @@ local function open_same_line_picker(path, line, line_state, target)
       end,
     })
   end
-  if can_start_new_thread(path, line) then
+  local new_target = resolve_new_thread_target(path, line, target and target.side, target and target.in_diff_context)
+  if new_target.kind ~= "disabled" then
     table.insert(thread_rows, {
       key = "new_thread:" .. path .. ":" .. tostring(line),
-      text = "[NEW] New thread on this line",
+      text = new_target.kind == "line"
+          and "[NEW] New thread on this line"
+        or "[NEW] New file comment for this file",
       on_select = function()
         open_new_thread_from_line(path, line, {}, target)
       end,

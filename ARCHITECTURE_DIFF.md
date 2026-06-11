@@ -1,65 +1,43 @@
 # Architecture Diff
 
 ## Summary
-Split diff rendering now uses exact character inline decorations, stable left-column cursor placement, and side-aware comment thread buckets.
+Split diff comments now use one target classification, and inline diff highlights are token-stable and projected onto wrapped rows.
 
 ## Diagram(s)
 
 ```mermaid
 flowchart TD
-    A[Paired delete/add line] --> B[Split into UTF-8 chars with byte columns]
-    B --> C[Trim common prefix and suffix]
-    C --> D[LCS over changed middle]
-    D --> E[Coalesce changed char runs]
-    E --> F[Inline delete spans]
-    E --> G[Inline add spans]
-    F --> H[apply_split_render priority 200]
-    G --> H
-    I[Syntax projection priority 110] --> H
-    J[Full-line diff priority 90] --> H
-```
-
-```mermaid
-sequenceDiagram
-    participant Nav as Navigation
-    participant Diff as diff metadata
-    participant UI as Split buffer cursor
-    participant Comments as Comment action
-
-    Nav->>Diff: find_split_row(path, side, line)
-    Diff-->>Nav: rendered row plus left content column
-    Nav->>Diff: set_split_semantic_target(path, side, line, row)
-    Nav->>UI: place cursor at left content column
-    Comments->>Diff: resolve_cursor_target(row, col)
-    Diff-->>Comments: stored semantic side when cursor is still on row
+    A[Cursor target] --> B[resolve_new_thread_target]
+    B --> C{Target kind}
+    C -->|line| D[New Thread title and line REST comment]
+    C -->|file| E[New File Comment title and file REST comment]
+    C -->|disabled| F[Warn and disable send]
+    D --> G[Picker label]
+    E --> G
+    F --> G
 ```
 
 ```mermaid
 flowchart LR
-    A[GitHub comments] --> B[thread_index.build]
-    B --> C[line_state_by_file aggregate]
-    B --> D[side_line_state_by_file]
-    B --> E[side_comment_line_state_by_file]
-    D --> F[Split badges LEFT old line]
-    D --> G[Split badges RIGHT new line]
-    E --> H[Same-line picker for selected side]
-    I[Line nil placeholder] --> J[File-level new thread editor]
+    A[Paired delete/add row] --> B[UTF-8 char diff]
+    B --> C[Expand heavily changed identifier fragments]
+    C --> D[Inline byte spans]
+    D --> E[Split rendered chunks with byte ranges]
+    E --> F[Project spans onto visible row chunks]
+    F --> G[Neovim extmarks]
 ```
 
 ## Changes
 
 ### Added
-- `diff.left_cursor_col(rendered)` for split cursor placement.
-- `rendered.position_by_key[path|side|line]` for O(1) split row lookup before scan fallback.
-- `diff.set_split_semantic_target()` so right-side navigation can display left while preserving right-side comment semantics.
-- Side-aware thread index maps for split badges and same-line thread pickers.
+- `comments.lua` now resolves new comment targets as `line`, `file`, or `disabled` before labeling, restoring, or sending.
+- Split inline rendering now tracks byte ranges for each wrapped visual chunk.
 
 ### Modified
-- Inline changed-line highlighting now computes exact UTF-8 character add/delete runs with byte columns for Neovim extmarks.
-- Split navigation, thread jumps, file jumps, diff-only jumps, and resize restore now use the left content column.
-- Split comment badge rendering reads LEFT buckets from `old_line` and RIGHT buckets from `new_line`.
-- Same-line thread lookup passes the resolved target side.
+- Out-of-hunk changed-file targets remain allowed, but are consistently labeled and sent as file comments.
+- Identifier replacements with noisy character matches are highlighted as whole changed tokens.
+- Inline split highlights are projected onto continuation rows instead of disappearing when a changed line wraps.
 
 ### Removed
-- One-span prefix/suffix inline diff highlighting for paired changed lines.
-- Side-insensitive split badge and same-line picker lookup.
+- Independent picker/editor/send decisions that could label a file comment as a line thread.
+- The single-row-only guard that skipped inline highlights for wrapped split rows.

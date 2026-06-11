@@ -637,6 +637,20 @@ describe("raccoon.diff", function()
         { line = 2, start_col = 1, end_col = 5, hl = "RaccoonInlineAdd" },
       }, spans_for_hl(spans, "RaccoonInlineAdd"))
     end)
+
+    it("highlights whole changed identifier tokens", function()
+      local spans = diff.render_stacked_inline_spans({
+        { type = "del", content = "const color = token.textColor;" },
+        { type = "add", content = "const color = token.htmlStyle;" },
+      })
+
+      assert.same({
+        { line = 1, start_col = 20, end_col = 29, hl = "RaccoonInlineDelete" },
+      }, spans_for_hl(spans, "RaccoonInlineDelete"))
+      assert.same({
+        { line = 2, start_col = 20, end_col = 29, hl = "RaccoonInlineAdd" },
+      }, spans_for_hl(spans, "RaccoonInlineAdd"))
+    end)
   end)
 
   describe("render_split_file", function()
@@ -798,6 +812,33 @@ describe("raccoon.diff", function()
       assert.is_number(inline_priority)
       assert.is_number(syntax_priority)
       assert.is_true(inline_priority > syntax_priority)
+    end)
+
+    it("projects inline split highlights onto wrapped continuation rows", function()
+      local rendered = diff.render_split_file({
+        path = "lua/a.lua",
+        old_lines = { "prefix-1234567890 oldToken" },
+        new_lines = { "prefix-1234567890 newToken" },
+        patch = "@@ -1 +1 @@\n-prefix-1234567890 oldToken\n+prefix-1234567890 newToken",
+        width = 42,
+      })
+
+      local inline_delete
+      local inline_add
+      for _, highlight in ipairs(rendered.highlights) do
+        if highlight.hl == "RaccoonInlineDelete" then
+          inline_delete = highlight
+        elseif highlight.hl == "RaccoonInlineAdd" then
+          inline_add = highlight
+        end
+      end
+
+      assert.is_not_nil(inline_delete)
+      assert.is_not_nil(inline_add)
+      assert.equals(1, inline_delete.line)
+      assert.equals(1, inline_add.line)
+      assert.is_true(inline_delete.start_col >= rendered.left_range.content_start_col)
+      assert.is_true(inline_add.start_col >= rendered.right_range.content_start_col)
     end)
 
     it("keeps add-only and delete-only rows as full-line highlights", function()
