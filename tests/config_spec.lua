@@ -36,11 +36,9 @@ describe("raccoon.config", function()
       assert.equals(50, config.defaults.commit_viewer.sidebar_width)
     end)
 
-    it("has inline_diff defaults", function()
-      assert.is_table(config.defaults.inline_diff)
-      assert.is_true(config.defaults.inline_diff.enabled)
-      assert.equals(400, config.defaults.inline_diff.max_changed_lines)
-      assert.equals(110, config.defaults.inline_diff.highlight_priority)
+    it("does not expose inline_diff as user config", function()
+      assert.is_nil(config.defaults.inline_diff)
+      assert.is_nil(config.load_inline_diff)
     end)
 
     it("does not contain dead config fields", function()
@@ -249,6 +247,7 @@ describe("raccoon.config", function()
   describe("create_default", function()
     it("creates default config file", function()
       local tmpdir = test_tmp_dir .. "/create_default_test"
+      vim.fn.delete(tmpdir, "rf")
       vim.fn.mkdir(tmpdir, "p")
 
       config.config_path = tmpdir .. "/config.json"
@@ -271,6 +270,7 @@ describe("raccoon.config", function()
       assert.equals(50, parsed.commit_viewer.sidebar_width)
       assert.equals(3, parsed.commit_viewer.commit_message_max_lines)
       assert.same({}, parsed.commit_viewer.passthrough_keys)
+      assert.is_nil(parsed.inline_diff)
 
       -- Cleanup
       os.remove(config.config_path)
@@ -447,6 +447,27 @@ describe("raccoon.config", function()
       assert.is_not_nil(cfg)
       -- Extra fields from JSON should be preserved via tbl_deep_extend
       assert.equals("value", cfg.some_extra_field)
+
+      os.remove(tmpfile)
+    end)
+
+    it("drops legacy inline_diff from loaded config", function()
+      local tmpfile = test_tmp_dir .. "/inline_diff_removed.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"owner": "ghp_xxx"},
+        "inline_diff": {
+          "enabled": false,
+          "max_changed_lines": 1
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.is_nil(cfg.inline_diff)
 
       os.remove(tmpfile)
     end)
@@ -1000,46 +1021,6 @@ describe("raccoon.config", function()
       assert.same({ "<Space>n", "x" }, viewer.passthrough_keys)
 
       os.remove(tmpfile)
-    end)
-  end)
-
-  describe("load_inline_diff", function()
-    it("returns defaults when config file does not exist", function()
-      config.config_path = "/nonexistent/path/config.json"
-      local inline = config.load_inline_diff()
-      assert.same(config.defaults.inline_diff, inline)
-    end)
-
-    it("merges user inline_diff overrides with defaults", function()
-      local tmpfile = test_tmp_dir .. "/inline_diff.json"
-      local f = io.open(tmpfile, "w")
-      f:write([[{
-        "inline_diff": {
-          "enabled": false,
-          "max_changed_lines": 25,
-          "char_similarity_floor": 0.5
-        }
-      }]])
-      f:close()
-
-      config.config_path = tmpfile
-      local inline = config.load_inline_diff()
-      assert.is_false(inline.enabled)
-      assert.equals(25, inline.max_changed_lines)
-      assert.equals(0.5, inline.char_similarity_floor)
-      assert.equals(config.defaults.inline_diff.max_line_chars, inline.max_line_chars)
-
-      os.remove(tmpfile)
-    end)
-
-    it("returns independent copies", function()
-      config.config_path = "/nonexistent/path/config.json"
-      local first = config.load_inline_diff()
-      local second = config.load_inline_diff()
-
-      first.enabled = false
-
-      assert.is_true(second.enabled)
     end)
   end)
 

@@ -2,7 +2,6 @@
 ---Diff parsing and display functionality
 local M = {}
 
-local config = require("raccoon.config")
 local inline_diff = require("raccoon.inline_diff")
 local state = require("raccoon.state")
 
@@ -14,7 +13,7 @@ local function utf_char_count(text)
 end
 
 local function merge_inline_opts(opts)
-  return vim.tbl_deep_extend("force", vim.deepcopy(config.defaults.inline_diff), opts or {})
+  return inline_diff.merge_opts(opts)
 end
 
 local function whole_deleted_chunks(content)
@@ -335,7 +334,7 @@ function M.apply_highlights(buf, patch, opts)
     return
   end
 
-  opts = merge_inline_opts(opts or config.load_inline_diff())
+  opts = merge_inline_opts(opts)
   local plan = M.build_render_plan(patch, opts)
   local line_count = vim.api.nvim_buf_line_count(buf)
 

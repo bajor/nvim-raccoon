@@ -100,11 +100,6 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `commit_viewer.sidebar_width` | number | `50` | Width of commit list and file tree sidebars (1–500) |
 | `commit_viewer.commit_message_max_lines` | number | `3` | Max lines shown in the commit message header (1–50) |
 | `commit_viewer.passthrough_keys` | array | `[]` | Key sequences to leave unblocked in commit viewer mode (e.g. `["<leader>p"]`) *(formerly top-level `passthrough_keymaps`)* |
-| `inline_diff.enabled` | boolean | `true` | Enable exact character-level highlights in flat diff files |
-| `inline_diff.max_changed_lines` | number | `400` | Fall back to line-only diff rendering above this changed-line count |
-| `inline_diff.max_block_lines` | number | `64` | Fall back to line-only rendering for larger contiguous change blocks |
-| `inline_diff.max_line_chars` | number | `4096` | Fall back to line-only rendering for longer changed lines |
-| `inline_diff.max_cells` | number | `200000` | Work limit for bounded token/character diff planning |
 
 Each key in `tokens` is the **owner or org name from the repo URL** — the first path segment after the host. To find it, open any repo you want to review and copy the name between the host and the repo name:
 
@@ -161,11 +156,6 @@ See [shortcuts_docs.md](shortcuts_docs.md) for the full shortcut reference, mode
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
-  },
-  "inline_diff": {
-    "enabled": true,
-    "max_changed_lines": 400,
-    "max_block_lines": 64
   },
   "shortcuts": {
     "pr_list": "<leader>pr",

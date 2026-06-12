@@ -5,19 +5,22 @@ local FALLBACK_DELETE = "RaccoonDelete"
 local INLINE_DELETE = "RaccoonDeleteInline"
 local UNCHANGED_DELETE = "Comment"
 
-local DEFAULTS = {
+M.defaults = {
   enabled = true,
+  max_changed_lines = 400,
+  max_block_lines = 64,
   max_line_chars = 4096,
   max_cells = 200000,
   char_similarity_floor = 0.35,
+  highlight_priority = 110,
   ignore_cr_at_eol = true,
 }
 
 local LINE_PAIR_TIE_BREAK_BONUS = 0.001
 local WORD_TOKEN_REFINE_SIMILARITY_FLOOR = 0.5
 
-local function merge_opts(opts)
-  return vim.tbl_deep_extend("force", DEFAULTS, opts or {})
+function M.merge_opts(opts)
+  return vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts or {})
 end
 
 local function utf_char_count(text)
@@ -356,7 +359,7 @@ end
 ---@param opts? table
 ---@return {old_chunks: {text:string, hl_group:string}[], new_ranges: table[], fallback:boolean?}
 function M.diff_pair(old_line, new_line, opts)
-  opts = merge_opts(opts)
+  opts = M.merge_opts(opts)
   old_line = old_line or ""
   new_line = new_line or ""
 
@@ -456,7 +459,7 @@ end
 ---@param opts? table
 ---@return {old:string?, new:string?, inline:table?}[]
 function M.plan_replacement(old_lines, new_lines, opts)
-  opts = merge_opts(opts)
+  opts = M.merge_opts(opts)
   old_lines = old_lines or {}
   new_lines = new_lines or {}
 

@@ -384,7 +384,7 @@ end
 ---@param buf number Buffer ID
 ---@param line_list table[] Array of {type, content} entries
 local function merge_inline_opts(opts)
-  return vim.tbl_deep_extend("force", vim.deepcopy(config.defaults.inline_diff), opts or {})
+  return inline_diff.merge_opts(opts)
 end
 
 local function utf_char_count(text)
@@ -527,7 +527,7 @@ end
 
 function M.apply_diff_highlights(ns_id, buf, line_list)
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-  local opts = merge_inline_opts(config.load_inline_diff())
+  local opts = merge_inline_opts()
   local line_only = should_use_line_only_diff(line_list, opts)
   local block = {}
 

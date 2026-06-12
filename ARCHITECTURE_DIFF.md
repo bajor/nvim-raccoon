@@ -13,7 +13,7 @@ flowchart TD
     B --> D[commit/local hunk buffer]
     C --> E[raccoon.diff.build_render_plan]
     D --> F[raccoon.commit_ui.apply_diff_highlights]
-    E --> G{inline_diff enabled and bounded?}
+    E --> G{bounded text diff?}
     F --> G
     G -->|yes| H[raccoon.inline_diff.plan_replacement]
     H --> I[bounded line alignment]
@@ -31,7 +31,7 @@ flowchart TD
 
 - `lua/raccoon/inline_diff.lua`: bounded token and UTF-8 codepoint diffing for replaced line pairs.
 - `raccoon.diff.build_render_plan`: converts parsed patch hunks into added-line ranges and deleted virtual-line chunks.
-- `inline_diff` config block: enables exact rendering and defines fallback limits.
+- Inline diff rendering uses internal text-based bounds for precision and fallback behavior.
 
 ### Modified
 

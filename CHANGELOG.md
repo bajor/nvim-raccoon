@@ -8,12 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Exact character-level inline diff rendering in flat review buffers opened by `raccoon.diff.open_file()`.
-- `inline_diff` config block for enabling exact rendering and bounding large or expensive diff planning.
 
 ### Changed
 - Flat diff rendering now keeps GitHub patch hunk and review line numbers canonical while adding exact extmark spans for changed added text.
 - Deleted virtual lines now keep the existing line-level rendering and apply stronger inline highlights only to removed spans.
-- Large files, large replacement blocks, long lines, disabled inline diff config, and unsupported cases fall back to the existing line-level rendering.
+- Inline diff rendering is internal text-based behavior, not user-configurable; large files, large replacement blocks, long lines, and unsupported cases fall back to the existing line-level rendering.
 
 ## [0.13.0] - 2026-05-23
 

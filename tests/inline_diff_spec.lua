@@ -2,7 +2,7 @@ local diff = require("raccoon.diff")
 local inline_diff = require("raccoon.inline_diff")
 
 local function inline_opts(overrides)
-  return vim.tbl_deep_extend("force", vim.deepcopy(require("raccoon.config").defaults.inline_diff), overrides or {})
+  return inline_diff.merge_opts(overrides)
 end
 
 local function byte_range(text, start_char, end_char)
