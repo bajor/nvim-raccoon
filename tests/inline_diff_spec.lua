@@ -21,6 +21,16 @@ local function find_chunk(chunks, text, hl_group)
   return nil
 end
 
+local function has_range_covering(text, ranges, start_char, end_char)
+  local expected = byte_range(text, start_char, end_char)
+  for _, range in ipairs(ranges) do
+    if range.start_col <= expected.start_col and range.end_col >= expected.end_col then
+      return true
+    end
+  end
+  return false
+end
+
 local function has_inline_virt_line(mark)
   local details = mark[4] or {}
   for _, line in ipairs(details.virt_lines or {}) do
@@ -152,6 +162,16 @@ describe("raccoon.inline_diff", function()
       assert.same({ byte_range(new_line, 4100, 4101) }, result.new_ranges)
       assert.is_not_nil(find_chunk(result.old_chunks, prefix, "Comment"))
       assert.is_not_nil(find_chunk(result.old_chunks, "x", "RaccoonDeleteInline"))
+    end)
+
+    it("includes changed punctuation around replaced call text", function()
+      local old_line = 'pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {'
+      local new_line = 'set_diff_sign(ns_id, buf, idx - 1, "add", line_only, opts)'
+      local result = inline_diff.diff_pair(old_line, new_line, inline_opts())
+      local last_char = select(1, vim.str_utfindex(new_line)) - 1
+
+      assert.is_true(has_range_covering(new_line, result.new_ranges, 13, 14))
+      assert.is_true(has_range_covering(new_line, result.new_ranges, last_char, last_char + 1))
     end)
   end)
 

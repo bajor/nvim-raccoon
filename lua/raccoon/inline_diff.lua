@@ -333,6 +333,39 @@ local function highlight_whole(old_tokens, old_first, old_last, new_tokens, new_
   add_new_token_ranges(new_ranges, new_tokens, new_first, new_last)
 end
 
+local function word_token_pairs(old_tokens, new_tokens, opts)
+  local old_words = {}
+  local new_words = {}
+
+  for index, token in ipairs(old_tokens) do
+    if token.kind == "word" then
+      table.insert(old_words, { index = index, text = token.text })
+    end
+  end
+  for index, token in ipairs(new_tokens) do
+    if token.kind == "word" then
+      table.insert(new_words, { index = index, text = token.text })
+    end
+  end
+
+  local pairs = lcs_pairs(old_words, new_words, function(item)
+    return item.text
+  end, opts.max_cells)
+  if not pairs then
+    return nil
+  end
+
+  local token_pairs = {}
+  for _, pair in ipairs(pairs) do
+    table.insert(token_pairs, {
+      left = old_words[pair.left].index,
+      right = new_words[pair.right].index,
+    })
+  end
+
+  return token_pairs
+end
+
 local function refine_chars(old_text, new_text, new_base_char, normalized_new_line, opts)
   local old_chars = make_chars(old_text)
   local new_chars = make_chars(new_text)
@@ -395,6 +428,115 @@ local function refine_chars(old_text, new_text, new_base_char, normalized_new_li
   return { old_chunks = old_chunks, new_ranges = new_ranges }
 end
 
+local function only_word_token_index(tokens, first, last)
+  local word_index = nil
+  for i = first, last do
+    if tokens[i].kind == "word" then
+      if word_index then
+        return nil
+      end
+      word_index = i
+    end
+  end
+  return word_index
+end
+
+local function add_single_word_replacement(
+  old_tokens,
+  old_first,
+  old_last,
+  new_tokens,
+  new_first,
+  new_last,
+  normalized_new_line,
+  opts,
+  old_chunks,
+  new_ranges
+)
+  local old_word = only_word_token_index(old_tokens, old_first, old_last)
+  local new_word = only_word_token_index(new_tokens, new_first, new_last)
+  if not old_word or not new_word then
+    return false
+  end
+
+  local old_prefix = tokens_text(old_tokens, old_first, old_word - 1)
+  local new_prefix = tokens_text(new_tokens, new_first, new_word - 1)
+  local old_suffix = tokens_text(old_tokens, old_word + 1, old_last)
+  local new_suffix = tokens_text(new_tokens, new_word + 1, new_last)
+  if old_prefix ~= new_prefix or old_suffix ~= new_suffix then
+    return false
+  end
+
+  append_chunk(old_chunks, old_prefix, UNCHANGED_DELETE)
+
+  local refine_opts = vim.tbl_extend("force", opts, {
+    char_similarity_floor = math.max(opts.char_similarity_floor, WORD_TOKEN_REFINE_SIMILARITY_FLOOR),
+  })
+  local refined = refine_chars(
+    old_tokens[old_word].text,
+    new_tokens[new_word].text,
+    new_tokens[new_word].start_char,
+    normalized_new_line,
+    refine_opts
+  )
+
+  if refined then
+    for _, chunk in ipairs(refined.old_chunks) do
+      append_chunk(old_chunks, chunk.text, chunk.hl_group)
+    end
+    for _, range in ipairs(refined.new_ranges) do
+      merge_range(new_ranges, range.start_col, range.end_col)
+    end
+  else
+    append_chunk(old_chunks, old_tokens[old_word].text, INLINE_DELETE)
+    merge_range(new_ranges, new_tokens[new_word].start_col, new_tokens[new_word].end_col)
+  end
+
+  append_chunk(old_chunks, old_suffix, UNCHANGED_DELETE)
+  return true
+end
+
+local function add_whitespace_insertion(
+  old_tokens,
+  old_first,
+  old_last,
+  new_tokens,
+  new_first,
+  new_last,
+  normalized_new_line,
+  old_chunks,
+  new_ranges
+)
+  local old_text = tokens_text(old_tokens, old_first, old_last)
+  if old_text == "" or not old_text:match("^%s+$") then
+    return false
+  end
+
+  local new_text = tokens_text(new_tokens, new_first, new_last)
+  local old_chars = utf_char_count(old_text)
+  local new_chars = utf_char_count(new_text)
+  local start_char = 0
+  local end_char = new_chars
+
+  if new_text:sub(1, #old_text) == old_text then
+    start_char = old_chars
+  end
+  if new_text:sub(-#old_text) == old_text and end_char - old_chars >= start_char then
+    end_char = end_char - old_chars
+  end
+
+  append_chunk(old_chunks, old_text, UNCHANGED_DELETE)
+  if start_char < end_char then
+    local new_base_char = new_tokens[new_first].start_char
+    merge_range(
+      new_ranges,
+      vim.str_byteindex(normalized_new_line, new_base_char + start_char),
+      vim.str_byteindex(normalized_new_line, new_base_char + end_char)
+    )
+  end
+  return true
+end
+
 local function add_changed_block(
   old_tokens,
   old_first,
@@ -416,19 +558,38 @@ local function add_changed_block(
     return
   end
 
-  local single_word_replacement = old_first == old_last
-      and new_first == new_last
-      and old_tokens[old_first].kind == "word"
-      and new_tokens[new_first].kind == "word"
+  if add_whitespace_insertion(
+      old_tokens,
+      old_first,
+      old_last,
+      new_tokens,
+      new_first,
+      new_last,
+      normalized_new_line,
+      old_chunks,
+      new_ranges
+  ) then
+    return
+  end
+
+  if add_single_word_replacement(
+      old_tokens,
+      old_first,
+      old_last,
+      new_tokens,
+      new_first,
+      new_last,
+      normalized_new_line,
+      opts,
+      old_chunks,
+      new_ranges
+  ) then
+    return
+  end
+
   local old_text = tokens_text(old_tokens, old_first, old_last)
   local new_text = tokens_text(new_tokens, new_first, new_last)
-  local refine_opts = opts
-  if single_word_replacement then
-    refine_opts = vim.tbl_extend("force", opts, {
-      char_similarity_floor = math.max(opts.char_similarity_floor, WORD_TOKEN_REFINE_SIMILARITY_FLOOR),
-    })
-  end
-  local refined = refine_chars(old_text, new_text, new_tokens[new_first].start_char, normalized_new_line, refine_opts)
+  local refined = refine_chars(old_text, new_text, new_tokens[new_first].start_char, normalized_new_line, opts)
 
   if not refined then
     highlight_whole(old_tokens, old_first, old_last, new_tokens, new_first, new_last, old_chunks, new_ranges)
@@ -458,9 +619,7 @@ function M.diff_pair(old_line, new_line, opts)
 
   local old_tokens = tokenize(normalized_old)
   local new_tokens = tokenize(normalized_new)
-  local pairs = lcs_pairs(old_tokens, new_tokens, function(item)
-    return item.text
-  end, opts.max_cells)
+  local pairs = word_token_pairs(old_tokens, new_tokens, opts)
 
   if not pairs then
     return boundary_diff(normalized_old, normalized_new, old_suffix)

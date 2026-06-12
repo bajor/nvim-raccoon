@@ -17,7 +17,7 @@ flowchart TD
     F --> G
     G -->|yes| H[raccoon.inline_diff.plan_replacement]
     H --> I[line alignment with ordered large-block fallback]
-    I --> J[token LCS, UTF-8 char refinement, or boundary spans]
+    I --> J[word-token anchors, UTF-8 char refinement, or boundary spans]
     G -->|no| K[line-only fallback plan]
     J --> L[inline add/delete extmark ranges]
     K --> M[line-only fallback extmarks]
@@ -29,7 +29,7 @@ flowchart TD
 
 ### Added
 
-- `lua/raccoon/inline_diff.lua`: bounded token and UTF-8 codepoint diffing for replaced line pairs, with boundary-span fallback when deeper LCS work is too large.
+- `lua/raccoon/inline_diff.lua`: bounded word-token anchoring and UTF-8 codepoint diffing for replaced line pairs, with boundary-span fallback when deeper LCS work is too large.
 - `raccoon.diff.build_render_plan`: converts parsed patch hunks into added-line ranges and deleted virtual-line chunks.
 - Inline diff rendering uses internal text-based bounds that degrade to simpler span detection instead of whole-line coloring.
 
