@@ -142,6 +142,31 @@ describe("raccoon.inline_diff", function()
       assert.equals("removed two", rows[2].old)
       assert.is_nil(rows[2].new)
     end)
+
+    it("pairs similar lines when added rows shift a multi-line block", function()
+      local rows = inline_diff.plan_replacement(
+        {
+          "return call(foo bar)",
+          "local line_idx = line_num - 1",
+        },
+        {
+          "local ranges = add.ranges or {}",
+          "return call(foo, bar)",
+          "local line_idx = add.line_num - 1",
+        },
+        inline_opts()
+      )
+
+      assert.equals(3, #rows)
+      assert.is_nil(rows[1].old)
+      assert.equals("local ranges = add.ranges or {}", rows[1].new)
+      assert.equals("return call(foo bar)", rows[2].old)
+      assert.equals("return call(foo, bar)", rows[2].new)
+      assert.same({ byte_range(rows[2].new, 15, 16) }, rows[2].inline.new_ranges)
+      assert.equals("local line_idx = line_num - 1", rows[3].old)
+      assert.equals("local line_idx = add.line_num - 1", rows[3].new)
+      assert.same({ byte_range(rows[3].new, 17, 21) }, rows[3].inline.new_ranges)
+    end)
   end)
 end)
 
@@ -165,6 +190,28 @@ describe("raccoon.diff inline render plan", function()
     assert.equals(1, plan.deleted[1].line_num)
     assert.is_not_nil(find_chunk(plan.deleted[1].chunks, "count", "RaccoonDeleteInline"))
     assert.is_nil(find_chunk(plan.deleted[1].chunks, "local total_", "RaccoonDelete"))
+  end)
+
+  it("keeps exact ranges when similar lines shift inside a multi-line block", function()
+    local patch = table.concat({
+      "@@ -1,2 +1,3 @@",
+      "-return call(foo bar)",
+      "-local line_idx = line_num - 1",
+      "+local ranges = add.ranges or {}",
+      "+return call(foo, bar)",
+      "+local line_idx = add.line_num - 1",
+    }, "\n")
+
+    local plan = diff.build_render_plan(patch, inline_opts())
+
+    assert.is_false(plan.fallback)
+    assert.equals(3, #plan.added)
+    assert.equals("local ranges = add.ranges or {}", plan.added[1].content)
+    assert.same({}, plan.added[1].ranges)
+    assert.equals("return call(foo, bar)", plan.added[2].content)
+    assert.same({ byte_range(plan.added[2].content, 15, 16) }, plan.added[2].ranges)
+    assert.equals("local line_idx = add.line_num - 1", plan.added[3].content)
+    assert.same({ byte_range(plan.added[3].content, 17, 21) }, plan.added[3].ranges)
   end)
 
   it("keeps line-only data when inline rendering is disabled", function()

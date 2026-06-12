@@ -13,6 +13,8 @@ local DEFAULTS = {
   ignore_cr_at_eol = true,
 }
 
+local LINE_PAIR_TIE_BREAK_BONUS = 0.001
+
 local function merge_opts(opts)
   return vim.tbl_deep_extend("force", DEFAULTS, opts or {})
 end
@@ -178,6 +180,58 @@ local function make_chars(text)
     table.insert(chars, char_at(text, i))
   end
   return chars
+end
+
+local function line_similarity_items(line)
+  local tokens = tokenize(line or "")
+  local items = {}
+
+  for _, token in ipairs(tokens) do
+    if token.kind == "word" then
+      table.insert(items, token.text)
+    end
+  end
+
+  if #items > 0 then
+    return items
+  end
+
+  for _, token in ipairs(tokens) do
+    if token.kind ~= "space" then
+      table.insert(items, token.text)
+    end
+  end
+
+  return items
+end
+
+local function line_similarity(old_line, new_line, opts)
+  local normalized_old = strip_cr(old_line or "", opts)
+  local normalized_new = strip_cr(new_line or "", opts)
+
+  if normalized_old == normalized_new then
+    return 1
+  end
+
+  local old_items = line_similarity_items(normalized_old)
+  local new_items = line_similarity_items(normalized_new)
+
+  if #old_items == 0 and #new_items == 0 then
+    return 1
+  end
+  if #old_items == 0 or #new_items == 0 then
+    return 0
+  end
+
+  local pairs = lcs_pairs(old_items, new_items, function(item)
+    return item
+  end, opts.max_cells)
+
+  if not pairs then
+    return 0
+  end
+
+  return 2 * #pairs / (#old_items + #new_items)
 end
 
 local function highlight_whole(old_tokens, old_first, old_last, new_tokens, new_first, new_last, old_chunks, new_ranges)
@@ -364,6 +418,27 @@ function M.diff_pair(old_line, new_line, opts)
   }
 end
 
+local function replacement_row(old_line, new_line, opts)
+  local inline = nil
+
+  if old_line and new_line and opts.enabled ~= false then
+    inline = M.diff_pair(old_line, new_line, opts)
+    if inline.fallback then
+      inline = nil
+    end
+  end
+
+  return {
+    old = old_line,
+    new = new_line,
+    inline = inline,
+  }
+end
+
+local function line_pair_score(old_line, new_line, opts)
+  return LINE_PAIR_TIE_BREAK_BONUS + line_similarity(old_line, new_line, opts)
+end
+
 ---Plan old/new rows for a contiguous replacement block.
 ---@param old_lines string[]
 ---@param new_lines string[]
@@ -371,26 +446,62 @@ end
 ---@return {old:string?, new:string?, inline:table?}[]
 function M.plan_replacement(old_lines, new_lines, opts)
   opts = merge_opts(opts)
-  local rows = {}
-  local max_len = math.max(#old_lines, #new_lines)
+  old_lines = old_lines or {}
+  new_lines = new_lines or {}
 
-  for i = 1, max_len do
-    local old_line = old_lines[i]
-    local new_line = new_lines[i]
-    local inline = nil
+  local scores = {}
+  local actions = {}
+  for i = 0, #old_lines do
+    scores[i] = {}
+    actions[i] = {}
+    scores[i][0] = 0
+    actions[i][0] = "del"
+  end
+  for j = 0, #new_lines do
+    scores[0][j] = 0
+    actions[0][j] = "add"
+  end
+  actions[0][0] = nil
 
-    if old_line and new_line and opts.enabled ~= false then
-      inline = M.diff_pair(old_line, new_line, opts)
-      if inline.fallback then
-        inline = nil
+  for i = 1, #old_lines do
+    for j = 1, #new_lines do
+      local best_score = scores[i - 1][j - 1] + line_pair_score(old_lines[i], new_lines[j], opts)
+      local best_action = "pair"
+      local delete_score = scores[i - 1][j]
+      local add_score = scores[i][j - 1]
+
+      if delete_score > best_score then
+        best_score = delete_score
+        best_action = "del"
       end
-    end
+      if add_score > best_score then
+        best_score = add_score
+        best_action = "add"
+      end
 
-    table.insert(rows, {
-      old = old_line,
-      new = new_line,
-      inline = inline,
-    })
+      scores[i][j] = best_score
+      actions[i][j] = best_action
+    end
+  end
+
+  local rows = {}
+  local i = #old_lines
+  local j = #new_lines
+
+  while i > 0 or j > 0 do
+    local action = actions[i][j]
+
+    if action == "pair" then
+      table.insert(rows, 1, replacement_row(old_lines[i], new_lines[j], opts))
+      i = i - 1
+      j = j - 1
+    elseif action == "del" then
+      table.insert(rows, 1, replacement_row(old_lines[i], nil, opts))
+      i = i - 1
+    else
+      table.insert(rows, 1, replacement_row(nil, new_lines[j], opts))
+      j = j - 1
+    end
   end
 
   return rows
