@@ -45,6 +45,18 @@ local function has_padded_delete_chunk(mark)
   return false
 end
 
+local function has_exact_delete_background(mark)
+  local details = mark[4] or {}
+  for _, line in ipairs(details.virt_lines or {}) do
+    for _, chunk in ipairs(line) do
+      if chunk[2] == "RaccoonDelete" then
+        return true
+      end
+    end
+  end
+  return false
+end
+
 describe("raccoon.inline_diff", function()
   describe("diff_pair", function()
     it("highlights the exact changed span for identifier rename", function()
@@ -62,6 +74,16 @@ describe("raccoon.inline_diff", function()
       assert.same({ byte_range(new_line, 15, 16) }, result.new_ranges)
       assert.equals(0, #vim.tbl_filter(function(chunk)
         return chunk.hl_group == "RaccoonDeleteInline"
+      end, result.old_chunks))
+    end)
+
+    it("keeps old text neutral when a line only receives an insertion", function()
+      local new_line = "Review changed files with exact inline diff highlighting"
+      local result = inline_diff.diff_pair("Review changed files with inline diff highlighting", new_line, inline_opts())
+
+      assert.is_true(#result.new_ranges > 0)
+      assert.equals(0, #vim.tbl_filter(function(chunk)
+        return chunk.hl_group == "RaccoonDelete" or chunk.hl_group == "RaccoonDeleteInline"
       end, result.old_chunks))
     end)
 
@@ -142,6 +164,7 @@ describe("raccoon.diff inline render plan", function()
     assert.equals(1, #plan.deleted)
     assert.equals(1, plan.deleted[1].line_num)
     assert.is_not_nil(find_chunk(plan.deleted[1].chunks, "count", "RaccoonDeleteInline"))
+    assert.is_nil(find_chunk(plan.deleted[1].chunks, "local total_", "RaccoonDelete"))
   end)
 
   it("keeps line-only data when inline rendering is disabled", function()
@@ -201,6 +224,7 @@ describe("raccoon.diff inline highlights", function()
     local saw_inline_add = false
     local saw_inline_delete = false
     local saw_padded_delete = false
+    local saw_delete_background = false
 
     for _, mark in ipairs(marks) do
       local details = mark[4] or {}
@@ -220,6 +244,7 @@ describe("raccoon.diff inline highlights", function()
       end
       saw_inline_delete = saw_inline_delete or has_inline_virt_line(mark)
       saw_padded_delete = saw_padded_delete or has_padded_delete_chunk(mark)
+      saw_delete_background = saw_delete_background or has_exact_delete_background(mark)
     end
 
     assert.is_false(saw_added_line)
@@ -227,6 +252,7 @@ describe("raccoon.diff inline highlights", function()
     assert.is_true(saw_inline_add)
     assert.is_true(saw_inline_delete)
     assert.is_false(saw_padded_delete)
+    assert.is_false(saw_delete_background)
 
     vim.api.nvim_buf_delete(buf, { force = true })
   end)

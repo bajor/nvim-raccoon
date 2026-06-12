@@ -1,8 +1,9 @@
 ---@class RaccoonInlineDiff
 local M = {}
 
-local BASE_DELETE = "RaccoonDelete"
+local FALLBACK_DELETE = "RaccoonDelete"
 local INLINE_DELETE = "RaccoonDeleteInline"
+local UNCHANGED_DELETE = "Normal"
 
 local DEFAULTS = {
   enabled = true,
@@ -235,7 +236,7 @@ local function refine_chars(old_text, new_text, new_base_char, normalized_new_li
   for _, pair in ipairs(pairs) do
     add_old_chars(old_pos, pair.left - 1, INLINE_DELETE)
     add_new_chars(new_pos, pair.right - 1)
-    add_old_chars(pair.left, pair.left, BASE_DELETE)
+    add_old_chars(pair.left, pair.left, UNCHANGED_DELETE)
     old_pos = pair.left + 1
     new_pos = pair.right + 1
   end
@@ -300,7 +301,7 @@ function M.diff_pair(old_line, new_line, opts)
   if utf_char_count(normalized_old) > opts.max_line_chars
       or utf_char_count(normalized_new) > opts.max_line_chars then
     return {
-      old_chunks = { { text = old_line, hl_group = BASE_DELETE } },
+      old_chunks = { { text = old_line, hl_group = FALLBACK_DELETE } },
       new_ranges = {},
       fallback = true,
     }
@@ -314,7 +315,7 @@ function M.diff_pair(old_line, new_line, opts)
 
   if not pairs then
     return {
-      old_chunks = { { text = old_line, hl_group = BASE_DELETE } },
+      old_chunks = { { text = old_line, hl_group = FALLBACK_DELETE } },
       new_ranges = {},
       fallback = true,
     }
@@ -338,7 +339,7 @@ function M.diff_pair(old_line, new_line, opts)
       old_chunks,
       new_ranges
     )
-    append_chunk(old_chunks, old_tokens[pair.left].text, BASE_DELETE)
+    append_chunk(old_chunks, old_tokens[pair.left].text, UNCHANGED_DELETE)
     old_pos = pair.left + 1
     new_pos = pair.right + 1
   end
@@ -355,7 +356,7 @@ function M.diff_pair(old_line, new_line, opts)
     old_chunks,
     new_ranges
   )
-  append_chunk(old_chunks, old_suffix, BASE_DELETE)
+  append_chunk(old_chunks, old_suffix, UNCHANGED_DELETE)
 
   return {
     old_chunks = old_chunks,

@@ -395,9 +395,11 @@ function M.apply_highlights(buf, patch, opts)
       -- Create virtual lines for deleted content
       local virt_lines = {}
       for _, chunks in ipairs(lines) do
-        local virt_line = { { "- ", "RaccoonDelete" } }
+        local delete_prefix_hl = plan.fallback and "RaccoonDelete" or "RaccoonDeleteSign"
+        local default_chunk_hl = plan.fallback and "RaccoonDelete" or "Normal"
+        local virt_line = { { "- ", delete_prefix_hl } }
         for _, chunk in ipairs(chunks) do
-          table.insert(virt_line, { chunk.text or "", chunk.hl_group or "RaccoonDelete" })
+          table.insert(virt_line, { chunk.text or "", chunk.hl_group or default_chunk_hl })
         end
         if plan.fallback then
           local pad = string.rep(" ", 300)

@@ -18,7 +18,7 @@ flowchart TD
     G --> H
     H --> I[sign-only row markers]
     H --> J[inline add extmark ranges or added-content spans]
-    H --> K[deleted virt_lines chunks without padded exact-mode tails]
+    H --> K[deleted virt_lines with neutral context and inline delete spans]
     H --> L[line-only fallback extmarks]
 ```
 
@@ -33,4 +33,5 @@ flowchart TD
 ### Modified
 
 - `raccoon.diff.apply_highlights`: consumes the render plan, using sign-only markers plus character/content extmarks in exact mode while preserving full-line add and padded deleted-line fallback rendering.
+- `raccoon.inline_diff.diff_pair`: keeps unchanged old-side virtual-line text neutral in exact mode, reserving delete backgrounds for characters actually removed.
 - Highlight setup: adds `RaccoonAddInline` and `RaccoonDeleteInline`.
