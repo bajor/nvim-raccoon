@@ -387,30 +387,8 @@ local function merge_inline_opts(opts)
   return inline_diff.merge_opts(opts)
 end
 
-local function utf_char_count(text)
-  return select(1, vim.str_utfindex(text or ""))
-end
-
-local function should_use_line_only_diff(line_list, opts)
-  if opts.enabled == false then
-    return true
-  end
-
-  local changed_count = 0
-  local block_count = 0
-  for _, line_data in ipairs(line_list) do
-    if line_data.type == "add" or line_data.type == "del" then
-      changed_count = changed_count + 1
-      block_count = block_count + 1
-      if block_count > opts.max_block_lines or utf_char_count(line_data.content) > opts.max_line_chars then
-        return true
-      end
-    else
-      block_count = 0
-    end
-  end
-
-  return changed_count > opts.max_changed_lines
+local function should_use_line_only_diff(_line_list, opts)
+  return opts.enabled == false
 end
 
 local function set_diff_sign(ns_id, buf, row, line_type, line_only, opts)

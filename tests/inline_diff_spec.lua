@@ -141,6 +141,18 @@ describe("raccoon.inline_diff", function()
       assert.same({ byte_range(new_line, 0, 10) }, result.new_ranges)
       assert.same({ { text = "aaaaaaaaaa", hl_group = "RaccoonDeleteInline" } }, result.old_chunks)
     end)
+
+    it("keeps exact spans for long lines", function()
+      local prefix = string.rep("a", 4100)
+      local old_line = prefix .. "x"
+      local new_line = prefix .. "y"
+      local result = inline_diff.diff_pair(old_line, new_line, inline_opts())
+
+      assert.is_nil(result.fallback)
+      assert.same({ byte_range(new_line, 4100, 4101) }, result.new_ranges)
+      assert.is_not_nil(find_chunk(result.old_chunks, prefix, "Comment"))
+      assert.is_not_nil(find_chunk(result.old_chunks, "x", "RaccoonDeleteInline"))
+    end)
   end)
 
   describe("plan_replacement", function()
@@ -260,18 +272,22 @@ describe("raccoon.diff inline render plan", function()
     assert.same({ { text = "old value", hl_group = "RaccoonDelete" } }, plan.deleted[1].chunks)
   end)
 
-  it("falls back when changed lines exceed the configured limit", function()
+  it("keeps exact ranges across larger contiguous replacement blocks", function()
     local lines = { "@@ -1,3 +1,3 @@" }
-    for i = 1, 3 do
-      table.insert(lines, "-old " .. i)
-      table.insert(lines, "+new " .. i)
+    for i = 1, 35 do
+      table.insert(lines, "-local value_" .. i .. " = old")
+    end
+    for i = 1, 35 do
+      table.insert(lines, "+local value_" .. i .. " = new")
     end
 
-    local plan = diff.build_render_plan(table.concat(lines, "\n"), inline_opts({ max_changed_lines = 2 }))
+    local plan = diff.build_render_plan(table.concat(lines, "\n"), inline_opts())
 
-    assert.is_true(plan.fallback)
-    assert.equals(3, #plan.added)
-    assert.equals(3, #plan.deleted)
+    assert.is_false(plan.fallback)
+    assert.equals(35, #plan.added)
+    assert.equals(35, #plan.deleted)
+    assert.same({ byte_range(plan.added[1].content, 16, 19) }, plan.added[1].ranges)
+    assert.is_not_nil(find_chunk(plan.deleted[1].chunks, "old", "RaccoonDeleteInline"))
   end)
 end)
 

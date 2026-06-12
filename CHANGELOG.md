@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Flat diff rendering now keeps GitHub patch hunk and review line numbers canonical while adding exact extmark spans for changed added text.
 - Deleted virtual lines now keep the existing line-level rendering and apply stronger inline highlights only to removed spans.
-- Inline diff rendering is internal text-based behavior, not user-configurable; large files, large replacement blocks, long lines, and unsupported cases fall back to the existing line-level rendering.
+- Inline diff rendering is internal text-based behavior, not user-configurable; long lines and larger replacement blocks keep best-effort text spans instead of falling back to whole-line coloring.
 
 ## [0.13.0] - 2026-05-23
 

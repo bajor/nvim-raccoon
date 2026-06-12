@@ -8,10 +8,6 @@ local state = require("raccoon.state")
 --- Namespace for diff highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
 
-local function utf_char_count(text)
-  return select(1, vim.str_utfindex(text or ""))
-end
-
 local function merge_inline_opts(opts)
   return inline_diff.merge_opts(opts)
 end
@@ -57,37 +53,6 @@ local function build_line_only_plan(hunks)
     end
   end
   return plan
-end
-
-local function changed_line_count(hunks)
-  local count = 0
-  for _, hunk in ipairs(hunks) do
-    for _, line in ipairs(hunk.lines) do
-      if line.type == "add" or line.type == "del" then
-        count = count + 1
-      end
-    end
-  end
-  return count
-end
-
-local function has_oversized_change_block(hunks, opts)
-  for _, hunk in ipairs(hunks) do
-    local block_count = 0
-
-    for _, line in ipairs(hunk.lines) do
-      if line.type == "add" or line.type == "del" then
-        block_count = block_count + 1
-        if block_count > opts.max_block_lines or utf_char_count(line.content) > opts.max_line_chars then
-          return true
-        end
-      else
-        block_count = 0
-      end
-    end
-  end
-
-  return false
 end
 
 --- Parse a unified diff hunk header
@@ -292,9 +257,7 @@ function M.build_render_plan(patch, opts)
     return empty_plan(true)
   end
 
-  if opts.enabled == false
-      or changed_line_count(hunks) > opts.max_changed_lines
-      or has_oversized_change_block(hunks, opts) then
+  if opts.enabled == false then
     return build_line_only_plan(hunks)
   end
 

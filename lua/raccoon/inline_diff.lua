@@ -1,16 +1,13 @@
 ---@class RaccoonInlineDiff
 local M = {}
 
-local FALLBACK_DELETE = "RaccoonDelete"
 local INLINE_DELETE = "RaccoonDeleteInline"
 local UNCHANGED_DELETE = "Comment"
 
 M.defaults = {
   enabled = true,
-  max_changed_lines = 400,
-  max_block_lines = 64,
-  max_line_chars = 4096,
   max_cells = 200000,
+  max_line_pairs = 200000,
   char_similarity_floor = 0.35,
   highlight_priority = 110,
   ignore_cr_at_eol = true,
@@ -186,6 +183,99 @@ local function make_chars(text)
   return chars
 end
 
+local function chars_text(chars, first, last)
+  local text = {}
+  for i = first, last do
+    table.insert(text, chars[i].text)
+  end
+  return table.concat(text)
+end
+
+local function boundary_refine_chars(old_text, new_text, new_base_char, normalized_new_line)
+  local old_chars = make_chars(old_text)
+  local new_chars = make_chars(new_text)
+  local old_len = #old_chars
+  local new_len = #new_chars
+  local prefix_len = 0
+
+  while prefix_len < old_len
+      and prefix_len < new_len
+      and old_chars[prefix_len + 1].text == new_chars[prefix_len + 1].text do
+    prefix_len = prefix_len + 1
+  end
+
+  local suffix_len = 0
+  while suffix_len < old_len - prefix_len
+      and suffix_len < new_len - prefix_len
+      and old_chars[old_len - suffix_len].text == new_chars[new_len - suffix_len].text do
+    suffix_len = suffix_len + 1
+  end
+
+  local old_chunks = {}
+  append_chunk(old_chunks, chars_text(old_chars, 1, prefix_len), UNCHANGED_DELETE)
+  append_chunk(old_chunks, chars_text(old_chars, prefix_len + 1, old_len - suffix_len), INLINE_DELETE)
+  append_chunk(old_chunks, chars_text(old_chars, old_len - suffix_len + 1, old_len), UNCHANGED_DELETE)
+
+  local new_ranges = {}
+  local new_start_char = new_base_char + prefix_len
+  local new_end_char = new_base_char + new_len - suffix_len
+  if new_start_char < new_end_char then
+    merge_range(
+      new_ranges,
+      vim.str_byteindex(normalized_new_line, new_start_char),
+      vim.str_byteindex(normalized_new_line, new_end_char)
+    )
+  end
+
+  return {
+    old_chunks = old_chunks,
+    new_ranges = new_ranges,
+  }
+end
+
+local function boundary_diff(normalized_old, normalized_new, old_suffix)
+  local old_chars = make_chars(normalized_old)
+  local new_chars = make_chars(normalized_new)
+  local old_len = #old_chars
+  local new_len = #new_chars
+  local prefix_len = 0
+
+  while prefix_len < old_len
+      and prefix_len < new_len
+      and old_chars[prefix_len + 1].text == new_chars[prefix_len + 1].text do
+    prefix_len = prefix_len + 1
+  end
+
+  local suffix_len = 0
+  while suffix_len < old_len - prefix_len
+      and suffix_len < new_len - prefix_len
+      and old_chars[old_len - suffix_len].text == new_chars[new_len - suffix_len].text do
+    suffix_len = suffix_len + 1
+  end
+
+  local old_chunks = {}
+  append_chunk(old_chunks, chars_text(old_chars, 1, prefix_len), UNCHANGED_DELETE)
+  append_chunk(old_chunks, chars_text(old_chars, prefix_len + 1, old_len - suffix_len), INLINE_DELETE)
+  append_chunk(old_chunks, chars_text(old_chars, old_len - suffix_len + 1, old_len), UNCHANGED_DELETE)
+  append_chunk(old_chunks, old_suffix, UNCHANGED_DELETE)
+
+  local new_ranges = {}
+  local new_start_char = prefix_len
+  local new_end_char = new_len - suffix_len
+  if new_start_char < new_end_char then
+    merge_range(
+      new_ranges,
+      vim.str_byteindex(normalized_new, new_start_char),
+      vim.str_byteindex(normalized_new, new_end_char)
+    )
+  end
+
+  return {
+    old_chunks = old_chunks,
+    new_ranges = new_ranges,
+  }
+end
+
 local function line_similarity_items(line)
   local tokens = tokenize(line or "")
   local items = {}
@@ -251,7 +341,7 @@ local function refine_chars(old_text, new_text, new_base_char, normalized_new_li
   end, opts.max_cells)
 
   if not pairs then
-    return nil
+    return boundary_refine_chars(old_text, new_text, new_base_char, normalized_new_line)
   end
 
   local common = #pairs
@@ -366,15 +456,6 @@ function M.diff_pair(old_line, new_line, opts)
   local normalized_old, old_suffix = strip_cr(old_line, opts)
   local normalized_new = strip_cr(new_line, opts)
 
-  if utf_char_count(normalized_old) > opts.max_line_chars
-      or utf_char_count(normalized_new) > opts.max_line_chars then
-    return {
-      old_chunks = { { text = old_line, hl_group = FALLBACK_DELETE } },
-      new_ranges = {},
-      fallback = true,
-    }
-  end
-
   local old_tokens = tokenize(normalized_old)
   local new_tokens = tokenize(normalized_new)
   local pairs = lcs_pairs(old_tokens, new_tokens, function(item)
@@ -382,11 +463,7 @@ function M.diff_pair(old_line, new_line, opts)
   end, opts.max_cells)
 
   if not pairs then
-    return {
-      old_chunks = { { text = old_line, hl_group = FALLBACK_DELETE } },
-      new_ranges = {},
-      fallback = true,
-    }
+    return boundary_diff(normalized_old, normalized_new, old_suffix)
   end
 
   local old_chunks = {}
@@ -453,6 +530,23 @@ local function line_pair_score(old_line, new_line, opts)
   return LINE_PAIR_TIE_BREAK_BONUS + line_similarity(old_line, new_line, opts)
 end
 
+local function ordered_replacement_rows(old_lines, new_lines, opts)
+  local rows = {}
+  local pair_count = math.min(#old_lines, #new_lines)
+
+  for i = 1, pair_count do
+    table.insert(rows, replacement_row(old_lines[i], new_lines[i], opts))
+  end
+  for i = pair_count + 1, #old_lines do
+    table.insert(rows, replacement_row(old_lines[i], nil, opts))
+  end
+  for i = pair_count + 1, #new_lines do
+    table.insert(rows, replacement_row(nil, new_lines[i], opts))
+  end
+
+  return rows
+end
+
 ---Plan old/new rows for a contiguous replacement block.
 ---@param old_lines string[]
 ---@param new_lines string[]
@@ -462,6 +556,10 @@ function M.plan_replacement(old_lines, new_lines, opts)
   opts = M.merge_opts(opts)
   old_lines = old_lines or {}
   new_lines = new_lines or {}
+
+  if #old_lines * #new_lines > opts.max_line_pairs then
+    return ordered_replacement_rows(old_lines, new_lines, opts)
+  end
 
   local scores = {}
   local actions = {}
