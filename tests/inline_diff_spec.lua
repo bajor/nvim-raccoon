@@ -33,6 +33,18 @@ local function has_inline_virt_line(mark)
   return false
 end
 
+local function has_padded_delete_chunk(mark)
+  local details = mark[4] or {}
+  for _, line in ipairs(details.virt_lines or {}) do
+    for _, chunk in ipairs(line) do
+      if chunk[2] == "RaccoonDelete" and chunk[1] and #chunk[1] > 200 then
+        return true
+      end
+    end
+  end
+  return false
+end
+
 describe("raccoon.inline_diff", function()
   describe("diff_pair", function()
     it("highlights the exact changed span for identifier rename", function()
@@ -165,7 +177,7 @@ describe("raccoon.diff inline render plan", function()
 end)
 
 describe("raccoon.diff inline highlights", function()
-  it("adds exact inline extmarks and deleted virtual-line chunks", function()
+  it("adds exact inline extmarks without whole-line backgrounds", function()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
       "context",
@@ -185,16 +197,21 @@ describe("raccoon.diff inline highlights", function()
 
     local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
     local saw_added_line = false
+    local saw_add_sign = false
     local saw_inline_add = false
     local saw_inline_delete = false
+    local saw_padded_delete = false
 
     for _, mark in ipairs(marks) do
       local details = mark[4] or {}
-      if mark[2] == 1
-          and details.line_hl_group == "RaccoonAdd"
-          and type(details.sign_text) == "string"
-          and details.sign_text:match("^%+") then
+      if mark[2] == 1 and details.line_hl_group == "RaccoonAdd" then
         saw_added_line = true
+      end
+      if mark[2] == 1
+          and type(details.sign_text) == "string"
+          and details.sign_text:match("^%+")
+          and details.sign_hl_group == "RaccoonAddSign" then
+        saw_add_sign = true
       end
       if mark[2] == 1 and details.hl_group == "RaccoonAddInline" then
         saw_inline_add = saw_inline_add
@@ -202,11 +219,92 @@ describe("raccoon.diff inline highlights", function()
             and details.end_col == byte_range("local total_size = item.count", 12, 16).end_col)
       end
       saw_inline_delete = saw_inline_delete or has_inline_virt_line(mark)
+      saw_padded_delete = saw_padded_delete or has_padded_delete_chunk(mark)
+    end
+
+    assert.is_false(saw_added_line)
+    assert.is_true(saw_add_sign)
+    assert.is_true(saw_inline_add)
+    assert.is_true(saw_inline_delete)
+    assert.is_false(saw_padded_delete)
+
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
+  it("highlights only added content for pure additions in inline mode", function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      "context",
+      "new line",
+      "tail",
+    })
+
+    local patch = table.concat({
+      "@@ -1,2 +1,3 @@",
+      " context",
+      "+new line",
+      " tail",
+    }, "\n")
+
+    diff.apply_highlights(buf, patch, inline_opts())
+
+    local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+    local saw_added_line = false
+    local saw_add_sign = false
+    local saw_content_add = false
+
+    for _, mark in ipairs(marks) do
+      local details = mark[4] or {}
+      if mark[2] == 1 and details.line_hl_group == "RaccoonAdd" then
+        saw_added_line = true
+      end
+      if mark[2] == 1
+          and type(details.sign_text) == "string"
+          and details.sign_text:match("^%+")
+          and details.sign_hl_group == "RaccoonAddSign" then
+        saw_add_sign = true
+      end
+      if mark[2] == 1 and details.hl_group == "RaccoonAddInline" then
+        saw_content_add = saw_content_add
+          or (mark[3] == 0 and details.end_col == #"new line")
+      end
+    end
+
+    assert.is_false(saw_added_line)
+    assert.is_true(saw_add_sign)
+    assert.is_true(saw_content_add)
+
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
+  it("keeps whole-line backgrounds when inline rendering falls back", function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      "context",
+      "new line",
+      "tail",
+    })
+
+    local patch = table.concat({
+      "@@ -1,2 +1,3 @@",
+      " context",
+      "+new line",
+      " tail",
+    }, "\n")
+
+    diff.apply_highlights(buf, patch, inline_opts({ enabled = false }))
+
+    local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+    local saw_added_line = false
+
+    for _, mark in ipairs(marks) do
+      local details = mark[4] or {}
+      if mark[2] == 1 and details.line_hl_group == "RaccoonAdd" then
+        saw_added_line = true
+      end
     end
 
     assert.is_true(saw_added_line)
-    assert.is_true(saw_inline_add)
-    assert.is_true(saw_inline_delete)
 
     vim.api.nvim_buf_delete(buf, { force = true })
   end)

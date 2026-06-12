@@ -21,6 +21,11 @@ local function whole_deleted_chunks(content)
   return { { text = content or "", hl_group = "RaccoonDelete" } }
 end
 
+local function line_byte_length(buf, line_idx)
+  local lines = vim.api.nvim_buf_get_lines(buf, line_idx, line_idx + 1, false)
+  return #(lines[1] or "")
+end
+
 local function empty_plan(fallback)
   return {
     fallback = fallback,
@@ -338,14 +343,26 @@ function M.apply_highlights(buf, patch, opts)
   for _, add in ipairs(plan.added) do
     local line_idx = add.line_num - 1
     if line_idx >= 0 and line_idx < line_count then
+      local ranges = add.ranges or {}
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
-        line_hl_group = "RaccoonAdd",
+        line_hl_group = plan.fallback and "RaccoonAdd" or nil,
         sign_text = "+",
         sign_hl_group = "RaccoonAddSign",
         priority = opts.highlight_priority,
       })
 
-      for _, range in ipairs(add.ranges or {}) do
+      if not plan.fallback and #ranges == 0 then
+        local end_col = line_byte_length(buf, line_idx)
+        if end_col > 0 then
+          pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+            end_col = end_col,
+            hl_group = "RaccoonAddInline",
+            priority = opts.highlight_priority,
+          })
+        end
+      end
+
+      for _, range in ipairs(ranges) do
         if range.start_col < range.end_col then
           pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, range.start_col, {
             end_col = range.end_col,
@@ -382,8 +399,10 @@ function M.apply_highlights(buf, patch, opts)
         for _, chunk in ipairs(chunks) do
           table.insert(virt_line, { chunk.text or "", chunk.hl_group or "RaccoonDelete" })
         end
-        local pad = string.rep(" ", 300)
-        table.insert(virt_line, { pad, "RaccoonDelete" })
+        if plan.fallback then
+          local pad = string.rep(" ", 300)
+          table.insert(virt_line, { pad, "RaccoonDelete" })
+        end
         table.insert(virt_lines, virt_line)
       end
 

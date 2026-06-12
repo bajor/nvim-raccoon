@@ -2,7 +2,7 @@
 
 ## Summary
 
-Flat diff rendering now plans exact inline add/delete spans from the GitHub patch before applying extmarks to the opened file buffer.
+Flat diff rendering now plans exact inline add/delete spans from the GitHub patch and applies only character/content highlights in exact mode.
 
 ## Diagram(s)
 
@@ -16,9 +16,10 @@ flowchart TD
     D -->|no| G[line-only fallback plan]
     F --> H[raccoon.diff.apply_highlights]
     G --> H
-    H --> I[whole-line add extmarks]
-    H --> J[inline add extmark ranges]
-    H --> K[deleted virt_lines chunks]
+    H --> I[sign-only row markers]
+    H --> J[inline add extmark ranges or added-content spans]
+    H --> K[deleted virt_lines chunks without padded exact-mode tails]
+    H --> L[line-only fallback extmarks]
 ```
 
 ## Changes
@@ -31,5 +32,5 @@ flowchart TD
 
 ### Modified
 
-- `raccoon.diff.apply_highlights`: consumes the render plan, preserving existing full-line add and deleted virtual-line behavior while adding exact inline extmarks when available.
+- `raccoon.diff.apply_highlights`: consumes the render plan, using sign-only markers plus character/content extmarks in exact mode while preserving full-line add and padded deleted-line fallback rendering.
 - Highlight setup: adds `RaccoonAddInline` and `RaccoonDeleteInline`.
