@@ -64,7 +64,9 @@ describe("raccoon.inline_diff", function()
       local result = inline_diff.diff_pair("local total_count = item.count", new_line, inline_opts())
 
       assert.same({ byte_range(new_line, 12, 16) }, result.new_ranges)
+      assert.is_not_nil(find_chunk(result.old_chunks, "local total_", "Comment"))
       assert.is_not_nil(find_chunk(result.old_chunks, "count", "RaccoonDeleteInline"))
+      assert.is_not_nil(find_chunk(result.old_chunks, " = item.count", "Comment"))
     end)
 
     it("highlights whole changed object names in dotted identifiers", function()
@@ -74,7 +76,7 @@ describe("raccoon.inline_diff", function()
 
       assert.same({ byte_range(new_line, 21, 25) }, result.new_ranges)
       assert.is_not_nil(find_chunk(result.old_chunks, "changes", "RaccoonDeleteInline"))
-      assert.is_not_nil(find_chunk(result.old_chunks, ".deleted) do", "Normal"))
+      assert.is_not_nil(find_chunk(result.old_chunks, ".deleted) do", "Comment"))
       assert.is_nil(find_chunk(result.old_chunks, "ch", "RaccoonDeleteInline"))
       assert.is_nil(find_chunk(result.old_chunks, "ges", "RaccoonDeleteInline"))
     end)
@@ -87,6 +89,19 @@ describe("raccoon.inline_diff", function()
       assert.equals(0, #vim.tbl_filter(function(chunk)
         return chunk.hl_group == "RaccoonDeleteInline"
       end, result.old_chunks))
+      assert.is_not_nil(find_chunk(result.old_chunks, "return call(foo bar)", "Comment"))
+    end)
+
+    it("highlights only removed punctuation on grey deleted context", function()
+      local old_line = "return call(foo, bar)"
+      local result = inline_diff.diff_pair(old_line, "return call(foo bar)", inline_opts())
+
+      assert.same({}, result.new_ranges)
+      assert.same({
+        { text = "return call(foo", hl_group = "Comment" },
+        { text = ",", hl_group = "RaccoonDeleteInline" },
+        { text = " bar)", hl_group = "Comment" },
+      }, result.old_chunks)
     end)
 
     it("keeps old text neutral when a line only receives an insertion", function()
@@ -97,6 +112,7 @@ describe("raccoon.inline_diff", function()
       assert.equals(0, #vim.tbl_filter(function(chunk)
         return chunk.hl_group == "RaccoonDelete" or chunk.hl_group == "RaccoonDeleteInline"
       end, result.old_chunks))
+      assert.is_not_nil(find_chunk(result.old_chunks, "Review changed files with inline diff highlighting", "Comment"))
     end)
 
     it("computes UTF-8 replacement ranges as byte columns", function()
@@ -200,6 +216,7 @@ describe("raccoon.diff inline render plan", function()
     assert.same({ byte_range(plan.added[1].content, 12, 16) }, plan.added[1].ranges)
     assert.equals(1, #plan.deleted)
     assert.equals(1, plan.deleted[1].line_num)
+    assert.is_not_nil(find_chunk(plan.deleted[1].chunks, "local total_", "Comment"))
     assert.is_not_nil(find_chunk(plan.deleted[1].chunks, "count", "RaccoonDeleteInline"))
     assert.is_nil(find_chunk(plan.deleted[1].chunks, "local total_", "RaccoonDelete"))
   end)

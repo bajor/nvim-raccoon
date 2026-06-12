@@ -3,7 +3,7 @@ local M = {}
 
 local FALLBACK_DELETE = "RaccoonDelete"
 local INLINE_DELETE = "RaccoonDeleteInline"
-local UNCHANGED_DELETE = "Normal"
+local UNCHANGED_DELETE = "Comment"
 
 local DEFAULTS = {
   enabled = true,

@@ -438,5 +438,54 @@ describe("raccoon.commit_ui", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    it("uses grey deleted context with red deleted spans", function()
+      local ns = vim.api.nvim_create_namespace("raccoon_commit_ui_deleted_context_test")
+      local buf = vim.api.nvim_create_buf(false, true)
+      local old_line = "for _, del in ipairs(changes.deleted) do"
+      local new_line = "for _, del in ipairs(plan.deleted) do"
+      local line_list = {
+        { type = "del", content = old_line },
+        { type = "add", content = new_line },
+      }
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { old_line, new_line })
+
+      commit_ui.apply_diff_highlights(ns, buf, line_list)
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      local saw_deleted_prefix_context = false
+      local saw_deleted_suffix_context = false
+      local saw_deleted_span = false
+      local saw_added_span = false
+      local prefix = byte_range(old_line, 0, 21)
+      local deleted = byte_range(old_line, 21, 28)
+      local suffix = byte_range(old_line, 28, #old_line)
+      local added = byte_range(new_line, 21, 25)
+
+      for _, mark in ipairs(marks) do
+        local details = mark[4] or {}
+        if mark[2] == 0 and details.hl_group == "Comment" then
+          saw_deleted_prefix_context = saw_deleted_prefix_context
+            or (mark[3] == prefix.start_col and details.end_col == prefix.end_col)
+          saw_deleted_suffix_context = saw_deleted_suffix_context
+            or (mark[3] == suffix.start_col and details.end_col == suffix.end_col)
+        end
+        if mark[2] == 0 and details.hl_group == "RaccoonDeleteInline" then
+          saw_deleted_span = saw_deleted_span
+            or (mark[3] == deleted.start_col and details.end_col == deleted.end_col)
+        end
+        if mark[2] == 1 and details.hl_group == "RaccoonAddInline" then
+          saw_added_span = saw_added_span
+            or (mark[3] == added.start_col and details.end_col == added.end_col)
+        end
+      end
+
+      assert.is_true(saw_deleted_prefix_context)
+      assert.is_true(saw_deleted_suffix_context)
+      assert.is_true(saw_deleted_span)
+      assert.is_true(saw_added_span)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 end)

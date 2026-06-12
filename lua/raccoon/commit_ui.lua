@@ -447,8 +447,8 @@ local function add_deleted_chunks(ns_id, buf, row, chunks, opts)
   for _, chunk in ipairs(chunks or {}) do
     local text = chunk.text or ""
     local end_col = col + #text
-    if chunk.hl_group == "RaccoonDeleteInline" then
-      add_inline_range(ns_id, buf, row, col, end_col, "RaccoonDeleteInline", opts)
+    if chunk.hl_group == "RaccoonDeleteInline" or chunk.hl_group == "Comment" then
+      add_inline_range(ns_id, buf, row, col, end_col, chunk.hl_group, opts)
     end
     col = end_col
   end
