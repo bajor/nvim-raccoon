@@ -5,6 +5,7 @@ local M = {}
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
+local inline_diff = require("raccoon.inline_diff")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
@@ -382,23 +383,185 @@ end
 ---@param ns_id number Namespace ID for extmarks
 ---@param buf number Buffer ID
 ---@param line_list table[] Array of {type, content} entries
-function M.apply_diff_highlights(ns_id, buf, line_list)
-  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-  for idx, line_data in ipairs(line_list) do
-    if line_data.type == "add" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
-    elseif line_data.type == "del" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonDelete",
-        sign_text = "-",
-        sign_hl_group = "RaccoonDeleteSign",
-      })
+local function merge_inline_opts(opts)
+  return vim.tbl_deep_extend("force", vim.deepcopy(config.defaults.inline_diff), opts or {})
+end
+
+local function utf_char_count(text)
+  return select(1, vim.str_utfindex(text or ""))
+end
+
+local function should_use_line_only_diff(line_list, opts)
+  if opts.enabled == false then
+    return true
+  end
+
+  local changed_count = 0
+  local block_count = 0
+  for _, line_data in ipairs(line_list) do
+    if line_data.type == "add" or line_data.type == "del" then
+      changed_count = changed_count + 1
+      block_count = block_count + 1
+      if block_count > opts.max_block_lines or utf_char_count(line_data.content) > opts.max_line_chars then
+        return true
+      end
+    else
+      block_count = 0
     end
   end
+
+  return changed_count > opts.max_changed_lines
+end
+
+local function set_diff_sign(ns_id, buf, row, line_type, line_only, opts)
+  local add = line_type == "add"
+  pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, 0, {
+    line_hl_group = line_only and (add and "RaccoonAdd" or "RaccoonDelete") or nil,
+    sign_text = add and "+" or "-",
+    sign_hl_group = add and "RaccoonAddSign" or "RaccoonDeleteSign",
+    priority = opts.highlight_priority,
+  })
+end
+
+local function add_inline_range(ns_id, buf, row, start_col, end_col, hl_group, opts)
+  if start_col >= end_col then
+    return
+  end
+
+  pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, start_col, {
+    end_col = end_col,
+    hl_group = hl_group,
+    priority = opts.highlight_priority,
+  })
+end
+
+local function add_whole_content_range(ns_id, buf, row, content, hl_group, opts)
+  local end_col = #(content or "")
+  if end_col > 0 then
+    add_inline_range(ns_id, buf, row, 0, end_col, hl_group, opts)
+  end
+end
+
+local function add_deleted_chunks(ns_id, buf, row, chunks, opts)
+  local col = 0
+  for _, chunk in ipairs(chunks or {}) do
+    local text = chunk.text or ""
+    local end_col = col + #text
+    if chunk.hl_group == "RaccoonDeleteInline" then
+      add_inline_range(ns_id, buf, row, col, end_col, "RaccoonDeleteInline", opts)
+    end
+    col = end_col
+  end
+end
+
+local function apply_exact_change_block(ns_id, buf, block, opts)
+  local old_block = {}
+  local new_block = {}
+  for _, item in ipairs(block) do
+    if item.type == "del" then
+      table.insert(old_block, item)
+    elseif item.type == "add" then
+      table.insert(new_block, item)
+    end
+  end
+
+  if #old_block == 0 then
+    for _, item in ipairs(new_block) do
+      add_whole_content_range(ns_id, buf, item.row, item.content, "RaccoonAddInline", opts)
+    end
+    return
+  end
+  if #new_block == 0 then
+    for _, item in ipairs(old_block) do
+      add_whole_content_range(ns_id, buf, item.row, item.content, "RaccoonDeleteInline", opts)
+    end
+    return
+  end
+
+  local old_lines = {}
+  local new_lines = {}
+  for _, item in ipairs(old_block) do
+    table.insert(old_lines, item.content or "")
+  end
+  for _, item in ipairs(new_block) do
+    table.insert(new_lines, item.content or "")
+  end
+
+  local rows = inline_diff.plan_replacement(old_lines, new_lines, opts)
+  local old_index = 1
+  local new_index = 1
+
+  for _, row in ipairs(rows) do
+    local old_item = nil
+    local new_item = nil
+
+    if row.old ~= nil then
+      old_item = old_block[old_index]
+      old_index = old_index + 1
+    end
+    if row.new ~= nil then
+      new_item = new_block[new_index]
+      new_index = new_index + 1
+    end
+
+    if new_item then
+      local ranges = row.inline and row.inline.new_ranges or {}
+      if row.inline then
+        for _, range in ipairs(ranges) do
+          add_inline_range(ns_id, buf, new_item.row, range.start_col, range.end_col, "RaccoonAddInline", opts)
+        end
+      else
+        add_whole_content_range(ns_id, buf, new_item.row, new_item.content, "RaccoonAddInline", opts)
+      end
+    end
+
+    if old_item then
+      if row.inline then
+        add_deleted_chunks(ns_id, buf, old_item.row, row.inline.old_chunks, opts)
+      else
+        add_whole_content_range(ns_id, buf, old_item.row, old_item.content, "RaccoonDeleteInline", opts)
+      end
+    end
+  end
+end
+
+function M.apply_diff_highlights(ns_id, buf, line_list)
+  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+  local opts = merge_inline_opts(config.load_inline_diff())
+  local line_only = should_use_line_only_diff(line_list, opts)
+  local block = {}
+
+  local function flush_block()
+    if #block == 0 then
+      return
+    end
+    if not line_only then
+      apply_exact_change_block(ns_id, buf, block, opts)
+    end
+    block = {}
+  end
+
+  for idx, line_data in ipairs(line_list) do
+    if line_data.type == "add" then
+      set_diff_sign(ns_id, buf, idx - 1, "add", line_only, opts)
+      table.insert(block, {
+        type = "add",
+        content = line_data.content or "",
+        row = idx - 1,
+      })
+    elseif line_data.type == "del" then
+      set_diff_sign(ns_id, buf, idx - 1, "del", line_only, opts)
+      table.insert(block, {
+        type = "del",
+        content = line_data.content or "",
+        row = idx - 1,
+      })
+    else
+      flush_block()
+    end
+  end
+
+  flush_block()
 end
 
 --- Clamp a config value to an integer within [min_val, max_val], or return default

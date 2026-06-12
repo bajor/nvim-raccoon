@@ -1,5 +1,12 @@
 local commit_ui = require("raccoon.commit_ui")
 
+local function byte_range(text, start_char, end_char)
+  return {
+    start_col = vim.str_byteindex(text, start_char),
+    end_col = vim.str_byteindex(text, end_char),
+  }
+end
+
 describe("raccoon.commit_ui", function()
   -- Shared header window helper
   local function make_header(width)
@@ -379,5 +386,57 @@ describe("raccoon.commit_ui", function()
 
     -- A small width that fits should pass through unchanged
     assert.equals(10, commit_ui.compute_effective_sidebar_width(cols, 10))
+  end)
+
+  describe("apply_diff_highlights", function()
+    it("uses exact inline spans instead of whole-line backgrounds", function()
+      local ns = vim.api.nvim_create_namespace("raccoon_commit_ui_exact_test")
+      local buf = vim.api.nvim_create_buf(false, true)
+      local line_list = {
+        { type = "del", content = "for _, line_num in ipairs(changes.added) do" },
+        { type = "del", content = "  local line_idx = line_num - 1" },
+        { type = "add", content = "for _, add in ipairs(plan.added) do" },
+        { type = "add", content = "  local line_idx = add.line_num - 1" },
+      }
+      local lines = {}
+      for _, line in ipairs(line_list) do
+        table.insert(lines, line.content)
+      end
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+      commit_ui.apply_diff_highlights(ns, buf, line_list)
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      local saw_whole_line_background = false
+      local saw_loop_add = false
+      local saw_line_idx_add = false
+      local saw_loop_delete = false
+      local loop_add = byte_range(line_list[3].content, 7, 10)
+      local line_idx_add = byte_range(line_list[4].content, 19, 23)
+
+      for _, mark in ipairs(marks) do
+        local details = mark[4] or {}
+        if details.line_hl_group == "RaccoonAdd" or details.line_hl_group == "RaccoonDelete" then
+          saw_whole_line_background = true
+        end
+        if mark[2] == 2 and details.hl_group == "RaccoonAddInline" then
+          saw_loop_add = saw_loop_add or (mark[3] == loop_add.start_col and details.end_col == loop_add.end_col)
+        end
+        if mark[2] == 3 and details.hl_group == "RaccoonAddInline" then
+          saw_line_idx_add = saw_line_idx_add
+            or (mark[3] == line_idx_add.start_col and details.end_col == line_idx_add.end_col)
+        end
+        if mark[2] == 0 and details.hl_group == "RaccoonDeleteInline" then
+          saw_loop_delete = true
+        end
+      end
+
+      assert.is_false(saw_whole_line_background)
+      assert.is_true(saw_loop_add)
+      assert.is_true(saw_line_idx_add)
+      assert.is_true(saw_loop_delete)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 end)

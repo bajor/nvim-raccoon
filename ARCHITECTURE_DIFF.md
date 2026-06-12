@@ -2,25 +2,27 @@
 
 ## Summary
 
-Flat diff rendering now plans exact inline add/delete spans from the GitHub patch, aligns similar lines inside multi-line blocks, and applies only character/content highlights in exact mode.
+Flat and commit/local diff rendering now plan exact inline add/delete spans from patch hunks, align similar lines inside multi-line blocks, and apply only character/content highlights in exact mode.
 
 ## Diagram(s)
 
 ```mermaid
 flowchart TD
-    A[GitHub unified patch] --> B[raccoon.diff.parse_patch]
-    B --> C[raccoon.diff.build_render_plan]
-    C --> D{inline_diff enabled and bounded?}
-    D -->|yes| E[raccoon.inline_diff.plan_replacement]
-    E --> F[bounded line alignment]
-    F --> G[token LCS and UTF-8 char refinement]
-    D -->|no| H[line-only fallback plan]
-    G --> I[raccoon.diff.apply_highlights]
-    H --> I
-    I --> J[sign-only row markers]
-    I --> K[inline add extmark ranges or added-content spans]
-    I --> L[deleted virt_lines with neutral context and inline delete spans]
-    I --> M[line-only fallback extmarks]
+    A[Unified patch] --> B[raccoon.diff.parse_patch]
+    B --> C[flat review file buffer]
+    B --> D[commit/local hunk buffer]
+    C --> E[raccoon.diff.build_render_plan]
+    D --> F[raccoon.commit_ui.apply_diff_highlights]
+    E --> G{inline_diff enabled and bounded?}
+    F --> G
+    G -->|yes| H[raccoon.inline_diff.plan_replacement]
+    H --> I[bounded line alignment]
+    I --> J[token LCS and UTF-8 char refinement]
+    G -->|no| K[line-only fallback plan]
+    J --> L[inline add/delete extmark ranges]
+    K --> M[line-only fallback extmarks]
+    E --> N[flat review signs and virtual deletes]
+    F --> O[commit/local hunk signs]
 ```
 
 ## Changes
@@ -35,5 +37,6 @@ flowchart TD
 
 - `raccoon.diff.apply_highlights`: consumes the render plan, using sign-only markers plus character/content extmarks in exact mode while preserving full-line add and padded deleted-line fallback rendering.
 - `raccoon.inline_diff.plan_replacement`: aligns similar old/new lines before computing character spans, so insertions inside multi-line blocks do not force index-based whole-row changes.
+- `raccoon.commit_ui.apply_diff_highlights`: reuses inline replacement planning for commit/local hunk rows instead of painting every changed row.
 - `raccoon.inline_diff.diff_pair`: keeps unchanged old-side virtual-line text neutral in exact mode, reserving delete backgrounds for characters actually removed.
 - Highlight setup: adds `RaccoonAddInline` and `RaccoonDeleteInline`.
