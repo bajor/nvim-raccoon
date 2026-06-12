@@ -35,6 +35,18 @@ M.defaults = {
     commit_message_max_lines = 3,
     passthrough_keys = {},
   },
+  inline_diff = {
+    enabled = true,
+    line_algorithm = "histogram",
+    line_linematch = 120,
+    max_changed_lines = 400,
+    max_block_lines = 64,
+    max_line_chars = 4096,
+    max_cells = 200000,
+    char_similarity_floor = 0.35,
+    highlight_priority = 110,
+    ignore_cr_at_eol = true,
+  },
   shortcuts = {
     -- Global
     pr_list = "<leader>pr",
@@ -100,6 +112,7 @@ end
 ---@return string
 function M.default_config_template()
   local commit_viewer = M.defaults.commit_viewer
+  local inline_diff = M.defaults.inline_diff
   local shortcuts = M.defaults.shortcuts
   local clone_root = shrink_home(M.defaults.clone_root)
 
@@ -117,6 +130,18 @@ function M.default_config_template()
     "sidebar_width": %d,
     "commit_message_max_lines": %d,
     "passthrough_keys": []
+  },
+  "inline_diff": {
+    "enabled": %s,
+    "line_algorithm": "%s",
+    "line_linematch": %d,
+    "max_changed_lines": %d,
+    "max_block_lines": %d,
+    "max_line_chars": %d,
+    "max_cells": %d,
+    "char_similarity_floor": %.2f,
+    "highlight_priority": %d,
+    "ignore_cr_at_eol": %s
   },
   "shortcuts": {
     "pr_list": "%s",
@@ -157,6 +182,16 @@ function M.default_config_template()
     commit_viewer.base_commits_count,
     commit_viewer.sidebar_width,
     commit_viewer.commit_message_max_lines,
+    tostring(inline_diff.enabled),
+    inline_diff.line_algorithm,
+    inline_diff.line_linematch,
+    inline_diff.max_changed_lines,
+    inline_diff.max_block_lines,
+    inline_diff.max_line_chars,
+    inline_diff.max_cells,
+    inline_diff.char_similarity_floor,
+    inline_diff.highlight_priority,
+    tostring(inline_diff.ignore_cr_at_eol),
     shortcuts.pr_list,
     shortcuts.show_shortcuts,
     shortcuts.sync,
@@ -395,6 +430,20 @@ function M.load_commit_viewer()
   local viewer = vim.tbl_deep_extend("force", vim.deepcopy(defaults), user)
   viewer.passthrough_keys = sanitize_string_list(user.passthrough_keys)
   return viewer
+end
+
+--- Load inline diff config, falling back to defaults gracefully.
+--- Unlike load(), this does not require valid tokens.
+---@return table inline_diff
+function M.load_inline_diff()
+  local defaults = M.defaults.inline_diff
+  local parsed = read_config_json()
+  if not parsed then
+    return vim.deepcopy(defaults)
+  end
+
+  local user = type(parsed.inline_diff) == "table" and parsed.inline_diff or {}
+  return vim.tbl_deep_extend("force", vim.deepcopy(defaults), user)
 end
 
 --- Get the normalized token entry for a given owner/org from the tokens table.

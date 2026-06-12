@@ -254,6 +254,35 @@ Empty strings, duplicates, and non-string entries are silently dropped.
 }
 ```
 
+### `inline_diff`
+
+Nested object controlling exact inline highlights in the flat review buffer. GitHub patch hunks remain the source of review line numbers; this only changes how added and deleted spans are highlighted after a file is opened.
+
+| Field | Type | Default |
+|-------|------|---------|
+| `inline_diff.enabled` | boolean | `true` |
+| `inline_diff.line_algorithm` | string | `"histogram"` |
+| `inline_diff.line_linematch` | number | `120` |
+| `inline_diff.max_changed_lines` | number | `400` |
+| `inline_diff.max_block_lines` | number | `64` |
+| `inline_diff.max_line_chars` | number | `4096` |
+| `inline_diff.max_cells` | number | `200000` |
+| `inline_diff.char_similarity_floor` | number | `0.35` |
+| `inline_diff.highlight_priority` | number | `110` |
+| `inline_diff.ignore_cr_at_eol` | boolean | `true` |
+
+When disabled or when a limit is exceeded, raccoon falls back to the existing line-level rendering: added lines keep their full-line background and deleted lines render above the anchor line.
+
+```json
+{
+  "inline_diff": {
+    "enabled": true,
+    "max_changed_lines": 300,
+    "max_block_lines": 48
+  }
+}
+```
+
 ### `shortcuts`
 
 | Type | Default |
@@ -288,6 +317,10 @@ Partial overrides are merged with defaults — you only need to specify keys you
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
+  },
+  "inline_diff": {
+    "enabled": true,
+    "max_changed_lines": 400
   },
   "shortcuts": {
     "pr_list": "<leader>pr",

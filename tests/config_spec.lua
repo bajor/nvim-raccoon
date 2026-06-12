@@ -36,6 +36,13 @@ describe("raccoon.config", function()
       assert.equals(50, config.defaults.commit_viewer.sidebar_width)
     end)
 
+    it("has inline_diff defaults", function()
+      assert.is_table(config.defaults.inline_diff)
+      assert.is_true(config.defaults.inline_diff.enabled)
+      assert.equals(400, config.defaults.inline_diff.max_changed_lines)
+      assert.equals(110, config.defaults.inline_diff.highlight_priority)
+    end)
+
     it("does not contain dead config fields", function()
       assert.is_nil(config.defaults.ghostty_path)
       assert.is_nil(config.defaults.nvim_path)
@@ -993,6 +1000,46 @@ describe("raccoon.config", function()
       assert.same({ "<Space>n", "x" }, viewer.passthrough_keys)
 
       os.remove(tmpfile)
+    end)
+  end)
+
+  describe("load_inline_diff", function()
+    it("returns defaults when config file does not exist", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local inline = config.load_inline_diff()
+      assert.same(config.defaults.inline_diff, inline)
+    end)
+
+    it("merges user inline_diff overrides with defaults", function()
+      local tmpfile = test_tmp_dir .. "/inline_diff.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "inline_diff": {
+          "enabled": false,
+          "max_changed_lines": 25,
+          "char_similarity_floor": 0.5
+        }
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local inline = config.load_inline_diff()
+      assert.is_false(inline.enabled)
+      assert.equals(25, inline.max_changed_lines)
+      assert.equals(0.5, inline.char_similarity_floor)
+      assert.equals(config.defaults.inline_diff.max_line_chars, inline.max_line_chars)
+
+      os.remove(tmpfile)
+    end)
+
+    it("returns independent copies", function()
+      config.config_path = "/nonexistent/path/config.json"
+      local first = config.load_inline_diff()
+      local second = config.load_inline_diff()
+
+      first.enabled = false
+
+      assert.is_true(second.enabled)
     end)
   end)
 

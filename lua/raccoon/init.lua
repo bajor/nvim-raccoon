@@ -24,6 +24,18 @@ local function setup_highlights()
     default = true,
   })
 
+  -- Stronger highlights for exact inline spans inside changed lines
+  vim.api.nvim_set_hl(0, "RaccoonAddInline", {
+    bg = "#3f7f3f",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "RaccoonDeleteInline", {
+    bg = "#7a3030",
+    fg = "#ffaaaa",
+    default = true,
+  })
+
   -- Sign column colors
   vim.api.nvim_set_hl(0, "RaccoonAddSign", {
     fg = "#98c379", -- Green

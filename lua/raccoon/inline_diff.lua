@@ -1,0 +1,398 @@
+---@class RaccoonInlineDiff
+local M = {}
+
+local BASE_DELETE = "RaccoonDelete"
+local INLINE_DELETE = "RaccoonDeleteInline"
+
+local DEFAULTS = {
+  enabled = true,
+  max_line_chars = 4096,
+  max_cells = 200000,
+  char_similarity_floor = 0.35,
+  ignore_cr_at_eol = true,
+}
+
+local function merge_opts(opts)
+  return vim.tbl_deep_extend("force", DEFAULTS, opts or {})
+end
+
+local function utf_char_count(text)
+  return select(1, vim.str_utfindex(text))
+end
+
+local function char_at(text, char_index)
+  local start_col = vim.str_byteindex(text, char_index)
+  local end_col = vim.str_byteindex(text, char_index + 1)
+  return {
+    text = text:sub(start_col + 1, end_col),
+    start_col = start_col,
+    end_col = end_col,
+    start_char = char_index,
+    end_char = char_index + 1,
+  }
+end
+
+local function classify_char(text)
+  if text:match("^%s$") then
+    return "space"
+  end
+  if text:match("^[%w_]$") then
+    return "word"
+  end
+  return "punct"
+end
+
+local function tokenize(line)
+  local tokens = {}
+  local char_count = utf_char_count(line)
+
+  for i = 0, char_count - 1 do
+    local ch = char_at(line, i)
+    local kind = classify_char(ch.text)
+    local current = tokens[#tokens]
+
+    if current and current.kind == kind then
+      current.text = current.text .. ch.text
+      current.end_col = ch.end_col
+      current.end_char = ch.end_char
+    else
+      table.insert(tokens, {
+        text = ch.text,
+        kind = kind,
+        start_col = ch.start_col,
+        end_col = ch.end_col,
+        start_char = ch.start_char,
+        end_char = ch.end_char,
+      })
+    end
+  end
+
+  return tokens
+end
+
+local function strip_cr(line, opts)
+  if opts.ignore_cr_at_eol and line:sub(-1) == "\r" then
+    return line:sub(1, -2), "\r"
+  end
+  return line, ""
+end
+
+local function lcs_pairs(left, right, value_fn, max_cells)
+  local left_len = #left
+  local right_len = #right
+  if left_len == 0 or right_len == 0 then
+    return {}
+  end
+  if left_len * right_len > max_cells then
+    return nil
+  end
+
+  local dp = {}
+  for i = 0, left_len do
+    dp[i] = {}
+    for j = 0, right_len do
+      dp[i][j] = 0
+    end
+  end
+
+  for i = 1, left_len do
+    for j = 1, right_len do
+      if value_fn(left[i]) == value_fn(right[j]) then
+        dp[i][j] = dp[i - 1][j - 1] + 1
+      else
+        dp[i][j] = math.max(dp[i - 1][j], dp[i][j - 1])
+      end
+    end
+  end
+
+  local pairs = {}
+  local i = left_len
+  local j = right_len
+  while i > 0 and j > 0 do
+    if value_fn(left[i]) == value_fn(right[j]) then
+      table.insert(pairs, 1, { left = i, right = j })
+      i = i - 1
+      j = j - 1
+    elseif dp[i - 1][j] > dp[i][j - 1] then
+      i = i - 1
+    else
+      j = j - 1
+    end
+  end
+
+  return pairs
+end
+
+local function append_chunk(chunks, text, hl_group)
+  if text == "" then
+    return
+  end
+
+  local last = chunks[#chunks]
+  if last and last.hl_group == hl_group then
+    last.text = last.text .. text
+    return
+  end
+
+  table.insert(chunks, { text = text, hl_group = hl_group })
+end
+
+local function merge_range(ranges, start_col, end_col)
+  if start_col >= end_col then
+    return
+  end
+
+  local last = ranges[#ranges]
+  if last and last.end_col == start_col then
+    last.end_col = end_col
+    return
+  end
+
+  table.insert(ranges, { start_col = start_col, end_col = end_col })
+end
+
+local function tokens_text(tokens, first, last)
+  local parts = {}
+  for i = first, last do
+    table.insert(parts, tokens[i].text)
+  end
+  return table.concat(parts)
+end
+
+local function append_old_tokens(chunks, tokens, first, last, hl_group)
+  for i = first, last do
+    append_chunk(chunks, tokens[i].text, hl_group)
+  end
+end
+
+local function add_new_token_ranges(ranges, tokens, first, last)
+  for i = first, last do
+    merge_range(ranges, tokens[i].start_col, tokens[i].end_col)
+  end
+end
+
+local function make_chars(text)
+  local chars = {}
+  for i = 0, utf_char_count(text) - 1 do
+    table.insert(chars, char_at(text, i))
+  end
+  return chars
+end
+
+local function highlight_whole(old_tokens, old_first, old_last, new_tokens, new_first, new_last, old_chunks, new_ranges)
+  append_old_tokens(old_chunks, old_tokens, old_first, old_last, INLINE_DELETE)
+  add_new_token_ranges(new_ranges, new_tokens, new_first, new_last)
+end
+
+local function refine_chars(old_text, new_text, new_base_char, normalized_new_line, opts)
+  local old_chars = make_chars(old_text)
+  local new_chars = make_chars(new_text)
+  local pairs = lcs_pairs(old_chars, new_chars, function(item)
+    return item.text
+  end, opts.max_cells)
+
+  if not pairs then
+    return nil
+  end
+
+  local common = #pairs
+  local total = #old_chars + #new_chars
+  if total == 0 or (2 * common / total) < opts.char_similarity_floor then
+    return nil
+  end
+
+  local old_chunks = {}
+  local new_ranges = {}
+  local old_pos = 1
+  local new_pos = 1
+
+  local function add_new_chars(first, last)
+    if first > last then
+      return
+    end
+
+    local start_char = new_base_char + new_chars[first].start_char
+    local end_char = new_base_char + new_chars[last].end_char
+    merge_range(
+      new_ranges,
+      vim.str_byteindex(normalized_new_line, start_char),
+      vim.str_byteindex(normalized_new_line, end_char)
+    )
+  end
+
+  local function add_old_chars(first, last, hl_group)
+    if first > last then
+      return
+    end
+
+    local text = {}
+    for i = first, last do
+      table.insert(text, old_chars[i].text)
+    end
+    append_chunk(old_chunks, table.concat(text), hl_group)
+  end
+
+  for _, pair in ipairs(pairs) do
+    add_old_chars(old_pos, pair.left - 1, INLINE_DELETE)
+    add_new_chars(new_pos, pair.right - 1)
+    add_old_chars(pair.left, pair.left, BASE_DELETE)
+    old_pos = pair.left + 1
+    new_pos = pair.right + 1
+  end
+
+  add_old_chars(old_pos, #old_chars, INLINE_DELETE)
+  add_new_chars(new_pos, #new_chars)
+
+  return { old_chunks = old_chunks, new_ranges = new_ranges }
+end
+
+local function add_changed_block(
+  old_tokens,
+  old_first,
+  old_last,
+  new_tokens,
+  new_first,
+  new_last,
+  normalized_new_line,
+  opts,
+  old_chunks,
+  new_ranges
+)
+  if old_first > old_last then
+    add_new_token_ranges(new_ranges, new_tokens, new_first, new_last)
+    return
+  end
+  if new_first > new_last then
+    append_old_tokens(old_chunks, old_tokens, old_first, old_last, INLINE_DELETE)
+    return
+  end
+
+  local old_text = tokens_text(old_tokens, old_first, old_last)
+  local new_text = tokens_text(new_tokens, new_first, new_last)
+  local refined = refine_chars(old_text, new_text, new_tokens[new_first].start_char, normalized_new_line, opts)
+
+  if not refined then
+    highlight_whole(old_tokens, old_first, old_last, new_tokens, new_first, new_last, old_chunks, new_ranges)
+    return
+  end
+
+  for _, chunk in ipairs(refined.old_chunks) do
+    append_chunk(old_chunks, chunk.text, chunk.hl_group)
+  end
+  for _, range in ipairs(refined.new_ranges) do
+    merge_range(new_ranges, range.start_col, range.end_col)
+  end
+end
+
+---Diff a replaced old/new line pair.
+---@param old_line string
+---@param new_line string
+---@param opts? table
+---@return {old_chunks: {text:string, hl_group:string}[], new_ranges: table[], fallback:boolean?}
+function M.diff_pair(old_line, new_line, opts)
+  opts = merge_opts(opts)
+  old_line = old_line or ""
+  new_line = new_line or ""
+
+  local normalized_old, old_suffix = strip_cr(old_line, opts)
+  local normalized_new = strip_cr(new_line, opts)
+
+  if utf_char_count(normalized_old) > opts.max_line_chars
+      or utf_char_count(normalized_new) > opts.max_line_chars then
+    return {
+      old_chunks = { { text = old_line, hl_group = BASE_DELETE } },
+      new_ranges = {},
+      fallback = true,
+    }
+  end
+
+  local old_tokens = tokenize(normalized_old)
+  local new_tokens = tokenize(normalized_new)
+  local pairs = lcs_pairs(old_tokens, new_tokens, function(item)
+    return item.text
+  end, opts.max_cells)
+
+  if not pairs then
+    return {
+      old_chunks = { { text = old_line, hl_group = BASE_DELETE } },
+      new_ranges = {},
+      fallback = true,
+    }
+  end
+
+  local old_chunks = {}
+  local new_ranges = {}
+  local old_pos = 1
+  local new_pos = 1
+
+  for _, pair in ipairs(pairs) do
+    add_changed_block(
+      old_tokens,
+      old_pos,
+      pair.left - 1,
+      new_tokens,
+      new_pos,
+      pair.right - 1,
+      normalized_new,
+      opts,
+      old_chunks,
+      new_ranges
+    )
+    append_chunk(old_chunks, old_tokens[pair.left].text, BASE_DELETE)
+    old_pos = pair.left + 1
+    new_pos = pair.right + 1
+  end
+
+  add_changed_block(
+    old_tokens,
+    old_pos,
+    #old_tokens,
+    new_tokens,
+    new_pos,
+    #new_tokens,
+    normalized_new,
+    opts,
+    old_chunks,
+    new_ranges
+  )
+  append_chunk(old_chunks, old_suffix, BASE_DELETE)
+
+  return {
+    old_chunks = old_chunks,
+    new_ranges = new_ranges,
+  }
+end
+
+---Plan old/new rows for a contiguous replacement block.
+---@param old_lines string[]
+---@param new_lines string[]
+---@param opts? table
+---@return {old:string?, new:string?, inline:table?}[]
+function M.plan_replacement(old_lines, new_lines, opts)
+  opts = merge_opts(opts)
+  local rows = {}
+  local max_len = math.max(#old_lines, #new_lines)
+
+  for i = 1, max_len do
+    local old_line = old_lines[i]
+    local new_line = new_lines[i]
+    local inline = nil
+
+    if old_line and new_line and opts.enabled ~= false then
+      inline = M.diff_pair(old_line, new_line, opts)
+      if inline.fallback then
+        inline = nil
+      end
+    end
+
+    table.insert(rows, {
+      old = old_line,
+      new = new_line,
+      inline = inline,
+    })
+  end
+
+  return rows
+end
+
+return M
