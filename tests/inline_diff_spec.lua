@@ -67,6 +67,18 @@ describe("raccoon.inline_diff", function()
       assert.is_not_nil(find_chunk(result.old_chunks, "count", "RaccoonDeleteInline"))
     end)
 
+    it("highlights whole changed object names in dotted identifiers", function()
+      local old_line = "for _, del in ipairs(changes.deleted) do"
+      local new_line = "for _, del in ipairs(plan.deleted) do"
+      local result = inline_diff.diff_pair(old_line, new_line, inline_opts())
+
+      assert.same({ byte_range(new_line, 21, 25) }, result.new_ranges)
+      assert.is_not_nil(find_chunk(result.old_chunks, "changes", "RaccoonDeleteInline"))
+      assert.is_not_nil(find_chunk(result.old_chunks, ".deleted) do", "Normal"))
+      assert.is_nil(find_chunk(result.old_chunks, "ch", "RaccoonDeleteInline"))
+      assert.is_nil(find_chunk(result.old_chunks, "ges", "RaccoonDeleteInline"))
+    end)
+
     it("highlights punctuation insertion exactly", function()
       local new_line = "return call(foo, bar)"
       local result = inline_diff.diff_pair("return call(foo bar)", new_line, inline_opts())

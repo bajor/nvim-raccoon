@@ -38,5 +38,5 @@ flowchart TD
 - `raccoon.diff.apply_highlights`: consumes the render plan, using sign-only markers plus character/content extmarks in exact mode while preserving full-line add and padded deleted-line fallback rendering.
 - `raccoon.inline_diff.plan_replacement`: aligns similar old/new lines before computing character spans, so insertions inside multi-line blocks do not force index-based whole-row changes.
 - `raccoon.commit_ui.apply_diff_highlights`: reuses inline replacement planning for commit/local hunk rows instead of painting every changed row.
-- `raccoon.inline_diff.diff_pair`: keeps unchanged old-side virtual-line text neutral in exact mode, reserving delete backgrounds for characters actually removed.
+- `raccoon.inline_diff.diff_pair`: keeps unchanged old-side text neutral, while highlighting weakly-related identifier word replacements as whole changed tokens.
 - Highlight setup: adds `RaccoonAddInline` and `RaccoonDeleteInline`.

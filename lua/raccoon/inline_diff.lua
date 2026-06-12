@@ -14,6 +14,7 @@ local DEFAULTS = {
 }
 
 local LINE_PAIR_TIE_BREAK_BONUS = 0.001
+local WORD_TOKEN_REFINE_SIMILARITY_FLOOR = 0.5
 
 local function merge_opts(opts)
   return vim.tbl_deep_extend("force", DEFAULTS, opts or {})
@@ -322,9 +323,19 @@ local function add_changed_block(
     return
   end
 
+  local single_word_replacement = old_first == old_last
+      and new_first == new_last
+      and old_tokens[old_first].kind == "word"
+      and new_tokens[new_first].kind == "word"
   local old_text = tokens_text(old_tokens, old_first, old_last)
   local new_text = tokens_text(new_tokens, new_first, new_last)
-  local refined = refine_chars(old_text, new_text, new_tokens[new_first].start_char, normalized_new_line, opts)
+  local refine_opts = opts
+  if single_word_replacement then
+    refine_opts = vim.tbl_extend("force", opts, {
+      char_similarity_floor = math.max(opts.char_similarity_floor, WORD_TOKEN_REFINE_SIMILARITY_FLOOR),
+    })
+  end
+  local refined = refine_chars(old_text, new_text, new_tokens[new_first].start_char, normalized_new_line, refine_opts)
 
   if not refined then
     highlight_whole(old_tokens, old_first, old_last, new_tokens, new_first, new_last, old_chunks, new_ranges)
