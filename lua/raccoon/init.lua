@@ -11,39 +11,46 @@ M.config = {
 --- Setup highlight groups for diff display
 --- Uses dark green/red backgrounds for added/deleted lines
 local function setup_highlights()
+  local add_bg = "#2d5a2d"
+  local add_fg = "#98c379"
+  local delete_bg = "#5a2020"
+  local delete_fg = "#e88888"
+
   -- Green background for added lines (high contrast)
   vim.api.nvim_set_hl(0, "RaccoonAdd", {
-    bg = "#2d5a2d",
+    bg = add_bg,
+    fg = add_fg,
     default = true,
   })
 
   -- Red background for deleted lines (high contrast)
   vim.api.nvim_set_hl(0, "RaccoonDelete", {
-    bg = "#5a2020",
-    fg = "#e88888",
+    bg = delete_bg,
+    fg = delete_fg,
     default = true,
   })
 
-  -- Stronger highlights for exact inline spans inside changed lines
+  -- Exact inline spans use the same colors as whole-line fallback rendering.
   vim.api.nvim_set_hl(0, "RaccoonAddInline", {
-    bg = "#3f7f3f",
+    bg = add_bg,
+    fg = add_fg,
     default = true,
   })
 
   vim.api.nvim_set_hl(0, "RaccoonDeleteInline", {
-    bg = "#7a3030",
-    fg = "#ffaaaa",
+    bg = delete_bg,
+    fg = delete_fg,
     default = true,
   })
 
   -- Sign column colors
   vim.api.nvim_set_hl(0, "RaccoonAddSign", {
-    fg = "#98c379", -- Green
+    fg = add_fg,
     default = true,
   })
 
   vim.api.nvim_set_hl(0, "RaccoonDeleteSign", {
-    fg = "#e06c75", -- Red
+    fg = delete_fg,
     default = true,
   })
 

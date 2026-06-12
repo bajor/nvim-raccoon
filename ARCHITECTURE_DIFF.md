@@ -39,4 +39,4 @@ flowchart TD
 - `raccoon.inline_diff.plan_replacement`: aligns similar old/new lines before computing character spans, so insertions inside multi-line blocks do not force index-based whole-row changes.
 - `raccoon.commit_ui.apply_diff_highlights`: reuses inline replacement planning for commit/local hunk rows and renders unchanged deleted-row context with `Comment`.
 - `raccoon.inline_diff.diff_pair`: renders old-side unchanged context as grey `Comment` chunks, while highlighting only deleted spans in red and added spans in green.
-- Highlight setup: adds `RaccoonAddInline` and `RaccoonDeleteInline`.
+- Highlight setup: keeps whole-line, inline, and sign groups on one green/red intensity per diff side.
