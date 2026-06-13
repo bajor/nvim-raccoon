@@ -14,6 +14,14 @@ describe("raccoon.diff", function()
       assert.equals(5, count)
     end)
 
+    it("returns old-side coordinates as additional hunk header values", function()
+      local new_start, new_count, old_start, old_count = diff.parse_hunk_header("@@ -10,3 +20,4 @@")
+      assert.equals(20, new_start)
+      assert.equals(4, new_count)
+      assert.equals(10, old_start)
+      assert.equals(3, old_count)
+    end)
+
     it("parses hunk header with different line numbers", function()
       local start, count = diff.parse_hunk_header("@@ -10,20 +15,25 @@")
       assert.equals(15, start)
@@ -102,7 +110,7 @@ describe("raccoon.diff", function()
     it("identifies change types correctly", function()
       local patch = [[
 @@ -1,3 +1,3 @@
- context
+context
 +added
 -removed]]
       local hunks = diff.parse_patch(patch)
@@ -120,6 +128,35 @@ describe("raccoon.diff", function()
       end
       assert.is_true(add_found)
       assert.is_true(del_found)
+    end)
+
+    it("tracks old and new coordinates for replacement lines", function()
+      local patch = table.concat({
+        "@@ -10,3 +20,3 @@",
+        " context",
+        "-old value",
+        "+new value",
+        " tail",
+      }, "\n")
+
+      local hunks = diff.parse_patch(patch)
+      assert.equals("ctx", hunks[1].lines[1].kind)
+      assert.equals(10, hunks[1].lines[1].old_line)
+      assert.equals(20, hunks[1].lines[1].new_line)
+      assert.equals(20, hunks[1].lines[1].anchor_line)
+      assert.equals("del", hunks[1].lines[2].kind)
+      assert.equals(11, hunks[1].lines[2].old_line)
+      assert.is_nil(hunks[1].lines[2].new_line)
+      assert.equals(20, hunks[1].lines[2].anchor_line)
+      assert.equals(20, hunks[1].lines[2].line_num)
+      assert.equals("add", hunks[1].lines[3].kind)
+      assert.is_nil(hunks[1].lines[3].old_line)
+      assert.equals(21, hunks[1].lines[3].new_line)
+      assert.equals(21, hunks[1].lines[3].anchor_line)
+      assert.equals(21, hunks[1].lines[3].line_num)
+      assert.equals("ctx", hunks[1].lines[4].kind)
+      assert.equals(12, hunks[1].lines[4].old_line)
+      assert.equals(22, hunks[1].lines[4].new_line)
     end)
   end)
 

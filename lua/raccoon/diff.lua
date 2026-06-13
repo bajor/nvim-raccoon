@@ -8,20 +8,37 @@ local state = require("raccoon.state")
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
 
 --- Parse a unified diff hunk header
---- Returns start_line, count for the new file (right side)
+--- Returns start_line, count for the new file (right side), followed by old-side values
 ---@param header string Hunk header like "@@ -1,4 +1,5 @@"
 ---@return number|nil start_line
 ---@return number|nil count
+---@return number|nil old_start_line
+---@return number|nil old_count
 function M.parse_hunk_header(header)
   -- Format: @@ -old_start,old_count +new_start,new_count @@
   -- Sometimes count is omitted if it's 1
-  local new_start, new_count = header:match("^@@.-+(%d+),?(%d*)%s*@@")
-  if not new_start then
+  local old_start, old_count, new_start, new_count = header:match("^@@%s+%-(%d+),?(%d*)%s+%+(%d+),?(%d*)%s*@@")
+  if not old_start or not new_start then
     return nil, nil
   end
+  old_start = tonumber(old_start)
+  old_count = tonumber(old_count) or 1
   new_start = tonumber(new_start)
   new_count = tonumber(new_count) or 1
-  return new_start, new_count
+  return new_start, new_count, old_start, old_count
+end
+
+local function patch_line(kind, content, old_line, new_line, anchor_line)
+  local line = {
+    kind = kind,
+    type = kind,
+    content = content,
+    old_line = old_line,
+    new_line = new_line,
+    anchor_line = anchor_line,
+  }
+  line.line_num = line.new_line or line.anchor_line
+  return line
 end
 
 --- Parse a unified diff patch into structured hunks
@@ -39,7 +56,8 @@ function M.parse_patch(patch)
 
   local hunks = {}
   local current_hunk = nil
-  local line_num = 0
+  local old_line = 0
+  local new_line = 0
 
   for line in normalized_patch:gmatch("(.-)\n") do
     if line:match("^@@") then
@@ -47,30 +65,37 @@ function M.parse_patch(patch)
       if current_hunk then
         table.insert(hunks, current_hunk)
       end
-      local start_line, count = M.parse_hunk_header(line)
+      local start_line, count, old_start_line, old_count = M.parse_hunk_header(line)
       current_hunk = {
         header = line,
         lines = {},
         start_line = start_line or 1,
         count = count or 0,
+        old_start_line = old_start_line or 1,
+        old_count = old_count or 0,
         changes = {},
       }
-      line_num = (start_line or 1) - 1
+      old_line = (old_start_line or 1) - 1
+      new_line = (start_line or 1) - 1
     elseif current_hunk then
       if line:match("^%+") and not line:match("^%+%+%+") then
         -- Added line
-        line_num = line_num + 1
-        table.insert(current_hunk.lines, { type = "add", content = line:sub(2), line_num = line_num })
-        table.insert(current_hunk.changes, { type = "add", line_num = line_num })
+        new_line = new_line + 1
+        local parsed = patch_line("add", line:sub(2), nil, new_line, new_line)
+        table.insert(current_hunk.lines, parsed)
+        table.insert(current_hunk.changes, { type = "add", line_num = parsed.line_num })
       elseif line:match("^%-") and not line:match("^%-%-%-") then
         -- Removed line (doesn't increment line number in new file)
         -- Store the content for virtual text display
-        table.insert(current_hunk.lines, { type = "del", content = line:sub(2), line_num = line_num })
-        table.insert(current_hunk.changes, { type = "del", line_num = line_num, content = line:sub(2) })
+        old_line = old_line + 1
+        local parsed = patch_line("del", line:sub(2), old_line, nil, new_line)
+        table.insert(current_hunk.lines, parsed)
+        table.insert(current_hunk.changes, { type = "del", line_num = parsed.line_num, content = parsed.content })
       elseif not line:match("^\\ No newline at end of file$") and (line:match("^%s") or line == "") then
         -- Context line
-        line_num = line_num + 1
-        table.insert(current_hunk.lines, { type = "ctx", content = line:sub(2), line_num = line_num })
+        old_line = old_line + 1
+        new_line = new_line + 1
+        table.insert(current_hunk.lines, patch_line("ctx", line:sub(2), old_line, new_line, new_line))
       end
     end
   end
