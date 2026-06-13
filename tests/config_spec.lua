@@ -41,6 +41,8 @@ describe("raccoon.config", function()
       assert.is_nil(config.defaults.nvim_path)
       assert.is_nil(config.defaults.notifications)
       assert.is_nil(config.defaults.poll_interval_seconds)
+      assert.is_nil(config.defaults.inline_diff)
+      assert.is_nil(config.defaults.load_inline_diff)
     end)
   end)
 
@@ -184,6 +186,26 @@ describe("raccoon.config", function()
       assert.equals("ghp_test123", cfg.tokens["owner"])
       -- Check tilde expansion
       assert.is_not_nil(cfg.clone_root:match("^/"))
+
+      os.remove(tmpfile)
+    end)
+
+    it("silently ignores legacy inline_diff config", function()
+      local tmpfile = test_tmp_dir .. "/legacy_inline_diff.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"owner": "ghp_xxx"},
+        "inline_diff": {"mode": "line"},
+        "load_inline_diff": true
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.is_nil(cfg.inline_diff)
+      assert.is_nil(cfg.load_inline_diff)
 
       os.remove(tmpfile)
     end)

@@ -249,6 +249,8 @@ function M.load()
 
   -- Merge with defaults
   local config = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), parsed)
+  config.inline_diff = nil
+  config.load_inline_diff = nil
 
   -- Normalize github_host: lowercase, strip whitespace/protocol/trailing slashes
   config.github_host = config.github_host:lower():gsub("^%s+", ""):gsub("%s+$", "")

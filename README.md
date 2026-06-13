@@ -23,7 +23,7 @@
 ⣿⣿⣿⣿⣿⠟⠄⣻⣿⣿⣿⣿⣷⢋⣀⠄⠄⠄⠄⠄⢹⣿⣿⠉⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⢀⣀⣑⣶⣷⣶⣼⣿⣝⠄⢿⣿⣿⣿⣿⣿
 ⣿⣿⣿⣿⣿⠂⢼⣿⣿⣿⣿⣿⣿⣋⡁⠄⠄⠄⠄⠄⣨⣟⣛⡤⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠐⠤⣙⡿⣿⣿⣿⣿⣿⣿⢆⠸⣿⣿⣿⣿⣿
 
-Review GitHub pull requests directly in Neovim. Browse changed files with diff highlighting, leave inline comments, step through individual commits, and merge — all without leaving your editor.
+Review GitHub pull requests directly in Neovim. Browse changed files with exact inline diff highlighting, leave inline comments, step through individual commits, and merge — all without leaving your editor.
 
 > GitHub only. GitLab/Bitbucket are not supported.
 
@@ -32,7 +32,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 ## Features
 
 - Browse open PRs with a floating picker
-- Review changed files with inline diff highlighting
+- Review changed files with exact inline diff highlighting
 - Exact-thread review comments in flat diff
 - Jump between diff hunks, unresolved threads, and needs-reply threads
 - File picker and unresolved-thread picker for flat diff
@@ -219,7 +219,7 @@ Disabled shortcuts show as `(disabled)` in `:Raccoon shortcuts`.
 
 ## How it works
 
-When you open a PR, raccoon shallow-clones the PR branch into a local directory and opens the changed files with inline diff highlighting. Each PR gets its own clone at `{clone_root}/{owner}/{repo}/pr-{number}` (default root: `~/.local/share/nvim/raccoon/repos`). You can change the root with the `clone_root` config field.
+When you open a PR, raccoon shallow-clones the PR branch into a local directory and opens the changed files with exact inline diff highlighting. Each PR gets its own clone at `{clone_root}/{owner}/{repo}/pr-{number}` (default root: `~/.local/share/nvim/raccoon/repos`). You can change the root with the `clone_root` config field.
 
 The per-PR directory means previous clones stay on disk — reopening a PR is fast because it fetches updates instead of cloning from scratch. Neovim's working directory changes to the clone path during a review session, so LSP, treesitter, and other tools work on the actual source code.
 

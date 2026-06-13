@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Exact inline diff rendering for flat diff, commit viewer, and local commit viewer views, including shifted-line pairing and token-level word/punctuation spans.
+
+### Changed
+- Diff rendering now flows through a shared planner so flat and commit/local views use the same pairing and inline span decisions.
+- Legacy `inline_diff` and `load_inline_diff` config keys are ignored; exact inline rendering is always on.
+
 ## [0.13.1] - 2026-06-29
 
 ### Added
