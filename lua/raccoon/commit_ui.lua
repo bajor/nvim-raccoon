@@ -5,12 +5,18 @@ local M = {}
 local config = require("raccoon.config")
 local NORMAL_MODE = config.NORMAL
 local diff = require("raccoon.diff")
+local diff_plan = require("raccoon.diff_plan")
 
 M.SIDEBAR_WIDTH = 50
 M.STAT_BAR_MAX_WIDTH = 20
 local COMMIT_MESSAGE_MAX_LINES = 3
 M.MIN_SIDEBAR_WIDTH = 1
 M.MAX_SIDEBAR_WIDTH = 500
+local INLINE_PRIORITY = 110
+local OLD_CHUNK_HL = {
+  same = "Comment",
+  del = "RaccoonDeleteInline",
+}
 
 local GRID_CHROME_LINES = 2 -- global statusline (laststatus=3) + header separator (tabline not accounted for)
 local MIN_DIFF_CONTEXT = 3 -- git's default context line count
@@ -378,25 +384,103 @@ function M.render_hunk_to_buffer(ns_id, buf, hunk, filename)
   M.apply_diff_highlights(ns_id, buf, hunk.lines)
 end
 
+local function line_byte_length(buf, line_idx)
+  local lines = vim.api.nvim_buf_get_lines(buf, line_idx, line_idx + 1, false)
+  return #(lines[1] or "")
+end
+
+local function apply_sign(ns_id, buf, line_idx, sign_text, sign_hl_group, line_hl_group)
+  local opts = {
+    sign_text = sign_text,
+    sign_hl_group = sign_hl_group,
+    priority = INLINE_PRIORITY,
+  }
+  if line_hl_group then
+    opts.line_hl_group = line_hl_group
+  end
+  pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, opts)
+end
+
+local function apply_add_ranges(ns_id, buf, line_idx, ranges)
+  local line_len = line_byte_length(buf, line_idx)
+  for _, range in ipairs(ranges or {}) do
+    local start_col = math.max(0, math.min(range.start_col, line_len))
+    local end_col = math.max(start_col, math.min(range.end_col, line_len))
+    if start_col < end_col then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, start_col, {
+        end_col = end_col,
+        hl_group = "RaccoonAddInline",
+        priority = INLINE_PRIORITY,
+      })
+    end
+  end
+end
+
+local function apply_old_chunks(ns_id, buf, line_idx, chunks)
+  local line_len = line_byte_length(buf, line_idx)
+  local start_col = 0
+  for _, chunk in ipairs(chunks or {}) do
+    local text = chunk.text or ""
+    local end_col = start_col + #text
+    local hl_group = OLD_CHUNK_HL[chunk.kind]
+    if hl_group and start_col < end_col then
+      local clamped_start = math.max(0, math.min(start_col, line_len))
+      local clamped_end = math.max(clamped_start, math.min(end_col, line_len))
+      if clamped_start < clamped_end then
+        pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, clamped_start, {
+          end_col = clamped_end,
+          hl_group = hl_group,
+          priority = INLINE_PRIORITY,
+        })
+      end
+    end
+    start_col = end_col
+  end
+end
+
+local function apply_add_row(ns_id, buf, plan, row, line_count)
+  local line = row.new_line
+  local line_idx = line and line.buf_row
+  if not line_idx or line_idx < 0 or line_idx >= line_count then
+    return
+  end
+
+  local line_mode = plan.mode == "line"
+  apply_sign(ns_id, buf, line_idx, "+", "RaccoonAddSign", line_mode and "RaccoonAdd" or nil)
+  if not line_mode then
+    apply_add_ranges(ns_id, buf, line_idx, row.new_ranges)
+  end
+end
+
+local function apply_del_row(ns_id, buf, plan, row, line_count)
+  local line = row.old_line
+  local line_idx = line and line.buf_row
+  if not line_idx or line_idx < 0 or line_idx >= line_count then
+    return
+  end
+
+  local line_mode = plan.mode == "line"
+  apply_sign(ns_id, buf, line_idx, "-", "RaccoonDeleteSign", line_mode and "RaccoonDelete" or nil)
+  if not line_mode then
+    apply_old_chunks(ns_id, buf, line_idx, row.old_chunks)
+  end
+end
+
 --- Apply add/del diff highlights to buffer lines
 ---@param ns_id number Namespace ID for extmarks
 ---@param buf number Buffer ID
 ---@param line_list table[] Array of {type, content} entries
-function M.apply_diff_highlights(ns_id, buf, line_list)
+---@param opts? table Internal render options
+function M.apply_diff_highlights(ns_id, buf, line_list, opts)
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-  for idx, line_data in ipairs(line_list) do
-    if line_data.type == "add" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
-    elseif line_data.type == "del" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonDelete",
-        sign_text = "-",
-        sign_hl_group = "RaccoonDeleteSign",
-      })
+  local plan = diff_plan.from_line_list(line_list, opts)
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  for _, row in ipairs(plan.rows) do
+    if row.old_line then
+      apply_del_row(ns_id, buf, plan, row, line_count)
+    end
+    if row.new_line then
+      apply_add_row(ns_id, buf, plan, row, line_count)
     end
   end
 end
@@ -916,7 +1000,7 @@ function M.render_file_preview(s, opts)
       for _, hunk in ipairs(hunks) do
         for _, line_data in ipairs(hunk.lines) do
           table.insert(lines, line_data.content or "")
-          table.insert(hl_lines, { type = line_data.type })
+          table.insert(hl_lines, line_data)
         end
       end
       finalize_preview(buf, win, opts.filename, lines)
@@ -1001,7 +1085,7 @@ function M.open_maximize(opts)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, line_data)
       end
     end
 
@@ -1261,7 +1345,7 @@ function M.refresh_maximize(s)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, line_data)
       end
     end
 

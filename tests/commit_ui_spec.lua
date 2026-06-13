@@ -1,5 +1,45 @@
 local commit_ui = require("raccoon.commit_ui")
 
+local function byte_range(text, start_char, end_char)
+  return {
+    start_col = vim.str_byteindex(text, start_char),
+    end_col = vim.str_byteindex(text, end_char),
+  }
+end
+
+local function has_line_hl(marks, row, hl_group)
+  for _, mark in ipairs(marks) do
+    local details = mark[4] or {}
+    if mark[2] == row and details.line_hl_group == hl_group then
+      return true
+    end
+  end
+  return false
+end
+
+local function has_inline_hl(marks, row, hl_group, range)
+  for _, mark in ipairs(marks) do
+    local details = mark[4] or {}
+    if mark[2] == row and details.hl_group == hl_group then
+      if not range or (mark[3] == range.start_col and details.end_col == range.end_col) then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+local function has_sign(marks, row, sign_pattern, hl_group)
+  for _, mark in ipairs(marks) do
+    local details = mark[4] or {}
+    if mark[2] == row and details.sign_text and details.sign_text:match(sign_pattern)
+        and details.sign_hl_group == hl_group then
+      return true
+    end
+  end
+  return false
+end
+
 describe("raccoon.commit_ui", function()
   -- Shared header window helper
   local function make_header(width)
@@ -198,6 +238,73 @@ describe("raccoon.commit_ui", function()
       assert.truthy(lines[1]:find("feat: stuff"))
 
       teardown_header(buf, win)
+    end)
+  end)
+
+  describe("apply_diff_highlights", function()
+    it("renders exact inline replacement spans without whole-line backgrounds", function()
+      local ns = vim.api.nvim_create_namespace("raccoon_test_commit_inline")
+      local buf = vim.api.nvim_create_buf(false, true)
+      local old_line = "local total_count = item.count"
+      local new_line = "local total_size = item.count"
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { old_line, new_line })
+
+      commit_ui.apply_diff_highlights(ns, buf, {
+        { type = "del", content = old_line },
+        { type = "add", content = new_line },
+      })
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      assert.is_false(has_line_hl(marks, 0, "RaccoonDelete"))
+      assert.is_false(has_line_hl(marks, 1, "RaccoonAdd"))
+      assert.is_true(has_sign(marks, 0, "^%-", "RaccoonDeleteSign"))
+      assert.is_true(has_sign(marks, 1, "^%+", "RaccoonAddSign"))
+      assert.is_true(has_inline_hl(marks, 0, "RaccoonDeleteInline", byte_range(old_line, 12, 17)))
+      assert.is_true(has_inline_hl(marks, 0, "Comment"))
+      assert.is_true(has_inline_hl(marks, 1, "RaccoonAddInline", byte_range(new_line, 12, 16)))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("pairs shifted lines and keeps pure additions as full inline spans", function()
+      local ns = vim.api.nvim_create_namespace("raccoon_test_commit_shifted")
+      local buf = vim.api.nvim_create_buf(false, true)
+      local old_line = "local api_client = request.client"
+      local inserted_line = "local cache_hit = true"
+      local new_line = "local api_server = request.client"
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { old_line, inserted_line, new_line })
+
+      commit_ui.apply_diff_highlights(ns, buf, {
+        { type = "del", content = old_line },
+        { type = "add", content = inserted_line },
+        { type = "add", content = new_line },
+      })
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      assert.is_true(has_inline_hl(marks, 1, "RaccoonAddInline", { start_col = 0, end_col = #inserted_line }))
+      assert.is_true(has_inline_hl(marks, 2, "RaccoonAddInline", byte_range(new_line, 10, 16)))
+      assert.is_true(has_inline_hl(marks, 0, "RaccoonDeleteInline", byte_range(old_line, 10, 16)))
+      assert.is_false(has_line_hl(marks, 1, "RaccoonAdd"))
+      assert.is_false(has_line_hl(marks, 2, "RaccoonAdd"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("keeps whole-line backgrounds in internal line mode", function()
+      local ns = vim.api.nvim_create_namespace("raccoon_test_commit_line_mode")
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "old line", "new line" })
+
+      commit_ui.apply_diff_highlights(ns, buf, {
+        { type = "del", content = "old line" },
+        { type = "add", content = "new line" },
+      }, { mode = "line" })
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+      assert.is_true(has_line_hl(marks, 0, "RaccoonDelete"))
+      assert.is_true(has_line_hl(marks, 1, "RaccoonAdd"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
     end)
   end)
 
