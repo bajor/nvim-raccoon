@@ -2,10 +2,16 @@
 ---Diff parsing and display functionality
 local M = {}
 
+local diff_plan = require("raccoon.diff_plan")
 local state = require("raccoon.state")
 
 --- Namespace for diff highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
+local INLINE_PRIORITY = 110
+local OLD_CHUNK_HL = {
+  same = "Comment",
+  del = "RaccoonDeleteInline",
+}
 
 --- Parse a unified diff hunk header
 --- Returns start_line, count for the new file (right side), followed by old-side values
@@ -151,10 +157,94 @@ function M.is_line_in_review_context(patch, target_line)
   return false
 end
 
+local function line_byte_length(buf, line_idx)
+  local lines = vim.api.nvim_buf_get_lines(buf, line_idx, line_idx + 1, false)
+  return #(lines[1] or "")
+end
+
+local function apply_add_row(buf, plan, row, line_count)
+  local line = row.new_line
+  local line_num = line and (line.new_line or line.line_num)
+  if not line_num then
+    return
+  end
+
+  local line_idx = line_num - 1
+  if line_idx < 0 or line_idx >= line_count then
+    return
+  end
+
+  local line_mode = plan.mode == "line"
+  pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+    line_hl_group = line_mode and "RaccoonAdd" or nil,
+    sign_text = "+",
+    sign_hl_group = "RaccoonAddSign",
+    priority = INLINE_PRIORITY,
+  })
+
+  if line_mode then
+    return
+  end
+
+  local line_len = line_byte_length(buf, line_idx)
+  for _, range in ipairs(row.new_ranges or {}) do
+    local start_col = math.max(0, math.min(range.start_col, line_len))
+    local end_col = math.max(start_col, math.min(range.end_col, line_len))
+    if start_col < end_col then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, start_col, {
+        end_col = end_col,
+        hl_group = "RaccoonAddInline",
+        priority = INLINE_PRIORITY,
+      })
+    end
+  end
+end
+
+local function truncate_deleted_content(content)
+  content = content or ""
+  if #content > 118 then
+    return content:sub(1, 115) .. "..."
+  end
+  return content
+end
+
+local function exact_deleted_virt_line(row)
+  local virt_line = { { "- ", "RaccoonDeleteSign" } }
+  for _, chunk in ipairs(row.old_chunks or {}) do
+    local text = chunk.text or ""
+    local hl_group = OLD_CHUNK_HL[chunk.kind] or "Comment"
+    table.insert(virt_line, { text, hl_group })
+  end
+  return virt_line
+end
+
+local function line_deleted_virt_line(row)
+  local content = truncate_deleted_content(row.old_line and row.old_line.content or "")
+  return { { "- " .. content .. string.rep(" ", 300), "RaccoonDelete" } }
+end
+
+local function group_deleted_row(grouped, row)
+  local line = row.old_line
+  if not line then
+    return
+  end
+
+  local line_idx = line.anchor_line or line.line_num
+  if not line_idx or line_idx < 0 then
+    return
+  end
+
+  if not grouped[line_idx] then
+    grouped[line_idx] = {}
+  end
+  table.insert(grouped[line_idx], row)
+end
+
 --- Apply diff highlights to a buffer
 ---@param buf number Buffer ID
 ---@param patch string|nil The patch content
-function M.apply_highlights(buf, patch)
+---@param opts? table Internal render options
+function M.apply_highlights(buf, patch, opts)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     return
   end
@@ -166,49 +256,30 @@ function M.apply_highlights(buf, patch)
     return
   end
 
-  local changes = M.get_changed_lines(patch)
+  local plan = diff_plan.from_hunks(M.parse_patch(patch), opts)
   local line_count = vim.api.nvim_buf_line_count(buf)
 
-  -- Apply green highlight to added lines
-  for _, line_num in ipairs(changes.added) do
-    local line_idx = line_num - 1
-    if line_idx >= 0 and line_idx < line_count then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
-    end
-  end
-
-  -- For deleted lines, show virtual text with red background
-  -- Group consecutive deletions together
   local grouped_deletions = {}
-  for _, del in ipairs(changes.deleted) do
-    local line_idx = del.line_num
-    if line_idx >= 0 then
-      if not grouped_deletions[line_idx] then
-        grouped_deletions[line_idx] = {}
-      end
-      table.insert(grouped_deletions[line_idx], del.content or "")
+  for _, row in ipairs(plan.rows) do
+    if row.new_line then
+      apply_add_row(buf, plan, row, line_count)
+    end
+    if row.old_line then
+      group_deleted_row(grouped_deletions, row)
     end
   end
 
-  -- Display grouped deleted lines as virtual text
-  for line_idx, contents in pairs(grouped_deletions) do
+  for line_idx, rows in pairs(grouped_deletions) do
     -- Ensure line_idx is within buffer bounds
     local target_line = math.min(line_idx, line_count - 1)
     if target_line >= 0 then
-      -- Create virtual lines for deleted content
       local virt_lines = {}
-      for _, content in ipairs(contents) do
-        local display_content = "- " .. (content or "")
-        -- Truncate if too long
-        if #display_content > 120 then
-          display_content = display_content:sub(1, 117) .. "..."
+      for _, row in ipairs(rows) do
+        if plan.mode == "line" then
+          table.insert(virt_lines, line_deleted_virt_line(row))
+        else
+          table.insert(virt_lines, exact_deleted_virt_line(row))
         end
-        local pad = string.rep(" ", 300)
-        table.insert(virt_lines, { { display_content .. pad, "RaccoonDelete" } })
       end
 
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target_line, 0, {
@@ -216,6 +287,7 @@ function M.apply_highlights(buf, patch)
         virt_lines_above = true,
         sign_text = "-",
         sign_hl_group = "RaccoonDeleteSign",
+        priority = INLINE_PRIORITY,
       })
     end
   end
