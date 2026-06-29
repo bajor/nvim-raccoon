@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.1] - 2026-06-29
+
+### Added
+- GitHub Actions workflow caller for the shared visual explanation SVG cleanup workflow.
+
 ## [0.13.0] - 2026-05-23
 
 ### Added

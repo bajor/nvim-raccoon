@@ -1,0 +1,12 @@
+name: Delete Visual Explanation SVGs
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-visual-explanation-svgs:
+    uses: bajor/github-workflows/.github/workflows/delete-visual-explanation-svgs.yml@main
