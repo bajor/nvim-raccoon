@@ -1410,12 +1410,16 @@ function M.render_filetree(s)
 
   -- Build lookup: files visible on current grid page
   local visible_files = {}
-  local cells = s.grid_rows * s.grid_cols
-  local start_idx = (s.current_page - 1) * cells + 1
-  for i = start_idx, math.min(start_idx + cells - 1, #s.all_hunks) do
-    local hunk_data = s.all_hunks[i]
-    if hunk_data then
-      visible_files[hunk_data.filename] = true
+  if s.focus_target == "filetree" and s.filetree_preview_path then
+    visible_files[s.filetree_preview_path] = true
+  else
+    local cells = s.grid_rows * s.grid_cols
+    local start_idx = (s.current_page - 1) * cells + 1
+    for i = start_idx, math.min(start_idx + cells - 1, #s.all_hunks) do
+      local hunk_data = s.all_hunks[i]
+      if hunk_data then
+        visible_files[hunk_data.filename] = true
+      end
     end
   end
 
@@ -1786,6 +1790,7 @@ function M.toggle_filetree_focus(s, opts)
   if s.focus_target == "filetree" then
     -- Switching back to sidebar: restore original grid
     s.focus_target = "sidebar"
+    s.filetree_preview_path = nil
     if s.filetree_win and vim.api.nvim_win_is_valid(s.filetree_win) then
       vim.wo[s.filetree_win].cursorline = false
     end
@@ -1803,6 +1808,7 @@ function M.toggle_filetree_focus(s, opts)
   else
     -- Switching to filetree: collapse grid to 1x1 with file preview
     s.focus_target = "filetree"
+    s.filetree_preview_path = nil
     s.orig_grid_rows = s.grid_rows
     s.orig_grid_cols = s.grid_cols
     M.rebuild_grid(s, 1, 1, opts.apply_keymaps)
@@ -1846,6 +1852,8 @@ function M._preview_file_at_cursor(s, opts)
 
   -- Clear stale preview content when no file is found
   if not path then
+    s.filetree_preview_path = nil
+    M.render_filetree(s)
     local buf = s.grid_bufs and s.grid_bufs[1]
     if buf and vim.api.nvim_buf_is_valid(buf) then
       M._set_preview_empty(buf, s.grid_wins and s.grid_wins[1], "(no file)", "  No file at cursor")
@@ -1855,6 +1863,8 @@ function M._preview_file_at_cursor(s, opts)
   local repo_path = opts.get_repo_path and opts.get_repo_path()
   if not repo_path then return end
   local sha = opts.get_sha and opts.get_sha()
+  s.filetree_preview_path = path
+  M.render_filetree(s)
   M.render_file_preview(s, {
     ns_id = opts.ns_id,
     repo_path = repo_path,

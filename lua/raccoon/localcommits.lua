@@ -63,6 +63,7 @@ local function make_initial_state()
     cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
+    filetree_preview_path = nil,
     orig_grid_rows = nil,
     orig_grid_cols = nil,
     preview_generation = 0,
@@ -151,6 +152,7 @@ local function select_commit(index)
 
   local_state.selected_index = index
   local_state.current_page = 1
+  local_state.filetree_preview_path = nil
   local_state.select_generation = local_state.select_generation + 1
   local generation = local_state.select_generation
 
@@ -493,11 +495,6 @@ local function setup_keymaps()
   -- Apply keymaps buffer-locally
   local commit_bufs = ui.collect_bufs(local_state)
   ui.apply_keymaps_to_bufs(local_mode_keymaps, commit_bufs)
-  if state.is_active() then
-    for _, buf in ipairs(commit_bufs) do
-      keymaps.setup_buffer(buf)
-    end
-  end
 
   -- Sidebar-local keymaps
   ui.setup_sidebar_nav(local_state.sidebar_buf, {
