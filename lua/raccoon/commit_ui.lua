@@ -14,7 +14,6 @@ M.MIN_SIDEBAR_WIDTH = 1
 M.MAX_SIDEBAR_WIDTH = 500
 local INLINE_PRIORITY = 110
 local OLD_CHUNK_HL = {
-  same = "Comment",
   del = "RaccoonDeleteInline",
 }
 
@@ -445,9 +444,8 @@ local function apply_add_row(ns_id, buf, plan, row, line_count)
     return
   end
 
-  local line_mode = plan.mode == "line"
-  apply_sign(ns_id, buf, line_idx, "+", "RaccoonAddSign", line_mode and "RaccoonAdd" or nil)
-  if not line_mode then
+  apply_sign(ns_id, buf, line_idx, "+", "RaccoonAddSign", "RaccoonAdd")
+  if plan.mode ~= "line" then
     apply_add_ranges(ns_id, buf, line_idx, row.new_ranges)
   end
 end
@@ -459,9 +457,8 @@ local function apply_del_row(ns_id, buf, plan, row, line_count)
     return
   end
 
-  local line_mode = plan.mode == "line"
-  apply_sign(ns_id, buf, line_idx, "-", "RaccoonDeleteSign", line_mode and "RaccoonDelete" or nil)
-  if not line_mode then
+  apply_sign(ns_id, buf, line_idx, "-", "RaccoonDeleteSign", "RaccoonDelete")
+  if plan.mode ~= "line" then
     apply_old_chunks(ns_id, buf, line_idx, row.old_chunks)
   end
 end

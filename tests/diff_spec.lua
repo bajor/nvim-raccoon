@@ -279,7 +279,7 @@ context
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
-    it("renders exact inline replacement spans without whole-line add backgrounds", function()
+    it("renders exact inline replacement spans over faded changed-line backgrounds", function()
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
         "context",
@@ -299,16 +299,16 @@ context
 
       local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
       local add_range = byte_range("local total_size = item.count", 12, 16)
-      local saw_whole_add = false
+      local saw_line_add = false
       local saw_add_sign = false
       local saw_inline_add = false
       local saw_delete_inline = false
-      local saw_delete_context = false
+      local saw_delete_line_chunk = false
 
       for _, mark in ipairs(marks) do
         local details = mark[4] or {}
         if mark[2] == 1 and details.line_hl_group == "RaccoonAdd" then
-          saw_whole_add = true
+          saw_line_add = true
         end
         if mark[2] == 1 and details.sign_text and details.sign_text:match("^%+") and details.sign_hl_group == "RaccoonAddSign" then
           saw_add_sign = true
@@ -317,14 +317,14 @@ context
           saw_inline_add = saw_inline_add or (mark[3] == add_range.start_col and details.end_col == add_range.end_col)
         end
         saw_delete_inline = saw_delete_inline or has_virt_chunk(mark, "RaccoonDeleteInline")
-        saw_delete_context = saw_delete_context or has_virt_chunk(mark, "Comment")
+        saw_delete_line_chunk = saw_delete_line_chunk or has_virt_chunk(mark, "RaccoonDelete")
       end
 
-      assert.is_false(saw_whole_add)
+      assert.is_true(saw_line_add)
       assert.is_true(saw_add_sign)
       assert.is_true(saw_inline_add)
       assert.is_true(saw_delete_inline)
-      assert.is_true(saw_delete_context)
+      assert.is_true(saw_delete_line_chunk)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
@@ -347,20 +347,20 @@ context
       diff.apply_highlights(buf, patch)
 
       local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
-      local saw_whole_add = false
+      local saw_line_add = false
       local saw_full_inline = false
 
       for _, mark in ipairs(marks) do
         local details = mark[4] or {}
         if mark[2] == 1 and details.line_hl_group == "RaccoonAdd" then
-          saw_whole_add = true
+          saw_line_add = true
         end
         if mark[2] == 1 and details.hl_group == "RaccoonAddInline" then
           saw_full_inline = saw_full_inline or (mark[3] == 0 and details.end_col == #"new line")
         end
       end
 
-      assert.is_false(saw_whole_add)
+      assert.is_true(saw_line_add)
       assert.is_true(saw_full_inline)
 
       vim.api.nvim_buf_delete(buf, { force = true })

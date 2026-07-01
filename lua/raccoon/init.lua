@@ -9,11 +9,11 @@ M.config = {
 }
 
 --- Setup highlight groups for diff display
---- Uses dark green/red backgrounds for added/deleted lines and inline spans
+--- Uses faded green/red line backgrounds with brighter inline spans
 local function setup_highlights()
-  -- Green background for added lines (high contrast)
+  -- Green background for added lines
   vim.api.nvim_set_hl(0, "RaccoonAdd", {
-    bg = "#2d5a2d",
+    bg = "#1f3d1f",
     default = true,
   })
 
@@ -22,10 +22,10 @@ local function setup_highlights()
     default = true,
   })
 
-  -- Red background for deleted lines (high contrast)
+  -- Red background for deleted lines
   vim.api.nvim_set_hl(0, "RaccoonDelete", {
-    bg = "#5a2020",
-    fg = "#e88888",
+    bg = "#3b1616",
+    fg = "#c46a6a",
     default = true,
   })
 

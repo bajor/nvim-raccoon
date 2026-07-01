@@ -9,7 +9,7 @@ local state = require("raccoon.state")
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
 local INLINE_PRIORITY = 110
 local OLD_CHUNK_HL = {
-  same = "Comment",
+  same = "RaccoonDelete",
   del = "RaccoonDeleteInline",
 }
 
@@ -174,15 +174,14 @@ local function apply_add_row(buf, plan, row, line_count)
     return
   end
 
-  local line_mode = plan.mode == "line"
   pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
-    line_hl_group = line_mode and "RaccoonAdd" or nil,
+    line_hl_group = "RaccoonAdd",
     sign_text = "+",
     sign_hl_group = "RaccoonAddSign",
     priority = INLINE_PRIORITY,
   })
 
-  if line_mode then
+  if plan.mode == "line" then
     return
   end
 
