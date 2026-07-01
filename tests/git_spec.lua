@@ -92,6 +92,15 @@ describe("raccoon.git", function()
       assert.is_false(git.is_git_repo("/tmp"))
     end)
 
+    it("returns false when .git is not a valid repository", function()
+      local path = vim.fn.tempname()
+      vim.fn.mkdir(vim.fs.joinpath(path, ".git"), "p")
+
+      assert.is_false(git.is_git_repo(path))
+
+      vim.fn.delete(path, "rf")
+    end)
+
     it("returns false for non-existent directory", function()
       assert.is_false(git.is_git_repo("/nonexistent/path/12345"))
     end)
@@ -553,4 +562,3 @@ describe("raccoon.git path edge cases", function()
 
   end)
 end)
-

@@ -246,8 +246,12 @@ function M.is_git_repo(path)
   if not path or path == "" then
     return false
   end
-  local git_dir = vim.fs.joinpath(path, ".git")
-  return vim.fn.isdirectory(git_dir) == 1
+  if vim.fn.isdirectory(path) ~= 1 then
+    return false
+  end
+
+  local result = vim.fn.system({ "git", "-c", "core.longpaths=true", "-C", path, "rev-parse", "--is-inside-work-tree" })
+  return vim.v.shell_error == 0 and vim.trim(result) == "true"
 end
 
 --- Get the remote URL for a repository
