@@ -979,6 +979,13 @@ describe("raccoon.commits buffer-local keymaps", function()
     return nil
   end
 
+  local function invoke_buf_keymap(buf, lhs)
+    local map = get_buf_keymap(buf, "n", lhs)
+    if map and map.callback then
+      map.callback()
+    end
+  end
+
   local function has_global_keymap(mode, lhs)
     local maps = vim.api.nvim_get_keymap(mode)
     for _, map in ipairs(maps) do
@@ -1040,11 +1047,9 @@ describe("raccoon.commits buffer-local keymaps", function()
       end
     end)
 
-    it("applies navigation keymaps buffer-locally", function()
+    it("applies page navigation keymaps to grid buffers", function()
       commits._setup_keymaps()
       for _, key in ipairs({ " j", " k", " l" }) do
-        assert.is_true(has_buf_keymap(cs.sidebar_buf, "n", key),
-          "expected " .. key .. " on sidebar")
         for _, buf in ipairs(cs.grid_bufs) do
           assert.is_true(has_buf_keymap(buf, "n", key),
             "expected " .. key .. " on grid buf")
@@ -1076,6 +1081,33 @@ describe("raccoon.commits buffer-local keymaps", function()
       assert.is_function(prev_map.callback)
       prev_map.callback()
       assert.equals(1, cs.current_page)
+    end)
+
+    it("does not page from non-grid buffers", function()
+      cs.current_page = 1
+      cs.all_hunks = {}
+      for idx = 1, 5 do
+        table.insert(cs.all_hunks, {
+          filename = "file" .. idx .. ".lua",
+          hunk = { lines = { { type = "context", content = "line " .. idx } } },
+        })
+      end
+
+      commits._setup_keymaps()
+
+      for _, buf in ipairs({ cs.sidebar_buf, cs.header_buf, cs.filetree_buf }) do
+        cs.current_page = 1
+        invoke_buf_keymap(buf, " j")
+        assert.equals(1, cs.current_page)
+
+        cs.current_page = 2
+        invoke_buf_keymap(buf, " k")
+        assert.equals(2, cs.current_page)
+
+        cs.current_page = 1
+        invoke_buf_keymap(buf, " l")
+        assert.equals(1, cs.current_page)
+      end
     end)
 
     it("applies <C-w> blocks buffer-locally", function()
@@ -1113,10 +1145,8 @@ describe("raccoon.commits buffer-local keymaps", function()
       commits._setup_keymaps()
       assert.is_true(has_buf_keymap(cs.filetree_buf, "n", " cm"),
         "expected <leader>cm on filetree_buf")
-      for _, key in ipairs({ " j", " k", " l" }) do
-        assert.is_true(has_buf_keymap(cs.filetree_buf, "n", key),
-          "expected " .. key .. " on filetree_buf")
-      end
+      assert.is_true(has_buf_keymap(cs.filetree_buf, "n", " f"),
+        "expected <leader>f on filetree_buf")
     end)
 
     it("handles invalid buffers gracefully", function()

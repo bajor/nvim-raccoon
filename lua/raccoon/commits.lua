@@ -653,8 +653,40 @@ local function setup_keymaps()
   end
 
   -- Apply keymaps buffer-locally
-  local commit_bufs = ui.collect_bufs(commit_state)
-  ui.apply_keymaps_to_bufs(commit_mode_keymaps, commit_bufs)
+  local page_keys = {}
+  for _, lhs in ipairs({
+    shortcuts.commit_viewer.next_page,
+    shortcuts.commit_viewer.prev_page,
+    shortcuts.commit_viewer.next_page_alt,
+  }) do
+    if config.is_enabled(lhs) then
+      page_keys[lhs] = true
+    end
+  end
+  local noop = function() end
+  local panel_keymaps = {}
+  for _, km in ipairs(commit_mode_keymaps) do
+    if page_keys[km.lhs] then
+      table.insert(panel_keymaps, vim.tbl_extend("force", km, { rhs = noop }))
+    else
+      table.insert(panel_keymaps, km)
+    end
+  end
+
+  local grid_bufs = {}
+  for _, buf in ipairs(commit_state.grid_bufs or {}) do
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      table.insert(grid_bufs, buf)
+    end
+  end
+  ui.apply_keymaps_to_bufs(commit_mode_keymaps, grid_bufs)
+  local panel_bufs = {}
+  for _, buf in ipairs({ commit_state.sidebar_buf, commit_state.header_buf, commit_state.filetree_buf }) do
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      table.insert(panel_bufs, buf)
+    end
+  end
+  ui.apply_keymaps_to_bufs(panel_keymaps, panel_bufs)
 
   -- Sidebar-local keymaps
   ui.setup_sidebar_nav(commit_state.sidebar_buf, {
