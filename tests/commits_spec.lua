@@ -969,6 +969,23 @@ describe("raccoon.commits buffer-local keymaps", function()
     return false
   end
 
+  local function get_buf_keymap(buf, mode, lhs)
+    local maps = vim.api.nvim_buf_get_keymap(buf, mode)
+    for _, map in ipairs(maps) do
+      if map.lhs == lhs then
+        return map
+      end
+    end
+    return nil
+  end
+
+  local function invoke_buf_keymap(buf, lhs)
+    local map = get_buf_keymap(buf, "n", lhs)
+    if map and map.callback then
+      map.callback()
+    end
+  end
+
   local function has_global_keymap(mode, lhs)
     local maps = vim.api.nvim_get_keymap(mode)
     for _, map in ipairs(maps) do
@@ -999,9 +1016,11 @@ describe("raccoon.commits buffer-local keymaps", function()
     for _, buf in ipairs(cs.grid_bufs) do
       table.insert(bufs_to_clean, buf)
     end
+    require("raccoon.keymaps").clear()
   end)
 
   after_each(function()
+    require("raccoon.keymaps").clear()
     for _, buf in ipairs(bufs_to_clean) do
       if vim.api.nvim_buf_is_valid(buf) then
         vim.api.nvim_buf_delete(buf, { force = true })
@@ -1028,7 +1047,7 @@ describe("raccoon.commits buffer-local keymaps", function()
       end
     end)
 
-    it("applies navigation keymaps buffer-locally", function()
+    it("applies page navigation keymaps to commit-list and grid buffers", function()
       commits._setup_keymaps()
       for _, key in ipairs({ " j", " k", " l" }) do
         assert.is_true(has_buf_keymap(cs.sidebar_buf, "n", key),
@@ -1037,6 +1056,65 @@ describe("raccoon.commits buffer-local keymaps", function()
           assert.is_true(has_buf_keymap(buf, "n", key),
             "expected " .. key .. " on grid buf")
         end
+      end
+    end)
+
+    it("keeps leader j/k bound to commit page navigation when review keymaps exist", function()
+      require("raccoon.keymaps").setup()
+      cs.current_page = 1
+      cs.all_hunks = {}
+      for idx = 1, 5 do
+        table.insert(cs.all_hunks, {
+          filename = "file" .. idx .. ".lua",
+          hunk = { lines = { { type = "context", content = "line " .. idx } } },
+        })
+      end
+
+      commits._setup_keymaps()
+
+      local next_map = get_buf_keymap(cs.grid_bufs[1], "n", " j")
+      assert.is_table(next_map)
+      assert.is_function(next_map.callback)
+      next_map.callback()
+      assert.equals(2, cs.current_page)
+
+      local prev_map = get_buf_keymap(cs.grid_bufs[1], "n", " k")
+      assert.is_table(prev_map)
+      assert.is_function(prev_map.callback)
+      prev_map.callback()
+      assert.equals(1, cs.current_page)
+
+      local sidebar_next_map = get_buf_keymap(cs.sidebar_buf, "n", " j")
+      assert.is_table(sidebar_next_map)
+      assert.is_function(sidebar_next_map.callback)
+      sidebar_next_map.callback()
+      assert.equals(2, cs.current_page)
+    end)
+
+    it("does not page from file/header buffers", function()
+      cs.current_page = 1
+      cs.all_hunks = {}
+      for idx = 1, 5 do
+        table.insert(cs.all_hunks, {
+          filename = "file" .. idx .. ".lua",
+          hunk = { lines = { { type = "context", content = "line " .. idx } } },
+        })
+      end
+
+      commits._setup_keymaps()
+
+      for _, buf in ipairs({ cs.header_buf, cs.filetree_buf }) do
+        cs.current_page = 1
+        invoke_buf_keymap(buf, " j")
+        assert.equals(1, cs.current_page)
+
+        cs.current_page = 2
+        invoke_buf_keymap(buf, " k")
+        assert.equals(2, cs.current_page)
+
+        cs.current_page = 1
+        invoke_buf_keymap(buf, " l")
+        assert.equals(1, cs.current_page)
       end
     end)
 
@@ -1075,10 +1153,8 @@ describe("raccoon.commits buffer-local keymaps", function()
       commits._setup_keymaps()
       assert.is_true(has_buf_keymap(cs.filetree_buf, "n", " cm"),
         "expected <leader>cm on filetree_buf")
-      for _, key in ipairs({ " j", " k", " l" }) do
-        assert.is_true(has_buf_keymap(cs.filetree_buf, "n", key),
-          "expected " .. key .. " on filetree_buf")
-      end
+      assert.is_true(has_buf_keymap(cs.filetree_buf, "n", " f"),
+        "expected <leader>f on filetree_buf")
     end)
 
     it("handles invalid buffers gracefully", function()
@@ -1446,6 +1522,8 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     cs.grid_rows = 2
     cs.grid_cols = 2
     cs.current_page = 1
+    cs.focus_target = "sidebar"
+    cs.filetree_preview_path = nil
   end)
 
   after_each(function()
@@ -1493,6 +1571,32 @@ describe("raccoon.commits render_filetree three-tier highlighting", function()
     local hl = get_filetree_highlights(filetree_buf)
     assert.equals("RaccoonFileVisible", hl[0])
     assert.equals("RaccoonFileInCommit", hl[1])
+    assert.equals("RaccoonFileInCommit", hl[2])
+  end)
+
+  it("highlights only the previewed file as visible while browsing files", function()
+    cs.grid_rows = 1
+    cs.grid_cols = 1
+    cs.focus_target = "filetree"
+    cs.filetree_preview_path = "file2.lua"
+
+    cs.cached_sha = "test-preview"
+    cs.cached_tree_lines = { "├ file1.lua", "├ file2.lua", "└ file3.lua" }
+    cs.cached_line_paths = { [0] = "file1.lua", [1] = "file2.lua", [2] = "file3.lua" }
+    cs.cached_file_count = 3
+
+    cs.all_hunks = {
+      { filename = "file1.lua", hunk = {} },
+      { filename = "file2.lua", hunk = {} },
+      { filename = "file3.lua", hunk = {} },
+    }
+    cs.commit_files = { ["file1.lua"] = true, ["file2.lua"] = true, ["file3.lua"] = true }
+
+    commits._render_filetree()
+
+    local hl = get_filetree_highlights(filetree_buf)
+    assert.equals("RaccoonFileInCommit", hl[0])
+    assert.equals("RaccoonFileVisible", hl[1])
     assert.equals("RaccoonFileInCommit", hl[2])
   end)
 

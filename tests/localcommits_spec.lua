@@ -67,6 +67,101 @@ describe("raccoon.localcommits", function()
     end)
   end)
 
+  describe("buffer-local keymaps", function()
+    local bufs_to_clean = {}
+
+    local function get_buf_keymap(buf, mode, lhs)
+      local maps = vim.api.nvim_buf_get_keymap(buf, mode)
+      for _, map in ipairs(maps) do
+        if map.lhs == lhs then
+          return map
+        end
+      end
+      return nil
+    end
+
+    local function invoke_map(buf, lhs)
+      local map = get_buf_keymap(buf, "n", lhs)
+      if map and map.callback then
+        map.callback()
+      end
+    end
+
+    before_each(function()
+      require("raccoon.keymaps").clear()
+      local ls = localcommits._get_state()
+      ls.sidebar_buf = commit_ui.create_scratch_buf()
+      ls.header_buf = commit_ui.create_scratch_buf()
+      ls.filetree_buf = commit_ui.create_scratch_buf()
+      ls.grid_bufs = {
+        commit_ui.create_scratch_buf(),
+        commit_ui.create_scratch_buf(),
+        commit_ui.create_scratch_buf(),
+        commit_ui.create_scratch_buf(),
+      }
+      ls.grid_rows = 2
+      ls.grid_cols = 2
+      ls.current_page = 1
+      ls.all_hunks = {}
+      for idx = 1, 5 do
+        table.insert(ls.all_hunks, {
+          filename = "file" .. idx .. ".lua",
+          hunk = { lines = { { type = "context", content = "line " .. idx } } },
+        })
+      end
+
+      bufs_to_clean = { ls.sidebar_buf, ls.header_buf, ls.filetree_buf }
+      for _, buf in ipairs(ls.grid_bufs) do
+        table.insert(bufs_to_clean, buf)
+      end
+    end)
+
+    after_each(function()
+      require("raccoon.keymaps").clear()
+      local ls = localcommits._get_state()
+      for _, buf in ipairs(bufs_to_clean) do
+        if vim.api.nvim_buf_is_valid(buf) then
+          vim.api.nvim_buf_delete(buf, { force = true })
+        end
+      end
+      bufs_to_clean = {}
+      ls.sidebar_buf = nil
+      ls.header_buf = nil
+      ls.filetree_buf = nil
+      ls.grid_bufs = {}
+      ls.grid_wins = {}
+      ls.all_hunks = {}
+      ls.current_page = 1
+    end)
+
+    it("keeps leader j/k as page navigation on commit-list and grid buffers only", function()
+      local ls = localcommits._get_state()
+      localcommits._setup_keymaps()
+
+      invoke_map(ls.grid_bufs[1], " j")
+      assert.equals(2, ls.current_page)
+
+      invoke_map(ls.grid_bufs[1], " k")
+      assert.equals(1, ls.current_page)
+
+      invoke_map(ls.sidebar_buf, " j")
+      assert.equals(2, ls.current_page)
+
+      invoke_map(ls.sidebar_buf, " k")
+      assert.equals(1, ls.current_page)
+
+      for _, buf in ipairs({ ls.header_buf, ls.filetree_buf }) do
+        ls.current_page = 1
+        invoke_map(buf, " j")
+        assert.equals(1, ls.current_page)
+
+        ls.current_page = 2
+        invoke_map(buf, " k")
+        assert.equals(2, ls.current_page)
+      end
+    end)
+  end)
+
   describe("exit_local_mode", function()
     it("falls back to a normal buffer when the saved buffer was wiped", function()
       local ls = localcommits._get_state()

@@ -63,6 +63,7 @@ local function make_initial_state()
     cached_stat_lines = nil,
     cached_file_count = nil,
     focus_target = "sidebar",
+    filetree_preview_path = nil,
     orig_grid_rows = nil,
     orig_grid_cols = nil,
     preview_generation = 0,
@@ -151,6 +152,7 @@ local function select_commit(index)
 
   local_state.selected_index = index
   local_state.current_page = 1
+  local_state.filetree_preview_path = nil
   local_state.select_generation = local_state.select_generation + 1
   local generation = local_state.select_generation
 
@@ -491,13 +493,45 @@ local function setup_keymaps()
   end
 
   -- Apply keymaps buffer-locally
-  local commit_bufs = ui.collect_bufs(local_state)
-  ui.apply_keymaps_to_bufs(local_mode_keymaps, commit_bufs)
-  if state.is_active() then
-    for _, buf in ipairs(commit_bufs) do
-      keymaps.setup_buffer(buf)
+  local page_keys = {}
+  for _, lhs in ipairs({
+    shortcuts.commit_viewer.next_page,
+    shortcuts.commit_viewer.prev_page,
+    shortcuts.commit_viewer.next_page_alt,
+  }) do
+    if config.is_enabled(lhs) then
+      page_keys[lhs] = true
     end
   end
+  local noop = function() end
+  local page_keymaps = {}
+  local panel_keymaps = {}
+  for _, km in ipairs(local_mode_keymaps) do
+    if page_keys[km.lhs] then
+      table.insert(page_keymaps, km)
+      table.insert(panel_keymaps, vim.tbl_extend("force", km, { rhs = noop }))
+    else
+      table.insert(panel_keymaps, km)
+    end
+  end
+
+  local page_bufs = {}
+  for _, buf in ipairs(local_state.grid_bufs or {}) do
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      table.insert(page_bufs, buf)
+    end
+  end
+  if local_state.sidebar_buf and vim.api.nvim_buf_is_valid(local_state.sidebar_buf) then
+    table.insert(page_bufs, local_state.sidebar_buf)
+  end
+  ui.apply_keymaps_to_bufs(local_mode_keymaps, page_bufs)
+  local panel_bufs = {}
+  for _, buf in ipairs({ local_state.header_buf, local_state.filetree_buf }) do
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      table.insert(panel_bufs, buf)
+    end
+  end
+  ui.apply_keymaps_to_bufs(panel_keymaps, panel_bufs)
 
   -- Sidebar-local keymaps
   ui.setup_sidebar_nav(local_state.sidebar_buf, {
@@ -507,6 +541,9 @@ local function setup_keymaps()
     move_to_bottom = move_to_bottom,
     select_at_cursor = select_at_cursor,
   })
+  if local_state.sidebar_buf and vim.api.nvim_buf_is_valid(local_state.sidebar_buf) then
+    ui.apply_keymaps_to_bufs(page_keymaps, { local_state.sidebar_buf })
+  end
 
   -- Filetree navigation keymaps
   ui.setup_filetree_nav(local_state, filetree_opts)
@@ -935,5 +972,6 @@ end
 -- Exposed for testing
 M._get_state = function() return local_state end
 M._select_commit = select_commit
+M._setup_keymaps = setup_keymaps
 
 return M
