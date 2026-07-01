@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Commit viewer file-tree browsing now highlights the previewed file when the grid is collapsed to a 1x1 preview.
-- Commit and local commit viewer page navigation keep their `<leader>j` and `<leader>k` bindings on diff grids without hijacking left-side file or commit panels.
+- Commit and local commit viewer page navigation keep their `<leader>j` and `<leader>k` bindings on commit lists and diff grids without hijacking file browsing panels.
 
 ## [0.13.1] - 2026-06-29
 

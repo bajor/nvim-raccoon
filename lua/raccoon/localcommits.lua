@@ -503,16 +503,30 @@ local function setup_keymaps()
       page_keys[lhs] = true
     end
   end
+  local noop = function() end
+  local page_keymaps = {}
   local panel_keymaps = {}
   for _, km in ipairs(local_mode_keymaps) do
-    if not page_keys[km.lhs] then
+    if page_keys[km.lhs] then
+      table.insert(page_keymaps, km)
+      table.insert(panel_keymaps, vim.tbl_extend("force", km, { rhs = noop }))
+    else
       table.insert(panel_keymaps, km)
     end
   end
 
-  ui.apply_keymaps_to_bufs(local_mode_keymaps, local_state.grid_bufs or {})
+  local page_bufs = {}
+  for _, buf in ipairs(local_state.grid_bufs or {}) do
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      table.insert(page_bufs, buf)
+    end
+  end
+  if local_state.sidebar_buf and vim.api.nvim_buf_is_valid(local_state.sidebar_buf) then
+    table.insert(page_bufs, local_state.sidebar_buf)
+  end
+  ui.apply_keymaps_to_bufs(local_mode_keymaps, page_bufs)
   local panel_bufs = {}
-  for _, buf in ipairs({ local_state.sidebar_buf, local_state.header_buf, local_state.filetree_buf }) do
+  for _, buf in ipairs({ local_state.header_buf, local_state.filetree_buf }) do
     if buf and vim.api.nvim_buf_is_valid(buf) then
       table.insert(panel_bufs, buf)
     end
@@ -527,6 +541,9 @@ local function setup_keymaps()
     move_to_bottom = move_to_bottom,
     select_at_cursor = select_at_cursor,
   })
+  if local_state.sidebar_buf and vim.api.nvim_buf_is_valid(local_state.sidebar_buf) then
+    ui.apply_keymaps_to_bufs(page_keymaps, { local_state.sidebar_buf })
+  end
 
   -- Filetree navigation keymaps
   ui.setup_filetree_nav(local_state, filetree_opts)

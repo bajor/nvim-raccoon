@@ -134,7 +134,7 @@ describe("raccoon.localcommits", function()
       ls.current_page = 1
     end)
 
-    it("keeps leader j/k as page navigation only on grid buffers", function()
+    it("keeps leader j/k as page navigation on commit-list and grid buffers only", function()
       local ls = localcommits._get_state()
       localcommits._setup_keymaps()
 
@@ -144,7 +144,13 @@ describe("raccoon.localcommits", function()
       invoke_map(ls.grid_bufs[1], " k")
       assert.equals(1, ls.current_page)
 
-      for _, buf in ipairs({ ls.sidebar_buf, ls.header_buf, ls.filetree_buf }) do
+      invoke_map(ls.sidebar_buf, " j")
+      assert.equals(2, ls.current_page)
+
+      invoke_map(ls.sidebar_buf, " k")
+      assert.equals(1, ls.current_page)
+
+      for _, buf in ipairs({ ls.header_buf, ls.filetree_buf }) do
         ls.current_page = 1
         invoke_map(buf, " j")
         assert.equals(1, ls.current_page)

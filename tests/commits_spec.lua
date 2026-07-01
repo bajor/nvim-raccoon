@@ -1047,9 +1047,11 @@ describe("raccoon.commits buffer-local keymaps", function()
       end
     end)
 
-    it("applies page navigation keymaps to grid buffers", function()
+    it("applies page navigation keymaps to commit-list and grid buffers", function()
       commits._setup_keymaps()
       for _, key in ipairs({ " j", " k", " l" }) do
+        assert.is_true(has_buf_keymap(cs.sidebar_buf, "n", key),
+          "expected " .. key .. " on sidebar")
         for _, buf in ipairs(cs.grid_bufs) do
           assert.is_true(has_buf_keymap(buf, "n", key),
             "expected " .. key .. " on grid buf")
@@ -1081,9 +1083,15 @@ describe("raccoon.commits buffer-local keymaps", function()
       assert.is_function(prev_map.callback)
       prev_map.callback()
       assert.equals(1, cs.current_page)
+
+      local sidebar_next_map = get_buf_keymap(cs.sidebar_buf, "n", " j")
+      assert.is_table(sidebar_next_map)
+      assert.is_function(sidebar_next_map.callback)
+      sidebar_next_map.callback()
+      assert.equals(2, cs.current_page)
     end)
 
-    it("does not page from non-grid buffers", function()
+    it("does not page from file/header buffers", function()
       cs.current_page = 1
       cs.all_hunks = {}
       for idx = 1, 5 do
@@ -1095,7 +1103,7 @@ describe("raccoon.commits buffer-local keymaps", function()
 
       commits._setup_keymaps()
 
-      for _, buf in ipairs({ cs.sidebar_buf, cs.header_buf, cs.filetree_buf }) do
+      for _, buf in ipairs({ cs.header_buf, cs.filetree_buf }) do
         cs.current_page = 1
         invoke_buf_keymap(buf, " j")
         assert.equals(1, cs.current_page)

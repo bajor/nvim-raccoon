@@ -664,24 +664,29 @@ local function setup_keymaps()
     end
   end
   local noop = function() end
+  local page_keymaps = {}
   local panel_keymaps = {}
   for _, km in ipairs(commit_mode_keymaps) do
     if page_keys[km.lhs] then
+      table.insert(page_keymaps, km)
       table.insert(panel_keymaps, vim.tbl_extend("force", km, { rhs = noop }))
     else
       table.insert(panel_keymaps, km)
     end
   end
 
-  local grid_bufs = {}
+  local page_bufs = {}
   for _, buf in ipairs(commit_state.grid_bufs or {}) do
     if buf and vim.api.nvim_buf_is_valid(buf) then
-      table.insert(grid_bufs, buf)
+      table.insert(page_bufs, buf)
     end
   end
-  ui.apply_keymaps_to_bufs(commit_mode_keymaps, grid_bufs)
+  if commit_state.sidebar_buf and vim.api.nvim_buf_is_valid(commit_state.sidebar_buf) then
+    table.insert(page_bufs, commit_state.sidebar_buf)
+  end
+  ui.apply_keymaps_to_bufs(commit_mode_keymaps, page_bufs)
   local panel_bufs = {}
-  for _, buf in ipairs({ commit_state.sidebar_buf, commit_state.header_buf, commit_state.filetree_buf }) do
+  for _, buf in ipairs({ commit_state.header_buf, commit_state.filetree_buf }) do
     if buf and vim.api.nvim_buf_is_valid(buf) then
       table.insert(panel_bufs, buf)
     end
@@ -696,6 +701,9 @@ local function setup_keymaps()
     move_to_bottom = move_to_bottom,
     select_at_cursor = select_at_cursor,
   })
+  if commit_state.sidebar_buf and vim.api.nvim_buf_is_valid(commit_state.sidebar_buf) then
+    ui.apply_keymaps_to_bufs(page_keymaps, { commit_state.sidebar_buf })
+  end
 
   -- Filetree navigation keymaps
   ui.setup_filetree_nav(commit_state, filetree_opts)
