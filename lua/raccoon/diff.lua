@@ -3,9 +3,56 @@
 local M = {}
 
 local state = require("raccoon.state")
+local has_pierre, pierre = pcall(require, "raccoon.pierre")
 
 --- Namespace for diff highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
+local pierre_plans = {}
+
+local function pierre_key(patch, filename)
+  return (filename or "") .. "\0" .. patch
+end
+
+local function remember_pierre_plan(patch, filename, plan)
+  if type(patch) ~= "string" or type(plan) ~= "table" then
+    return
+  end
+  pierre_plans[patch] = plan
+  pierre_plans[pierre_key(patch, filename)] = plan
+end
+
+local function pierre_enabled()
+  if not has_pierre or type(pierre) ~= "table" or type(pierre.is_enabled) ~= "function" then
+    return false
+  end
+  local ok, enabled = pcall(pierre.is_enabled)
+  return ok and enabled == true
+end
+
+local function get_pierre_plan(patch, filename)
+  if type(patch) ~= "string" or patch == "" or not pierre_enabled() then
+    return nil
+  end
+
+  local key = pierre_key(patch, filename)
+  if pierre_plans[key] then
+    return pierre_plans[key]
+  end
+  if pierre_plans[patch] then
+    return pierre_plans[patch]
+  end
+  if type(pierre.render_patch) ~= "function" then
+    return nil
+  end
+
+  local ok, plan = pcall(pierre.render_patch, patch, filename)
+  if ok and type(plan) == "table" then
+    remember_pierre_plan(patch, filename, plan)
+    return plan
+  end
+
+  return nil
+end
 
 --- Parse a unified diff hunk header
 --- Returns start_line, count for the new file (right side)
@@ -109,9 +156,14 @@ end
 ---@param patch string|nil
 ---@param target_line number|nil
 ---@return boolean
-function M.is_line_in_review_context(patch, target_line)
+function M.is_line_in_review_context(patch, target_line, filename)
   if type(target_line) ~= "number" or target_line < 1 then
     return false
+  end
+
+  local plan = get_pierre_plan(patch, filename)
+  if plan and type(plan.reviewable) == "table" then
+    return plan.reviewable[target_line] == true
   end
 
   local hunks = M.parse_patch(patch)
@@ -126,10 +178,71 @@ function M.is_line_in_review_context(patch, target_line)
   return false
 end
 
+--- Apply a Pierre render plan to a buffer
+---@param buf number Buffer ID
+---@param plan table Pierre render plan
+function M.apply_render_plan(buf, plan)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+
+  if type(plan) ~= "table" then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(buf)
+
+  for _, line_num in ipairs(plan.added or {}) do
+    local row = line_num - 1
+    if row >= 0 and row < line_count then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, 0, {
+        line_hl_group = "RaccoonAdd",
+        sign_text = "+",
+        sign_hl_group = "RaccoonAddSign",
+      })
+    end
+  end
+
+  for _, deleted in ipairs(plan.deleted or {}) do
+    local target = math.max(0, math.min((deleted.line_num or 1) - 1, line_count - 1))
+    local virt_lines = {}
+    for _, row in ipairs(deleted.rows or {}) do
+      local chunks = {}
+      for _, chunk in ipairs(row) do
+        table.insert(chunks, { chunk.text or "", chunk.hl or "RaccoonDelete" })
+      end
+      table.insert(virt_lines, chunks)
+    end
+
+    if #virt_lines > 0 then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target, 0, {
+        virt_lines = virt_lines,
+        virt_lines_above = true,
+        sign_text = "-",
+        sign_hl_group = "RaccoonDeleteSign",
+      })
+    end
+  end
+
+  for _, span in ipairs(plan.inline_add or {}) do
+    local row = (span.line_num or 0) - 1
+    if row >= 0 and row < line_count then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, span.start_col or 0, {
+        end_col = span.end_col,
+        hl_group = "RaccoonAddInline",
+        priority = 250,
+      })
+    end
+  end
+end
+
 --- Apply diff highlights to a buffer
 ---@param buf number Buffer ID
 ---@param patch string|nil The patch content
-function M.apply_highlights(buf, patch)
+---@param opts? table Optional renderer context
+function M.apply_highlights(buf, patch, opts)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     return
   end
@@ -139,6 +252,11 @@ function M.apply_highlights(buf, patch)
 
   if not patch or patch == "" then
     return
+  end
+
+  local plan = get_pierre_plan(patch, opts and opts.filename or nil)
+  if plan then
+    return M.apply_render_plan(buf, plan)
   end
 
   local changes = M.get_changed_lines(patch)
@@ -249,7 +367,7 @@ function M.open_file(file)
   if file.patch then
     -- Defer to allow buffer to fully load
     vim.schedule(function()
-      M.apply_highlights(buf, file.patch)
+      M.apply_highlights(buf, file.patch, { filename = file.filename })
     end)
   end
 
@@ -347,6 +465,18 @@ local function get_current_file_diff_hunks()
   local file = state.get_current_file()
   if not file or not file.patch then
     return {}
+  end
+
+  local plan = get_pierre_plan(file.patch, file.filename)
+  if plan and type(plan.hunks) == "table" then
+    local lines = {}
+    for _, hunk in ipairs(plan.hunks) do
+      if type(hunk.start_line) == "number" then
+        table.insert(lines, hunk.start_line)
+      end
+    end
+    table.sort(lines)
+    return lines
   end
 
   local changes = M.get_changed_lines(file.patch)

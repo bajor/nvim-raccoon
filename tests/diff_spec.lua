@@ -1,11 +1,17 @@
 local diff = require("raccoon.diff")
+local raccoon = require("raccoon")
 local state = require("raccoon.state")
 
 describe("raccoon.diff", function()
+  local original_config = vim.deepcopy(raccoon.config)
+
   before_each(function()
     state.reset()
   end)
 
+  after_each(function()
+    raccoon.config = vim.deepcopy(original_config)
+  end)
 
   describe("parse_hunk_header", function()
     it("parses standard hunk header", function()
@@ -469,6 +475,219 @@ describe("raccoon.diff", function()
       -- Verify namespace was used
       local ns = diff.get_namespace()
       assert.is_number(ns)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+  end)
+
+  describe("pierre render plans", function()
+    local original_system
+    local original_pierre
+
+    local function reload_diff_with_pierre(fake_pierre)
+      package.loaded["raccoon.diff"] = nil
+      package.loaded["raccoon.pierre"] = fake_pierre
+      diff = require("raccoon.diff")
+      return diff
+    end
+
+    local function reload_diff_with_real_pierre()
+      package.loaded["raccoon.diff"] = nil
+      package.loaded["raccoon.pierre"] = nil
+      diff = require("raccoon.diff")
+      return diff
+    end
+
+    local function get_extmarks(buf)
+      return vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+    end
+
+    local function has_extmark_with(buf, predicate)
+      for _, mark in ipairs(get_extmarks(buf)) do
+        if predicate(mark[4] or {}) then
+          return true
+        end
+      end
+      return false
+    end
+
+    local function create_buf(lines)
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      return buf
+    end
+
+    local function assert_builtin_fallback_marks_addition(buf)
+      assert.is_true(has_extmark_with(buf, function(details)
+        return type(details.sign_text) == "string"
+          and details.sign_text:match("^%+")
+          and details.line_hl_group == "RaccoonAdd"
+      end))
+    end
+
+    before_each(function()
+      original_system = vim.system
+      original_pierre = package.loaded["raccoon.pierre"]
+      raccoon.config.diff_renderer = {
+        provider = "pierre",
+        timeout_ms = 25,
+        command = { "node", "stub" },
+        inline_word_diff = true,
+      }
+    end)
+
+    after_each(function()
+      vim.system = original_system
+      package.loaded["raccoon.diff"] = nil
+      package.loaded["raccoon.pierre"] = original_pierre
+      diff = require("raccoon.diff")
+    end)
+
+    it("applies extmarks from a Pierre render plan", function()
+      local plan = {
+        version = 1,
+        added = { 2 },
+        deleted = {
+          {
+            line_num = 3,
+            rows = {
+              {
+                { text = "- old value", hl = "RaccoonDelete" },
+              },
+            },
+          },
+        },
+        reviewable = { [2] = true },
+        hunks = { { start_line = 2, end_line = 3 } },
+        inline_add = {
+          { line_num = 2, start_col = 4, end_col = 9 },
+        },
+      }
+
+      reload_diff_with_pierre({
+        is_enabled = function()
+          return true
+        end,
+        render_patch = function()
+          return plan
+        end,
+      })
+
+      local buf = create_buf({ "line 1", "new value", "line 3" })
+      diff.apply_highlights(buf, "@@ -1,2 +1,3 @@\n line 1\n+new value\n line 3", { filename = "x.lua" })
+
+      assert.is_true(has_extmark_with(buf, function(details)
+        return type(details.sign_text) == "string"
+          and details.sign_text:match("^%+")
+          and details.line_hl_group == "RaccoonAdd"
+      end))
+      assert.is_true(has_extmark_with(buf, function(details)
+        return type(details.sign_text) == "string" and details.sign_text:match("^%-") and details.virt_lines ~= nil
+      end))
+      assert.is_true(has_extmark_with(buf, function(details)
+        return details.hl_group == "RaccoonAddInline"
+      end))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("falls back to builtin highlights when Pierre returns invalid JSON", function()
+      local calls = 0
+      vim.system = function()
+        calls = calls + 1
+        return {
+          wait = function()
+            return { code = 0, stdout = "not json", stderr = "" }
+          end,
+        }
+      end
+
+      reload_diff_with_real_pierre()
+
+      local buf = create_buf({ "line 1", "new value", "line 2" })
+      diff.apply_highlights(buf, "@@ -1,2 +1,3 @@\n line 1\n+new value\n line 2", { filename = "x.lua" })
+
+      assert.equals(1, calls)
+      assert_builtin_fallback_marks_addition(buf)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("falls back to builtin highlights when the Pierre process fails", function()
+      local calls = 0
+      vim.system = function()
+        calls = calls + 1
+        return {
+          wait = function()
+            return { code = 1, stdout = "", stderr = "boom" }
+          end,
+        }
+      end
+
+      reload_diff_with_real_pierre()
+
+      local buf = create_buf({ "line 1", "new value", "line 2" })
+      diff.apply_highlights(buf, "@@ -1,2 +1,3 @@\n line 1\n+new value\n line 2", { filename = "x.lua" })
+
+      assert.equals(1, calls)
+      assert_builtin_fallback_marks_addition(buf)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("uses plan reviewable lines when present", function()
+      reload_diff_with_pierre({
+        is_enabled = function()
+          return true
+        end,
+        render_patch = function()
+          return {
+            version = 1,
+            reviewable = { [50] = true },
+            hunks = {},
+            added = {},
+            deleted = {},
+          }
+        end,
+      })
+
+      assert.is_true(diff.is_line_in_review_context("@@ -1,1 +1,1 @@\n line 1", 50))
+      assert.is_false(diff.is_line_in_review_context("@@ -1,1 +1,1 @@\n line 1", 1))
+    end)
+
+    it("uses plan hunk starts for diff navigation when present", function()
+      reload_diff_with_pierre({
+        is_enabled = function()
+          return true
+        end,
+        render_patch = function()
+          return {
+            version = 1,
+            reviewable = {},
+            hunks = {
+              { start_line = 40, end_line = 41 },
+            },
+            added = {},
+            deleted = {},
+          }
+        end,
+      })
+
+      local lines = {}
+      for i = 1, 50 do
+        table.insert(lines, "line " .. i)
+      end
+      local buf = create_buf(lines)
+      vim.api.nvim_set_current_buf(buf)
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      state.start({ owner = "o", repo = "r", number = 1, clone_path = "/tmp/raccoon-test" })
+      state.set_files({
+        { filename = "x.lua", patch = "@@ -1,1 +2,1 @@\n+new value" },
+      })
+
+      assert.is_true(diff.next_diff())
+      assert.equals(40, vim.api.nvim_win_get_cursor(0)[1])
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)

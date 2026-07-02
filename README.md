@@ -33,6 +33,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 
 - Browse open PRs with a floating picker
 - Review changed files with inline diff highlighting
+- Optional Pierre-backed flat diff rendering, with automatic fallback to the built-in Lua renderer
 - Exact-thread review comments in flat diff
 - Jump between diff hunks, unresolved threads, and needs-reply threads
 - File picker and unresolved-thread picker for flat diff
@@ -53,6 +54,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
   - **Classic token** ([create here](https://github.com/settings/tokens)): with `repo` scope
     - Read access to metadata
     - Read and Write access to code, issues, and pull requests
+- Optional: Node.js plus `@pierre/diffs` if you want to try the Pierre-backed flat diff renderer. The plugin works without them.
 
 ## Installation
 
@@ -93,6 +95,10 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `sync_interval` | number | `300` | How often (in seconds) to auto-sync with remote (minimum 10) *(formerly `pull_changes_interval`)* |
+| `diff_renderer.provider` | string | `"auto"` | Flat diff renderer provider: `"auto"`, `"builtin"`, or `"pierre"` |
+| `diff_renderer.timeout_ms` | number | `200` | Max time in milliseconds to wait for the optional Pierre renderer |
+| `diff_renderer.command` | array/null | `null` | Optional command override for the Pierre renderer, e.g. `["node", "/abs/path/to/pierre_render.mjs"]` |
+| `diff_renderer.inline_word_diff` | boolean | `true` | Whether the optional Pierre renderer should request inline word-diff spans |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
 | `commit_viewer.grid.rows` | number | `2` | Rows in the commit viewer diff grid |
 | `commit_viewer.grid.cols` | number | `2` | Columns in the commit viewer diff grid |
@@ -142,6 +148,47 @@ The plugin auto-detects the correct API endpoints (`https://<host>/api/v3` for R
 
 See [shortcuts_docs.md](shortcuts_docs.md) for the full shortcut reference, mode boundaries, and abbreviation meanings.
 
+### Optional Pierre flat diff renderer
+
+Raccoon always includes its built-in Lua flat diff renderer. You do not need Node.js, `@pierre/diffs`, or any renderer config for the plugin to work.
+
+The optional Pierre renderer is used only for flat diff rendering. It still draws in Neovim using extmarks, signs, and virtual lines, so commenting, navigation, sync, and file opening keep the same workflow. Commit viewer rendering is not changed by this option.
+
+By default, `diff_renderer.provider` is `"auto"`. In auto mode, raccoon tries the Pierre renderer when its bridge command can run and returns valid JSON. If Node.js is missing, `@pierre/diffs` is not installed, the command times out, or the command returns invalid JSON, raccoon silently falls back to the built-in renderer.
+
+To force the built-in renderer and skip the optional Node process entirely:
+
+```json
+{
+  "diff_renderer": {
+    "provider": "builtin"
+  }
+}
+```
+
+To explicitly use Pierre when you have installed the optional sidecar dependency:
+
+```json
+{
+  "diff_renderer": {
+    "provider": "pierre",
+    "timeout_ms": 200,
+    "inline_word_diff": true
+  }
+}
+```
+
+If Node cannot resolve `@pierre/diffs` from your plugin install location, provide a command override that points at a wrapper script or a checked-out bridge:
+
+```json
+{
+  "diff_renderer": {
+    "provider": "pierre",
+    "command": ["node", "/absolute/path/to/pierre_render.mjs"]
+  }
+}
+```
+
 ### Full config example
 
 ```json
@@ -153,6 +200,12 @@ See [shortcuts_docs.md](shortcuts_docs.md) for the full shortcut reference, mode
   "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
   "sync_interval": 120,
+  "diff_renderer": {
+    "provider": "auto",
+    "timeout_ms": 200,
+    "command": null,
+    "inline_word_diff": true
+  },
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
