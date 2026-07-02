@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Optional Pierre rendering now handles hunk-only GitHub patch strings and falls back to the built-in renderer when Pierre returns an empty render plan.
+- Optional Pierre inline word diffs now resolve Pierre's bundled `diff` dependency under pnpm installs.
 
 ## [0.13.2] - 2026-07-01
 

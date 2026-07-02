@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { stdin, stdout, stderr, exit } from "node:process";
 import { Buffer } from "node:buffer";
+import { createRequire } from "node:module";
 
 function cleanLine(value) {
   return String(value ?? "").replace(/\r?\n$/, "");
@@ -62,6 +63,25 @@ function normalizePatch(patch, filename) {
   return `diff --git a/${safeName} b/${safeName}\n--- a/${safeName}\n+++ b/${safeName}\n${patch}`;
 }
 
+async function loadDiffWordsWithSpace() {
+  try {
+    return (await import("diff")).diffWordsWithSpace;
+  } catch {
+    // pnpm keeps transitive dependencies nested, so resolve diff from Pierre's package root.
+  }
+
+  try {
+    if (typeof import.meta.resolve !== "function") {
+      return undefined;
+    }
+
+    const pierreRequire = createRequire(import.meta.resolve("@pierre/diffs"));
+    return (await import(pierreRequire.resolve("diff"))).diffWordsWithSpace;
+  } catch {
+    return undefined;
+  }
+}
+
 async function readStdin() {
   let body = "";
   for await (const chunk of stdin) {
@@ -89,11 +109,7 @@ async function main() {
 
   let diffWordsWithSpace;
   if (input.inline_word_diff !== false) {
-    try {
-      ({ diffWordsWithSpace } = await import("diff"));
-    } catch {
-      diffWordsWithSpace = undefined;
-    }
+    diffWordsWithSpace = await loadDiffWordsWithSpace();
   }
 
   let patches;
