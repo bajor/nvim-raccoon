@@ -15,6 +15,8 @@ Validation rules:
 - Unknown fields are silently ignored (e.g. legacy `github_username`)
 - Renamed keys are migrated transparently by `lua/raccoon/config_compat.lua` — see the [Migrating from older config keys](#migrating-from-older-config-keys) section at the bottom
 
+`diff_renderer` is optional. If it is omitted, raccoon still works and uses its built-in Lua renderer unless the optional Pierre renderer is available and succeeds in auto mode.
+
 ## Minimal config
 
 The smallest valid config needs just a token:
@@ -160,6 +162,94 @@ How often (in seconds) the plugin checks for new commits pushed to the PR branch
 
 The sync check compares the HEAD SHA — if nothing changed, no further API calls are made. Auto-sync is paused while commit/local viewer mode is active and resumes when you exit. In flat diff, auto-sync also skips cycles while a reply/new-thread composer contains unsent text. You can manually sync at any time with `:Raccoon sync` or the configured `shortcuts.sync` binding. Toggling between flat diff and PR commit mode preserves the last flat-diff file/thread/composer state and the last commit-viewer selection for the current PR.
 
+### `diff_renderer`
+
+Optional object controlling how raccoon renders flat diff highlights.
+
+Raccoon always includes the built-in Lua renderer. You do not need Node.js, `@pierre/diffs`, or a `diff_renderer` block for the plugin to work.
+
+The Pierre renderer is optional and affects only flat diff rendering. It still draws inside Neovim using extmarks, signs, and virtual lines. Comment creation, thread navigation, file navigation, sync, and commit viewer mode keep the same workflow.
+
+#### `diff_renderer.provider`
+
+| Type | Default |
+|------|---------|
+| string | `"auto"` |
+
+Valid values:
+
+- `"auto"`: Try the optional Pierre renderer and fall back to the built-in renderer on any failure.
+- `"builtin"`: Always use the built-in Lua renderer. This skips the optional Node process entirely.
+- `"pierre"`: Try the Pierre renderer first and fall back to the built-in renderer if Pierre fails.
+
+```json
+{
+  "diff_renderer": {
+    "provider": "builtin"
+  }
+}
+```
+
+Use `"builtin"` if you do not want raccoon to spawn Node for diff rendering.
+
+#### `diff_renderer.timeout_ms`
+
+| Type | Default |
+|------|---------|
+| number | `200` |
+
+Maximum time in milliseconds to wait for the optional Pierre renderer. If the timeout is reached, raccoon falls back to the built-in renderer for that patch.
+
+```json
+{
+  "diff_renderer": {
+    "timeout_ms": 100
+  }
+}
+```
+
+#### `diff_renderer.command`
+
+| Type | Default |
+|------|---------|
+| array or null | `null` |
+
+Command used to run the optional Pierre bridge. When unset, raccoon looks up its bundled `scripts/pierre_render.mjs` file on Neovim's runtime path and runs:
+
+```json
+["node", "<runtime path>/scripts/pierre_render.mjs"]
+```
+
+Set this only when Node cannot resolve `@pierre/diffs` from your plugin install location or when you want to run a wrapper script:
+
+```json
+{
+  "diff_renderer": {
+    "provider": "pierre",
+    "command": ["node", "/absolute/path/to/pierre_render.mjs"]
+  }
+}
+```
+
+The command must read JSON from stdin and write a render-plan JSON object to stdout. Invalid JSON, non-zero exit codes, missing executables, and missing dependencies all trigger fallback to the built-in renderer.
+
+#### `diff_renderer.inline_word_diff`
+
+| Type | Default |
+|------|---------|
+| boolean | `true` |
+
+Whether the optional Pierre bridge should request inline word-diff spans for changed lines. This setting only affects the Pierre renderer. The built-in renderer ignores it.
+
+```json
+{
+  "diff_renderer": {
+    "provider": "pierre",
+    "inline_word_diff": false
+  }
+}
+```
+
 ### `commit_viewer`
 
 Nested object controlling the commit viewer grid layout.
@@ -285,6 +375,12 @@ Partial overrides are merged with defaults — you only need to specify keys you
   "repos": ["your-username/project", "work-org/api"],
   "clone_root": "~/code/pr-reviews",
   "sync_interval": 120,
+  "diff_renderer": {
+    "provider": "auto",
+    "timeout_ms": 200,
+    "command": null,
+    "inline_word_diff": true
+  },
   "commit_viewer": {
     "grid": { "rows": 3, "cols": 2 },
     "base_commits_count": 30
