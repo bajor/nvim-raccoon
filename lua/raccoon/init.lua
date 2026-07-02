@@ -5,7 +5,12 @@ local M = {}
 
 --- Default configuration
 M.config = {
-  -- Config will be loaded from ~/.config/raccoon/config.json
+  diff_renderer = {
+    provider = "auto", -- auto | builtin | pierre
+    timeout_ms = 200,
+    command = nil,
+    inline_word_diff = true,
+  },
 }
 
 --- Setup highlight groups for diff display
@@ -32,6 +37,16 @@ local function setup_highlights()
 
   vim.api.nvim_set_hl(0, "RaccoonDeleteSign", {
     fg = "#e06c75", -- Red
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "RaccoonAddInline", {
+    underline = true,
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "RaccoonDeleteInline", {
+    undercurl = true,
     default = true,
   })
 
