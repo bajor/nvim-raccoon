@@ -54,7 +54,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
   - **Classic token** ([create here](https://github.com/settings/tokens)): with `repo` scope
     - Read access to metadata
     - Read and Write access to code, issues, and pull requests
-- Optional: Node.js plus `@pierre/diffs` if you want to try the Pierre-backed flat diff renderer. The plugin works without them.
+- Optional: Node.js plus `@pierre/diffs` if you want to try the Pierre-backed flat diff renderer. The plugin works without them. To enable this optional path, run `pnpm add @pierre/diffs` in the plugin checkout that contains `scripts/pierre_render.mjs`.
 
 ## Installation
 
@@ -153,6 +153,14 @@ See [shortcuts_docs.md](shortcuts_docs.md) for the full shortcut reference, mode
 Raccoon always includes its built-in Lua flat diff renderer. You do not need Node.js, `@pierre/diffs`, or any renderer config for the plugin to work.
 
 The optional Pierre renderer is used only for flat diff rendering. It still draws in Neovim using extmarks, signs, and virtual lines, so commenting, navigation, sync, and file opening keep the same workflow. Commit viewer rendering is not changed by this option.
+
+To install the optional Pierre parser dependency, run this from the `nvim-raccoon` plugin checkout:
+
+```sh
+pnpm add @pierre/diffs
+```
+
+For lazy.nvim, the checkout is commonly under `~/.local/share/nvim/lazy/nvim-raccoon`, but use the path where your plugin manager installed `bajor/nvim-raccoon`. If you do not install this dependency, raccoon keeps using the built-in Lua renderer.
 
 By default, `diff_renderer.provider` is `"auto"`. In auto mode, raccoon tries the Pierre renderer when its bridge command can run and returns valid JSON. If Node.js is missing, `@pierre/diffs` is not installed, the command times out, or the command returns invalid JSON, raccoon silently falls back to the built-in renderer.
 

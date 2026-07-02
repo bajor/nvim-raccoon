@@ -613,6 +613,31 @@ describe("raccoon.diff", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
+    it("falls back to builtin highlights when Pierre returns an empty render plan", function()
+      reload_diff_with_pierre({
+        is_enabled = function()
+          return true
+        end,
+        render_patch = function()
+          return {
+            version = 1,
+            reviewable = {},
+            hunks = {},
+            added = {},
+            deleted = {},
+            inline_add = {},
+          }
+        end,
+      })
+
+      local buf = create_buf({ "line 1", "new value", "line 2" })
+      diff.apply_highlights(buf, "@@ -1,2 +1,3 @@\n line 1\n+new value\n line 2", { filename = "x.lua" })
+
+      assert_builtin_fallback_marks_addition(buf)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
     it("falls back to builtin highlights when the Pierre process fails", function()
       local calls = 0
       vim.system = function()

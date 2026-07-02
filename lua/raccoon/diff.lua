@@ -54,6 +54,17 @@ local function get_pierre_plan(patch, filename)
   return nil
 end
 
+local function has_plan_visual_marks(plan)
+  if type(plan) ~= "table" then
+    return false
+  end
+  return #(plan.added or {}) > 0 or #(plan.deleted or {}) > 0 or #(plan.inline_add or {}) > 0
+end
+
+local function has_plan_reviewable_lines(plan)
+  return type(plan) == "table" and type(plan.reviewable) == "table" and next(plan.reviewable) ~= nil
+end
+
 --- Parse a unified diff hunk header
 --- Returns start_line, count for the new file (right side)
 ---@param header string Hunk header like "@@ -1,4 +1,5 @@"
@@ -162,7 +173,7 @@ function M.is_line_in_review_context(patch, target_line, filename)
   end
 
   local plan = get_pierre_plan(patch, filename)
-  if plan and type(plan.reviewable) == "table" then
+  if has_plan_reviewable_lines(plan) then
     return plan.reviewable[target_line] == true
   end
 
@@ -255,7 +266,7 @@ function M.apply_highlights(buf, patch, opts)
   end
 
   local plan = get_pierre_plan(patch, opts and opts.filename or nil)
-  if plan then
+  if has_plan_visual_marks(plan) then
     return M.apply_render_plan(buf, plan)
   end
 
@@ -475,8 +486,10 @@ local function get_current_file_diff_hunks()
         table.insert(lines, hunk.start_line)
       end
     end
-    table.sort(lines)
-    return lines
+    if #lines > 0 then
+      table.sort(lines)
+      return lines
+    end
   end
 
   local changes = M.get_changed_lines(file.patch)

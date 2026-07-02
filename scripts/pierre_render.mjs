@@ -53,6 +53,15 @@ function addedSpans(oldText, newText, lineNum, diffWordsWithSpace) {
   return spans;
 }
 
+function normalizePatch(patch, filename) {
+  if (!patch || /^diff --git /m.test(patch) || /^--- /m.test(patch) || /^\+\+\+ /m.test(patch)) {
+    return patch;
+  }
+
+  const safeName = String(filename || "file").replace(/[\r\n]/g, " ");
+  return `diff --git a/${safeName} b/${safeName}\n--- a/${safeName}\n+++ b/${safeName}\n${patch}`;
+}
+
 async function readStdin() {
   let body = "";
   for await (const chunk of stdin) {
@@ -89,7 +98,7 @@ async function main() {
 
   let patches;
   try {
-    patches = parsePatchFiles(String(input.patch || ""));
+    patches = parsePatchFiles(normalizePatch(String(input.patch || ""), input.filename));
   } catch {
     stderr.write("failed to parse patch\n");
     exit(1);

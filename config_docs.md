@@ -170,6 +170,14 @@ Raccoon always includes the built-in Lua renderer. You do not need Node.js, `@pi
 
 The Pierre renderer is optional and affects only flat diff rendering. It still draws inside Neovim using extmarks, signs, and virtual lines. Comment creation, thread navigation, file navigation, sync, and commit viewer mode keep the same workflow.
 
+To install the optional Pierre parser dependency, run this command in the `nvim-raccoon` plugin checkout that contains `scripts/pierre_render.mjs`:
+
+```sh
+pnpm add @pierre/diffs
+```
+
+For lazy.nvim, the checkout is commonly under `~/.local/share/nvim/lazy/nvim-raccoon`. If your plugin manager installed `bajor/nvim-raccoon` somewhere else, run the command in that installed directory. If you do not install this dependency, raccoon keeps using the built-in Lua renderer.
+
 #### `diff_renderer.provider`
 
 | Type | Default |
