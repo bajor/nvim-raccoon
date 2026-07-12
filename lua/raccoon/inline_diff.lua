@@ -1,0 +1,628 @@
+---@class RaccoonInlineRange
+---@field start_col integer Zero-based byte column
+---@field end_col integer End-exclusive byte column
+
+---@class RaccoonInlineRow
+---@field kind "replacement"|"addition"|"deletion"
+---@field old_index integer|nil
+---@field old_line RaccoonPatchLine|nil
+---@field old_content string|nil
+---@field old_ranges RaccoonInlineRange[]|nil
+---@field new_index integer|nil
+---@field new_line RaccoonPatchLine|nil
+---@field new_content string|nil
+---@field new_ranges RaccoonInlineRange[]|nil
+
+---@class RaccoonInlinePlan
+---@field rows RaccoonInlineRow[]
+
+local M = {}
+
+local MAX_LINE_PAIR_CELLS = 4096
+local MAX_TOKENS_PER_LINE = 256
+local MAX_TOKEN_LCS_CELLS = 16384
+local MAX_CHAR_LCS_CELLS = 16384
+local MAX_LINE_SIMILARITY_CELLS = 262144
+local MIN_LINE_SIMILARITY = 0.55
+local MIN_CHAR_REFINE_SIMILARITY = 0.50
+local SCORE_EPSILON = 0.0000001
+
+local function normalize_content(content)
+  return (content or ""):gsub("\r$", "")
+end
+
+local function is_integer(value)
+  return type(value) == "number" and value >= 0 and value == math.floor(value)
+end
+
+local function new_range(start_col, end_col)
+  assert(is_integer(start_col), "inline range start must be a non-negative integer")
+  assert(is_integer(end_col) and end_col > start_col, "inline range end must follow start")
+  return { start_col = start_col, end_col = end_col }
+end
+
+local function whole_range(content)
+  if #content == 0 then return {} end
+  return { new_range(0, #content) }
+end
+
+local function new_addition(index, line, ranges)
+  assert(line.kind == "addition", "addition row requires an addition source")
+  return {
+    kind = "addition",
+    new_index = index,
+    new_line = line,
+    new_content = normalize_content(line.content),
+    new_ranges = ranges,
+  }
+end
+
+local function new_deletion(index, line, ranges)
+  assert(line.kind == "deletion", "deletion row requires a deletion source")
+  return {
+    kind = "deletion",
+    old_index = index,
+    old_line = line,
+    old_content = normalize_content(line.content),
+    old_ranges = ranges,
+  }
+end
+
+local function new_replacement(old_index, old_line, new_index, new_line, old_ranges, new_ranges)
+  assert(old_line.kind == "deletion", "replacement old source must be a deletion")
+  assert(new_line.kind == "addition", "replacement new source must be an addition")
+  return {
+    kind = "replacement",
+    old_index = old_index,
+    old_line = old_line,
+    old_content = normalize_content(old_line.content),
+    old_ranges = old_ranges,
+    new_index = new_index,
+    new_line = new_line,
+    new_content = normalize_content(new_line.content),
+    new_ranges = new_ranges,
+  }
+end
+
+local function utf8_width(first_byte)
+  if first_byte < 0x80 then return 1 end
+  if first_byte >= 0xC2 and first_byte <= 0xDF then return 2 end
+  if first_byte >= 0xE0 and first_byte <= 0xEF then return 3 end
+  if first_byte >= 0xF0 and first_byte <= 0xF4 then return 4 end
+  return 1
+end
+
+local function is_continuation(byte)
+  return byte and byte >= 0x80 and byte <= 0xBF
+end
+
+local function split_codepoints(text, start_col, end_col)
+  local result = {}
+  local cursor = start_col
+  while cursor < end_col do
+    local first = text:byte(cursor + 1)
+    local width = utf8_width(first)
+    if cursor + width > end_col then
+      width = 1
+    else
+      for offset = 1, width - 1 do
+        if not is_continuation(text:byte(cursor + offset + 1)) then
+          width = 1
+          break
+        end
+      end
+    end
+    table.insert(result, {
+      text = text:sub(cursor + 1, cursor + width),
+      start_col = cursor,
+      end_col = cursor + width,
+    })
+    cursor = cursor + width
+  end
+  return result
+end
+
+local function is_whitespace(unit)
+  return unit.text == " " or unit.text == "\t" or unit.text == "\n"
+    or unit.text == "\f" or unit.text == "\v" or unit.text == "\r"
+end
+
+local function is_word(unit)
+  local byte = unit.text:byte(1)
+  return byte >= 0x80 or unit.text:match("^[A-Za-z0-9_]$") ~= nil
+end
+
+local function tokenize(text)
+  local units = split_codepoints(text, 0, #text)
+  local tokens = {}
+  local index = 1
+  while index <= #units do
+    local first = units[index]
+    local category = is_whitespace(first) and "whitespace" or (is_word(first) and "word" or "punctuation")
+    local last = index
+    if category ~= "punctuation" then
+      while last + 1 <= #units do
+        local next_unit = units[last + 1]
+        local next_category = is_whitespace(next_unit) and "whitespace"
+          or (is_word(next_unit) and "word" or "punctuation")
+        if next_category ~= category then break end
+        last = last + 1
+      end
+    end
+    table.insert(tokens, {
+      text = text:sub(first.start_col + 1, units[last].end_col),
+      start_col = first.start_col,
+      end_col = units[last].end_col,
+    })
+    index = last + 1
+  end
+  return tokens
+end
+
+local function lcs_pairs(left, right, equals)
+  local rows = { [1] = {} }
+  for column = 0, #right do rows[1][column + 1] = 0 end
+
+  for left_index = 1, #left do
+    rows[left_index + 1] = { [1] = 0 }
+    for right_index = 1, #right do
+      if equals(left[left_index], right[right_index]) then
+        rows[left_index + 1][right_index + 1] = rows[left_index][right_index] + 1
+      else
+        rows[left_index + 1][right_index + 1] = math.max(
+          rows[left_index][right_index + 1],
+          rows[left_index + 1][right_index]
+        )
+      end
+    end
+  end
+
+  local pairs = {}
+  local left_index, right_index = #left, #right
+  while left_index > 0 and right_index > 0 do
+    if equals(left[left_index], right[right_index])
+        and rows[left_index + 1][right_index + 1] == rows[left_index][right_index] + 1 then
+      table.insert(pairs, 1, { left_index, right_index })
+      left_index = left_index - 1
+      right_index = right_index - 1
+    elseif rows[left_index][right_index + 1] >= rows[left_index + 1][right_index] then
+      left_index = left_index - 1
+    else
+      right_index = right_index - 1
+    end
+  end
+  return pairs
+end
+
+local function merge_ranges(ranges)
+  if #ranges < 2 then return ranges end
+  table.sort(ranges, function(left, right) return left.start_col < right.start_col end)
+  local merged = { ranges[1] }
+  for index = 2, #ranges do
+    local current = ranges[index]
+    local previous = merged[#merged]
+    if current.start_col <= previous.end_col then
+      previous.end_col = math.max(previous.end_col, current.end_col)
+    else
+      table.insert(merged, current)
+    end
+  end
+  return merged
+end
+
+local function append_range(ranges, start_col, end_col)
+  if end_col > start_col then table.insert(ranges, new_range(start_col, end_col)) end
+end
+
+local function append_all(target, values)
+  for _, value in ipairs(values) do table.insert(target, value) end
+end
+
+local function refine_window(old_content, new_content, old_start, old_end, new_start, new_end)
+  local old_units = split_codepoints(old_content, old_start, old_end)
+  local new_units = split_codepoints(new_content, new_start, new_end)
+  local prefix = 0
+  while prefix < #old_units and prefix < #new_units
+      and old_units[prefix + 1].text == new_units[prefix + 1].text do
+    prefix = prefix + 1
+  end
+  local suffix = 0
+  while suffix < #old_units - prefix and suffix < #new_units - prefix
+      and old_units[#old_units - suffix].text == new_units[#new_units - suffix].text do
+    suffix = suffix + 1
+  end
+
+  local old_middle, new_middle = {}, {}
+  for index = prefix + 1, #old_units - suffix do table.insert(old_middle, old_units[index]) end
+  for index = prefix + 1, #new_units - suffix do table.insert(new_middle, new_units[index]) end
+  if #old_middle * #new_middle > MAX_CHAR_LCS_CELLS then return nil, nil end
+
+  local pairs = lcs_pairs(old_middle, new_middle, function(left, right) return left.text == right.text end)
+  local total = #old_units + #new_units
+  local similarity = total == 0 and 1 or (2 * (prefix + suffix + #pairs) / total)
+  if similarity < MIN_CHAR_REFINE_SIMILARITY then
+    local old_ranges, new_ranges = {}, {}
+    append_range(old_ranges, old_start, old_end)
+    append_range(new_ranges, new_start, new_end)
+    return old_ranges, new_ranges
+  end
+
+  local old_ranges, new_ranges = {}, {}
+  local old_cursor = prefix == 0 and old_start or old_units[prefix].end_col
+  local new_cursor = prefix == 0 and new_start or new_units[prefix].end_col
+  for _, pair in ipairs(pairs) do
+    local old_unit = old_middle[pair[1]]
+    local new_unit = new_middle[pair[2]]
+    append_range(old_ranges, old_cursor, old_unit.start_col)
+    append_range(new_ranges, new_cursor, new_unit.start_col)
+    old_cursor = old_unit.end_col
+    new_cursor = new_unit.end_col
+  end
+  local old_changed_end = suffix == 0 and old_end or old_units[#old_units - suffix + 1].start_col
+  local new_changed_end = suffix == 0 and new_end or new_units[#new_units - suffix + 1].start_col
+  append_range(old_ranges, old_cursor, old_changed_end)
+  append_range(new_ranges, new_cursor, new_changed_end)
+  return old_ranges, new_ranges
+end
+
+local function refine_pair(old_content, new_content)
+  local old_tokens = tokenize(old_content)
+  local new_tokens = tokenize(new_content)
+  if #old_tokens > MAX_TOKENS_PER_LINE or #new_tokens > MAX_TOKENS_PER_LINE
+      or #old_tokens * #new_tokens > MAX_TOKEN_LCS_CELLS then
+    return {}, {}
+  end
+
+  local token_pairs = lcs_pairs(old_tokens, new_tokens, function(left, right) return left.text == right.text end)
+  local old_ranges, new_ranges = {}, {}
+  local old_cursor, new_cursor = 0, 0
+  for _, pair in ipairs(token_pairs) do
+    local old_token = old_tokens[pair[1]]
+    local new_token = new_tokens[pair[2]]
+    local refined_old, refined_new = refine_window(
+      old_content,
+      new_content,
+      old_cursor,
+      old_token.start_col,
+      new_cursor,
+      new_token.start_col
+    )
+    if not refined_old then return {}, {} end
+    append_all(old_ranges, refined_old)
+    append_all(new_ranges, refined_new)
+    old_cursor = old_token.end_col
+    new_cursor = new_token.end_col
+  end
+
+  local refined_old, refined_new = refine_window(
+    old_content,
+    new_content,
+    old_cursor,
+    #old_content,
+    new_cursor,
+    #new_content
+  )
+  if not refined_old then return {}, {} end
+  append_all(old_ranges, refined_old)
+  append_all(new_ranges, refined_new)
+  return merge_ranges(old_ranges), merge_ranges(new_ranges)
+end
+
+local function non_whitespace_codepoints(content)
+  local result = {}
+  for _, unit in ipairs(split_codepoints(content, 0, #content)) do
+    if not is_whitespace(unit) then table.insert(result, unit) end
+  end
+  return result
+end
+
+local function line_signature(content)
+  local units = non_whitespace_codepoints(content)
+  local signature = { normalized = {}, units = units, counts = {} }
+  for _, unit in ipairs(units) do
+    table.insert(signature.normalized, unit.text)
+    signature.counts[unit.text] = (signature.counts[unit.text] or 0) + 1
+  end
+  signature.normalized = table.concat(signature.normalized)
+  return signature
+end
+
+local function line_similarity(old_signature, new_signature, remaining_cells)
+  if old_signature.normalized == new_signature.normalized then return 1, 0 end
+  local old_count, new_count = #old_signature.units, #new_signature.units
+  if old_count == 0 or new_count == 0 then return 0, 0 end
+
+  local common = 0
+  local smaller = old_count <= new_count and old_signature or new_signature
+  local larger = smaller == old_signature and new_signature or old_signature
+  for character, count in pairs(smaller.counts) do
+    common = common + math.min(count, larger.counts[character] or 0)
+  end
+  local upper_bound = 2 * common / (old_count + new_count)
+  if upper_bound < MIN_LINE_SIMILARITY then return upper_bound, 0 end
+
+  local cells = old_count * new_count
+  if cells > MAX_CHAR_LCS_CELLS or cells > remaining_cells then return nil, 0 end
+  local pairs = lcs_pairs(old_signature.units, new_signature.units, function(left, right)
+    return left.text == right.text
+  end)
+  return 2 * #pairs / (old_count + new_count), cells
+end
+
+local function better_score(candidate, current, candidate_priority, current_priority)
+  if not current then return true end
+  if candidate.score > current.score + SCORE_EPSILON then return true end
+  if current.score > candidate.score + SCORE_EPSILON then return false end
+  if candidate.pairs ~= current.pairs then return candidate.pairs > current.pairs end
+  if candidate.displacement ~= current.displacement then
+    return candidate.displacement < current.displacement
+  end
+  return candidate_priority > current_priority
+end
+
+local function pair_lines(deletions, additions, lines)
+  local old_signatures, new_signatures = {}, {}
+  for index, line_index in ipairs(deletions) do
+    old_signatures[index] = line_signature(normalize_content(lines[line_index].content))
+  end
+  for index, line_index in ipairs(additions) do
+    new_signatures[index] = line_signature(normalize_content(lines[line_index].content))
+  end
+
+  local similarities = {}
+  local remaining_cells = MAX_LINE_SIMILARITY_CELLS
+  for old_index = 1, #deletions do
+    similarities[old_index] = {}
+    for new_index = 1, #additions do
+      local similarity, used_cells = line_similarity(
+        old_signatures[old_index],
+        new_signatures[new_index],
+        remaining_cells
+      )
+      if not similarity then return nil end
+      similarities[old_index][new_index] = similarity
+      remaining_cells = remaining_cells - used_cells
+    end
+  end
+
+  local scores = { [1] = {} }
+  local actions = { [1] = {} }
+  for new_index = 0, #additions do
+    scores[1][new_index + 1] = { score = 0, pairs = 0, displacement = 0 }
+  end
+  for old_index = 1, #deletions do
+    scores[old_index + 1] = { [1] = { score = 0, pairs = 0, displacement = 0 } }
+    actions[old_index + 1] = {}
+    for new_index = 1, #additions do
+      local up = scores[old_index][new_index + 1]
+      local left = scores[old_index + 1][new_index]
+      local best, action, priority = up, "up", 1
+      if better_score(left, best, 2, priority) then
+        best, action, priority = left, "left", 2
+      end
+
+      local similarity = similarities[old_index][new_index]
+      if similarity >= MIN_LINE_SIMILARITY then
+        local previous = scores[old_index][new_index]
+        local diagonal = {
+          score = previous.score + similarity,
+          pairs = previous.pairs + 1,
+          displacement = previous.displacement + math.abs(old_index - new_index),
+        }
+        if better_score(diagonal, best, 3, priority) then
+          best, action = diagonal, "pair"
+        end
+      end
+      scores[old_index + 1][new_index + 1] = best
+      actions[old_index + 1][new_index + 1] = action
+    end
+  end
+
+  local result = {}
+  local old_index, new_index = #deletions, #additions
+  while old_index > 0 and new_index > 0 do
+    local action = actions[old_index + 1][new_index + 1]
+    if action == "pair" then
+      table.insert(result, 1, { deletions[old_index], additions[new_index] })
+      old_index = old_index - 1
+      new_index = new_index - 1
+    elseif action == "up" then
+      old_index = old_index - 1
+    else
+      new_index = new_index - 1
+    end
+  end
+  return result
+end
+
+local function subdued_rows(block, lines)
+  local rows = {}
+  for _, index in ipairs(block) do
+    local line = lines[index]
+    if line.kind == "addition" then
+      table.insert(rows, new_addition(index, line, {}))
+    else
+      table.insert(rows, new_deletion(index, line, {}))
+    end
+  end
+  return rows
+end
+
+local function plan_block(block, lines)
+  local deletions, additions = {}, {}
+  for _, index in ipairs(block) do
+    if lines[index].kind == "deletion" then
+      table.insert(deletions, index)
+    else
+      table.insert(additions, index)
+    end
+  end
+
+  if #deletions == 0 or #additions == 0 then
+    local rows = {}
+    for _, index in ipairs(block) do
+      local line = lines[index]
+      local content = normalize_content(line.content)
+      if line.kind == "addition" then
+        table.insert(rows, new_addition(index, line, whole_range(content)))
+      else
+        table.insert(rows, new_deletion(index, line, whole_range(content)))
+      end
+    end
+    return rows
+  end
+
+  if #deletions * #additions > MAX_LINE_PAIR_CELLS then return subdued_rows(block, lines) end
+  local pairs = pair_lines(deletions, additions, lines)
+  if not pairs then return subdued_rows(block, lines) end
+
+  local paired_old, paired_new, rows = {}, {}, {}
+  for _, pair in ipairs(pairs) do
+    local old_index, new_index = pair[1], pair[2]
+    paired_old[old_index] = true
+    paired_new[new_index] = true
+    local old_content = normalize_content(lines[old_index].content)
+    local new_content = normalize_content(lines[new_index].content)
+    local old_ranges, new_ranges = refine_pair(old_content, new_content)
+    table.insert(rows, new_replacement(
+      old_index,
+      lines[old_index],
+      new_index,
+      lines[new_index],
+      old_ranges,
+      new_ranges
+    ))
+  end
+  for _, index in ipairs(deletions) do
+    if not paired_old[index] then
+      local content = normalize_content(lines[index].content)
+      table.insert(rows, new_deletion(index, lines[index], whole_range(content)))
+    end
+  end
+  for _, index in ipairs(additions) do
+    if not paired_new[index] then
+      local content = normalize_content(lines[index].content)
+      table.insert(rows, new_addition(index, lines[index], whole_range(content)))
+    end
+  end
+  table.sort(rows, function(left, right)
+    return math.min(left.old_index or math.huge, left.new_index or math.huge)
+      < math.min(right.old_index or math.huge, right.new_index or math.huge)
+  end)
+  return rows
+end
+
+--- Build exact inline ranges for parsed patch lines.
+---@param lines RaccoonPatchLine[]
+---@return RaccoonInlinePlan
+function M.plan(lines)
+  assert(type(lines) == "table", "inline diff lines must be a table")
+  local plan = { rows = {} }
+  local block = {}
+  local function flush_block()
+    if #block == 0 then return end
+    for _, row in ipairs(plan_block(block, lines)) do table.insert(plan.rows, row) end
+    block = {}
+  end
+
+  for index, line in ipairs(lines) do
+    assert(type(line) == "table", "inline diff line must be a table")
+    assert(line.kind == "context" or line.kind == "addition" or line.kind == "deletion",
+      "inline diff line has an invalid kind")
+    assert(type(line.content) == "string", "inline diff line content must be a string")
+    if line.kind == "context" then
+      flush_block()
+    else
+      table.insert(block, index)
+    end
+  end
+  flush_block()
+  return plan
+end
+
+local function is_dense_array(value)
+  if type(value) ~= "table" then return false end
+  local count = 0
+  for key, _ in pairs(value) do
+    if not is_integer(key) or key < 1 then return false end
+    count = count + 1
+  end
+  return count == #value
+end
+
+local function validate_ranges(ranges, content)
+  if not is_dense_array(ranges) then return false, "ranges must be a dense array" end
+  local previous_end = 0
+  for index, range in ipairs(ranges) do
+    if type(range) ~= "table" or not is_integer(range.start_col) or not is_integer(range.end_col) then
+      return false, "range columns must be non-negative integers"
+    end
+    if range.start_col >= range.end_col or range.end_col > #content then
+      return false, "range columns are outside content"
+    end
+    if index > 1 and range.start_col < previous_end then return false, "ranges overlap" end
+    previous_end = range.end_col
+  end
+  return true
+end
+
+local function validate_side(row, side, expected_kind, lines, seen)
+  local index = row[side .. "_index"]
+  local line = row[side .. "_line"]
+  local content = row[side .. "_content"]
+  local ranges = row[side .. "_ranges"]
+  if not is_integer(index) or index < 1 or type(line) ~= "table" or line.kind ~= expected_kind then
+    return false, side .. " side does not match its row kind"
+  end
+  if type(content) ~= "string" or content ~= normalize_content(line.content) then
+    return false, side .. " content does not match its source"
+  end
+  if lines and lines[index] ~= line then return false, side .. " source index does not match input" end
+  if seen[index] then return false, "source line is represented more than once" end
+  seen[index] = true
+  return validate_ranges(ranges, content)
+end
+
+--- Validate a discriminated inline plan before rendering it.
+---@param plan RaccoonInlinePlan
+---@param lines? RaccoonPatchLine[]
+---@return boolean valid
+---@return string|nil reason
+function M.validate(plan, lines)
+  if type(plan) ~= "table" or not is_dense_array(plan.rows) then
+    return false, "plan rows must be a dense array"
+  end
+  local seen = {}
+  for _, row in ipairs(plan.rows) do
+    if type(row) ~= "table" then return false, "plan row must be a table" end
+    local valid, reason
+    if row.kind == "replacement" then
+      valid, reason = validate_side(row, "old", "deletion", lines, seen)
+      if valid then valid, reason = validate_side(row, "new", "addition", lines, seen) end
+    elseif row.kind == "addition" then
+      if row.old_index or row.old_line or row.old_content or row.old_ranges then
+        return false, "addition row cannot contain an old side"
+      end
+      valid, reason = validate_side(row, "new", "addition", lines, seen)
+    elseif row.kind == "deletion" then
+      if row.new_index or row.new_line or row.new_content or row.new_ranges then
+        return false, "deletion row cannot contain a new side"
+      end
+      valid, reason = validate_side(row, "old", "deletion", lines, seen)
+    else
+      return false, "plan row has an invalid kind"
+    end
+    if not valid then return false, reason end
+  end
+
+  if lines then
+    for index, line in ipairs(lines) do
+      if line.kind ~= "context" and not seen[index] then
+        return false, "changed source line is missing from plan"
+      end
+    end
+  end
+  return true
+end
+
+return M
