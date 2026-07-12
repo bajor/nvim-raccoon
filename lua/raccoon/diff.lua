@@ -15,7 +15,9 @@ local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
 function M.parse_hunk_header(header)
   -- Format: @@ -old_start,old_count +new_start,new_count @@
   -- Sometimes count is omitted if it's 1
-  local new_start, new_count = header:match("^@@.-+(%d+),?(%d*)%s*@@")
+  local _, _, new_start, new_count = header:match(
+    "^@@%s+%-(%d+),?(%d*)%s+%+(%d+),?(%d*)%s+@@"
+  )
   if not new_start then
     return nil, nil
   end
@@ -23,6 +25,32 @@ function M.parse_hunk_header(header)
   new_count = tonumber(new_count) or 1
   return new_start, new_count
 end
+
+--- Parse both sides of a unified diff hunk header.
+---@param header string
+---@return number|nil old_start
+---@return number|nil old_count
+---@return number|nil new_start
+---@return number|nil new_count
+local function parse_hunk_coordinates(header)
+  local old_start, old_count, new_start, new_count = header:match(
+    "^@@%s+%-(%d+),?(%d*)%s+%+(%d+),?(%d*)%s+@@"
+  )
+  if not old_start then
+    return nil, nil, nil, nil
+  end
+
+  return tonumber(old_start), tonumber(old_count) or 1, tonumber(new_start), tonumber(new_count) or 1
+end
+
+---@class RaccoonPatchLine
+---@field kind "context"|"addition"|"deletion"
+---@field type "ctx"|"add"|"del" Compatibility discriminator
+---@field content string
+---@field old_line number|nil One-based pre-image line
+---@field new_line number|nil One-based post-image line
+---@field anchor_line number Post-image coordinate used to place the rendered row
+---@field line_num number Compatibility post-image coordinate
 
 --- Parse a unified diff patch into structured hunks
 ---@param patch string The patch content
@@ -39,7 +67,8 @@ function M.parse_patch(patch)
 
   local hunks = {}
   local current_hunk = nil
-  local line_num = 0
+  local old_line = 0
+  local new_line = 0
 
   for line in normalized_patch:gmatch("(.-)\n") do
     if line:match("^@@") then
@@ -47,30 +76,61 @@ function M.parse_patch(patch)
       if current_hunk then
         table.insert(hunks, current_hunk)
       end
-      local start_line, count = M.parse_hunk_header(line)
+      local old_start, old_count, new_start, new_count = parse_hunk_coordinates(line)
       current_hunk = {
         header = line,
         lines = {},
-        start_line = start_line or 1,
-        count = count or 0,
+        old_start_line = old_start or 1,
+        old_count = old_count or 0,
+        new_start_line = new_start or 1,
+        new_count = new_count or 0,
+        start_line = new_start or 1,
+        count = new_count or 0,
         changes = {},
       }
-      line_num = (start_line or 1) - 1
+      old_line = (old_start or 1) - 1
+      new_line = (new_start or 1) - 1
     elseif current_hunk then
       if line:match("^%+") and not line:match("^%+%+%+") then
         -- Added line
-        line_num = line_num + 1
-        table.insert(current_hunk.lines, { type = "add", content = line:sub(2), line_num = line_num })
-        table.insert(current_hunk.changes, { type = "add", line_num = line_num })
+        new_line = new_line + 1
+        table.insert(current_hunk.lines, {
+          kind = "addition",
+          type = "add",
+          content = line:sub(2),
+          old_line = nil,
+          new_line = new_line,
+          anchor_line = new_line,
+          line_num = new_line,
+        })
+        table.insert(current_hunk.changes, { type = "add", line_num = new_line })
       elseif line:match("^%-") and not line:match("^%-%-%-") then
         -- Removed line (doesn't increment line number in new file)
         -- Store the content for virtual text display
-        table.insert(current_hunk.lines, { type = "del", content = line:sub(2), line_num = line_num })
-        table.insert(current_hunk.changes, { type = "del", line_num = line_num, content = line:sub(2) })
+        old_line = old_line + 1
+        table.insert(current_hunk.lines, {
+          kind = "deletion",
+          type = "del",
+          content = line:sub(2),
+          old_line = old_line,
+          new_line = nil,
+          anchor_line = new_line,
+          line_num = new_line,
+        })
+        table.insert(current_hunk.changes, { type = "del", line_num = new_line, content = line:sub(2) })
       elseif not line:match("^\\ No newline at end of file$") and (line:match("^%s") or line == "") then
         -- Context line
-        line_num = line_num + 1
-        table.insert(current_hunk.lines, { type = "ctx", content = line:sub(2), line_num = line_num })
+        old_line = old_line + 1
+        new_line = new_line + 1
+        table.insert(current_hunk.lines, {
+          kind = "context",
+          type = "ctx",
+          content = line:sub(2),
+          old_line = old_line,
+          new_line = new_line,
+          anchor_line = new_line,
+          line_num = new_line,
+        })
       end
     end
   end
@@ -90,12 +150,12 @@ function M.get_changed_lines(patch)
   local changes = { added = {}, deleted = {} }
 
   for _, hunk in ipairs(hunks) do
-    for _, change in ipairs(hunk.changes) do
-      if change.type == "add" and change.line_num then
-        table.insert(changes.added, change.line_num)
-      elseif change.type == "del" then
+    for _, line in ipairs(hunk.lines) do
+      if line.kind == "addition" and line.new_line then
+        table.insert(changes.added, line.new_line)
+      elseif line.kind == "deletion" then
         -- For deleted lines, we track the line after which they were deleted + content
-        table.insert(changes.deleted, { line_num = change.line_num, content = change.content })
+        table.insert(changes.deleted, { line_num = line.anchor_line, content = line.content })
       end
     end
   end
@@ -117,7 +177,8 @@ function M.is_line_in_review_context(patch, target_line)
   local hunks = M.parse_patch(patch)
   for _, hunk in ipairs(hunks) do
     for _, line in ipairs(hunk.lines) do
-      if line.line_num == target_line and (line.type == "add" or line.type == "ctx") then
+      local is_reviewable = line.kind == "addition" or line.kind == "context"
+      if line.new_line == target_line and is_reviewable then
         return true
       end
     end

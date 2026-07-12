@@ -121,6 +121,65 @@ describe("raccoon.diff", function()
       assert.is_true(add_found)
       assert.is_true(del_found)
     end)
+
+    it("records discriminated old, new, and anchor coordinates", function()
+      local patch = table.concat({
+        "@@ -7,3 +10,3 @@",
+        " context",
+        "-before",
+        "+after",
+        " trailing",
+      }, "\n")
+
+      local lines = diff.parse_patch(patch)[1].lines
+      assert.same({
+        kind = "context",
+        type = "ctx",
+        content = "context",
+        old_line = 7,
+        new_line = 10,
+        anchor_line = 10,
+        line_num = 10,
+      }, lines[1])
+      assert.same({
+        kind = "deletion",
+        type = "del",
+        content = "before",
+        old_line = 8,
+        new_line = nil,
+        anchor_line = 10,
+        line_num = 10,
+      }, lines[2])
+      assert.same({
+        kind = "addition",
+        type = "add",
+        content = "after",
+        old_line = nil,
+        new_line = 11,
+        anchor_line = 11,
+        line_num = 11,
+      }, lines[3])
+      assert.same({
+        kind = "context",
+        type = "ctx",
+        content = "trailing",
+        old_line = 9,
+        new_line = 12,
+        anchor_line = 12,
+        line_num = 12,
+      }, lines[4])
+    end)
+
+    it("retains hunk coordinates for both patch sides", function()
+      local hunk = diff.parse_patch("@@ -7,2 +10,4 @@\n-old\n+new")[1]
+
+      assert.equals(7, hunk.old_start_line)
+      assert.equals(2, hunk.old_count)
+      assert.equals(10, hunk.new_start_line)
+      assert.equals(4, hunk.new_count)
+      assert.equals(10, hunk.start_line)
+      assert.equals(4, hunk.count)
+    end)
   end)
 
   describe("get_changed_lines", function()
@@ -438,6 +497,15 @@ describe("raccoon.diff", function()
       assert.is_true(diff.is_line_in_review_context(patch, 3))
       assert.is_true(diff.is_line_in_review_context(patch, 4))
       assert.is_true(diff.is_line_in_review_context(patch, 5))
+    end)
+
+    it("uses post-image coordinates when old and new hunk positions differ", function()
+      local patch = "@@ -4,2 +20,3 @@\n line 20\n-old line\n+new line\n trailing"
+
+      assert.is_false(diff.is_line_in_review_context(patch, 4))
+      assert.is_true(diff.is_line_in_review_context(patch, 20))
+      assert.is_true(diff.is_line_in_review_context(patch, 21))
+      assert.is_true(diff.is_line_in_review_context(patch, 22))
     end)
   end)
 
