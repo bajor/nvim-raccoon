@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Dependency-free pure-Lua exact-span diff planning for flat review, commit viewer, and local commit viewer, including UTF-8 byte-accurate identifier, punctuation, and whitespace changes.
+- Subdued `RaccoonAdd` and `RaccoonDelete` row highlights plus stronger `RaccoonAddInline` and `RaccoonDeleteInline` exact-span highlights. All four groups remain colorscheme-overridable defaults.
+
+### Changed
+- Multi-line replacements are paired in order, with conservative line-level fallback for oversized or invalid plans. Review comment coordinates and hunk navigation remain based on parsed patch positions.
+- Flat-review deleted virtual lines retain their complete text instead of truncating after 120 bytes.
+
 ## [0.13.2] - 2026-07-01
 
 ### Fixed

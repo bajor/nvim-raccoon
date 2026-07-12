@@ -32,7 +32,7 @@ Review GitHub pull requests directly in Neovim. Browse changed files with diff h
 ## Features
 
 - Browse open PRs with a floating picker
-- Review changed files with inline diff highlighting
+- Review changed files with subdued add/delete rows and brighter exact changed spans
 - Exact-thread review comments in flat diff
 - Jump between diff hunks, unresolved threads, and needs-reply threads
 - File picker and unresolved-thread picker for flat diff
@@ -221,6 +221,8 @@ Disabled shortcuts show as `(disabled)` in `:Raccoon shortcuts`.
 
 When you open a PR, raccoon shallow-clones the PR branch into a local directory and opens the changed files with inline diff highlighting. Each PR gets its own clone at `{clone_root}/{owner}/{repo}/pr-{number}` (default root: `~/.local/share/nvim/raccoon/repos`). You can change the root with the `clone_root` config field.
 
+Flat, commit, and local diff views use the same exact-span renderer. Added and deleted rows keep their existing layout and gutter signs, while changed identifiers, punctuation, and whitespace use a brighter highlight. Flat-review deleted virtual lines retain their complete text.
+
 The per-PR directory means previous clones stay on disk — reopening a PR is fast because it fetches updates instead of cloning from scratch. Neovim's working directory changes to the clone path during a review session, so LSP, treesitter, and other tools work on the actual source code.
 
 One review session is active at a time. Opening a second PR closes the first unless a reply/new-thread composer still has unsent text.
@@ -293,7 +295,7 @@ In-mode shortcuts live under `shortcuts.commit_viewer` in config:
 | `<leader>q` | `close` | Exit maximized view |
 | `<leader>cm` | `commit_viewer.exit` | Exit commit viewer mode |
 
-Each grid cell shows one diff hunk with syntax highlighting and `+`/`-` gutter signs. The filename and cell number are shown in the winbar. A header bar displays the current commit message and page indicator. Navigation crosses seamlessly from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
+Each grid cell shows one diff hunk with syntax highlighting, exact changed spans, and `+`/`-` gutter signs. The filename and cell number are shown in the winbar. A header bar displays the current commit message and page indicator. Navigation crosses seamlessly from PR branch commits into base branch commits. If a file has multiple hunks, each gets its own cell.
 
 Commit mode is read-only. It does not show inline comments, issue notes, thread pickers, file pickers, or merge actions. Use flat diff for commenting and thread work. `description`, `sync`, and `prs` stay available there. Flat-diff-only actions show `Available only in flat diff review mode`.
 
