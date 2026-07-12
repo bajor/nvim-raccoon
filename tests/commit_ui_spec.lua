@@ -381,3 +381,168 @@ describe("raccoon.commit_ui", function()
     assert.equals(10, commit_ui.compute_effective_sidebar_width(cols, 10))
   end)
 end)
+
+describe("raccoon.commit_ui inline diff rendering", function()
+  local diff = require("raccoon.diff")
+  local git = require("raccoon.git")
+
+  local function get_marks(buf, ns_id)
+    return vim.api.nvim_buf_get_extmarks(buf, ns_id, 0, -1, { details = true })
+  end
+
+  local function find_mark(marks, row, field, value)
+    for _, mark in ipairs(marks) do
+      if mark[2] == row and mark[4][field] == value then return mark end
+    end
+    return nil
+  end
+
+  local function close_buffer(buf)
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+
+  it("renders subdued rows, signs, and exact bright ranges in grid buffers", function()
+    local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_grid")
+    local buf = vim.api.nvim_create_buf(false, true)
+    local hunk = diff.parse_patch(table.concat({
+      "@@ -1 +1 @@",
+      "-local target = old_value",
+      "+local target = new_value",
+    }, "\n"))[1]
+
+    commit_ui.render_hunk_to_buffer(ns_id, buf, hunk, "test.lua")
+
+    local marks = get_marks(buf, ns_id)
+    local deletion_row = find_mark(marks, 0, "line_hl_group", "RaccoonDelete")
+    local addition_row = find_mark(marks, 1, "line_hl_group", "RaccoonAdd")
+    local deletion_range = find_mark(marks, 0, "hl_group", "RaccoonDeleteInline")
+    local addition_range = find_mark(marks, 1, "hl_group", "RaccoonAddInline")
+    assert.is_not_nil(deletion_row)
+    assert.equals("- ", deletion_row[4].sign_text)
+    assert.is_not_nil(addition_row)
+    assert.equals("+ ", addition_row[4].sign_text)
+    assert.is_not_nil(deletion_range)
+    assert.equals(200, deletion_range[4].priority)
+    assert.is_true(deletion_range[3] < deletion_range[4].end_col)
+    assert.is_not_nil(addition_range)
+    assert.equals(200, addition_range[4].priority)
+    assert.is_true(addition_range[3] < addition_range[4].end_col)
+
+    close_buffer(buf)
+  end)
+
+  it("uses strong line highlights when inline planning falls back", function()
+    local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_fallback")
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "before", "after" })
+    local hunk = diff.parse_patch("@@ -1 +1 @@\n-before\n+after")[1]
+    local original_get_inline_ranges = diff.get_inline_ranges
+    diff.get_inline_ranges = function() return nil end
+
+    local ok, err = pcall(commit_ui.apply_diff_highlights, ns_id, buf, hunk.lines)
+    diff.get_inline_ranges = original_get_inline_ranges
+
+    if not ok then
+      close_buffer(buf)
+      error(err)
+    end
+    local marks = get_marks(buf, ns_id)
+    assert.is_not_nil(find_mark(marks, 0, "line_hl_group", "RaccoonDeleteInline"))
+    assert.is_not_nil(find_mark(marks, 1, "line_hl_group", "RaccoonAddInline"))
+    assert.is_nil(find_mark(marks, 0, "hl_group", "RaccoonDeleteInline"))
+    assert.is_nil(find_mark(marks, 1, "hl_group", "RaccoonAddInline"))
+
+    close_buffer(buf)
+  end)
+
+  it("keeps preview planning separated by hunk and clears stale marks", function()
+    local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_preview")
+    local buf = vim.api.nvim_create_buf(false, true)
+    local state = {
+      grid_bufs = { buf },
+      grid_wins = {},
+      commit_files = { ["test.lua"] = true },
+      preview_generation = 0,
+    }
+    local original_show_commit_file = git.show_commit_file
+    local patch = table.concat({
+      "@@ -1 +1,0 @@",
+      "-local target = old_value",
+      "@@ -10,0 +10 @@",
+      "+local target = new_value",
+    }, "\n")
+    git.show_commit_file = function(_, _, _, callback) callback(patch, nil) end
+
+    commit_ui.render_file_preview(state, {
+      ns_id = ns_id,
+      repo_path = "/tmp/repo",
+      sha = "abc123",
+      filename = "test.lua",
+      is_working_dir = false,
+    })
+
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.same({ "local target = old_value", "local target = new_value" }, lines)
+    local marks = get_marks(buf, ns_id)
+    local deletion_range = find_mark(marks, 0, "hl_group", "RaccoonDeleteInline")
+    local addition_range = find_mark(marks, 1, "hl_group", "RaccoonAddInline")
+    assert.equals(0, deletion_range[3])
+    assert.equals(#lines[1], deletion_range[4].end_col)
+    assert.equals(0, addition_range[3])
+    assert.equals(#lines[2], addition_range[4].end_col)
+
+    git.show_commit_file = function(_, _, _, callback) callback(nil, "missing") end
+    commit_ui.render_file_preview(state, {
+      ns_id = ns_id,
+      repo_path = "/tmp/repo",
+      sha = "abc123",
+      filename = "test.lua",
+      is_working_dir = false,
+    })
+    assert.equals(0, #get_marks(buf, ns_id))
+
+    git.show_commit_file = original_show_commit_file
+    close_buffer(buf)
+  end)
+
+  it("renders maximize spans and clears them when working changes disappear", function()
+    local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_maximize")
+    local state = { grid_rows = 1, grid_cols = 1 }
+    local original_show_commit_file = git.show_commit_file
+    local original_diff_working_dir_file = git.diff_working_dir_file
+    local patch = "@@ -1 +1 @@\n-local value = before\n+local value = after"
+    git.show_commit_file = function(_, _, _, callback) callback(patch, nil) end
+
+    commit_ui.open_maximize({
+      ns_id = ns_id,
+      repo_path = "/tmp/repo",
+      sha = "abc123",
+      filename = "test.lua",
+      commit_message = "change value",
+      generation = 1,
+      get_generation = function() return 1 end,
+      state = state,
+      is_working_dir = false,
+    })
+
+    assert.is_true(vim.api.nvim_buf_is_valid(state.maximize_buf))
+    local marks = get_marks(state.maximize_buf, ns_id)
+    assert.is_not_nil(find_mark(marks, 0, "hl_group", "RaccoonDeleteInline"))
+    assert.is_not_nil(find_mark(marks, 1, "hl_group", "RaccoonAddInline"))
+
+    state.maximize_workdir_opts = {
+      ns_id = ns_id,
+      repo_path = "/tmp/repo",
+      filename = "test.lua",
+    }
+    git.diff_working_dir_file = function(_, _, callback) callback("", nil) end
+    commit_ui.refresh_maximize(state)
+    assert.equals(0, #get_marks(state.maximize_buf, ns_id))
+
+    git.show_commit_file = original_show_commit_file
+    git.diff_working_dir_file = original_diff_working_dir_file
+    commit_ui.close_win_pair(state, "maximize_win", "maximize_buf")
+  end)
+end)

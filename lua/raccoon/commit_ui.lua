@@ -381,23 +381,82 @@ end
 --- Apply add/del diff highlights to buffer lines
 ---@param ns_id number Namespace ID for extmarks
 ---@param buf number Buffer ID
----@param line_list table[] Array of {type, content} entries
-function M.apply_diff_highlights(ns_id, buf, line_list)
-  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+---@param line_list RaccoonPatchLine[] Parsed patch lines from one hunk
+---@param opts? {line_offset?:number, clear?:boolean}
+function M.apply_diff_highlights(ns_id, buf, line_list, opts)
+  opts = opts or {}
+  local line_offset = opts.line_offset or 0
+  if opts.clear ~= false then
+    vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+  end
+
+  local inline_ranges = diff.get_inline_ranges(line_list)
   for idx, line_data in ipairs(line_list) do
-    if line_data.type == "add" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonAdd",
+    local row = line_offset + idx - 1
+    local is_addition = line_data.kind == "addition" or line_data.type == "add"
+    local is_deletion = line_data.kind == "deletion" or line_data.type == "del"
+    local inline = inline_ranges and inline_ranges[idx] or nil
+    if is_addition then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, 0, {
+        line_hl_group = inline and "RaccoonAdd" or "RaccoonAddInline",
         sign_text = "+",
         sign_hl_group = "RaccoonAddSign",
       })
-    elseif line_data.type == "del" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, idx - 1, 0, {
-        line_hl_group = "RaccoonDelete",
+      if inline then
+        for _, range in ipairs(inline.ranges) do
+          pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, range.start_col, {
+            end_col = range.end_col,
+            hl_group = "RaccoonAddInline",
+            priority = 200,
+          })
+        end
+      end
+    elseif is_deletion then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, 0, {
+        line_hl_group = inline and "RaccoonDelete" or "RaccoonDeleteInline",
         sign_text = "-",
         sign_hl_group = "RaccoonDeleteSign",
       })
+      if inline then
+        for _, range in ipairs(inline.ranges) do
+          pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, range.start_col, {
+            end_col = range.end_col,
+            hl_group = "RaccoonDeleteInline",
+            priority = 200,
+          })
+        end
+      end
     end
+  end
+end
+
+--- Flatten parsed hunks while retaining each hunk's planning boundary.
+---@param hunks table[]
+---@return string[] lines
+---@return table[] groups Array of {lines=RaccoonPatchLine[], line_offset=number}
+local function flatten_hunks(hunks)
+  local lines = {}
+  local groups = {}
+  for _, hunk in ipairs(hunks) do
+    table.insert(groups, { lines = hunk.lines, line_offset = #lines })
+    for _, line_data in ipairs(hunk.lines) do
+      table.insert(lines, line_data.content or "")
+    end
+  end
+  return lines, groups
+end
+
+--- Highlight flattened hunks without allowing replacements to cross hunk boundaries.
+---@param ns_id number
+---@param buf number
+---@param groups table[]
+local function apply_hunk_highlights(ns_id, buf, groups)
+  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+  for _, group in ipairs(groups) do
+    M.apply_diff_highlights(ns_id, buf, group.lines, {
+      line_offset = group.line_offset,
+      clear = false,
+    })
   end
 end
 
@@ -903,31 +962,24 @@ function M.render_file_preview(s, opts)
       if s.preview_generation ~= gen then return end
       if not vim.api.nvim_buf_is_valid(buf) then return end
       if err or not patch or patch == "" then
-        M._set_preview_empty(buf, win, opts.filename, "  No diff available")
+        M._set_preview_empty(buf, win, opts.filename, "  No diff available", opts.ns_id)
         return
       end
       local hunks = diff.parse_patch(patch)
       if #hunks == 0 then
-        M._set_preview_empty(buf, win, opts.filename, "  No changes")
+        M._set_preview_empty(buf, win, opts.filename, "  No changes", opts.ns_id)
         return
       end
-      local lines = {}
-      local hl_lines = {}
-      for _, hunk in ipairs(hunks) do
-        for _, line_data in ipairs(hunk.lines) do
-          table.insert(lines, line_data.content or "")
-          table.insert(hl_lines, { type = line_data.type })
-        end
-      end
+      local lines, groups = flatten_hunks(hunks)
       finalize_preview(buf, win, opts.filename, lines)
-      M.apply_diff_highlights(opts.ns_id, buf, hl_lines)
+      apply_hunk_highlights(opts.ns_id, buf, groups)
     end)
   else
     git.show_file_content(opts.repo_path, opts.sha, opts.filename, function(lines, err)
       if s.preview_generation ~= gen then return end
       if not vim.api.nvim_buf_is_valid(buf) then return end
       if err or not lines then
-        M._set_preview_empty(buf, win, opts.filename, "  Cannot read file")
+        M._set_preview_empty(buf, win, opts.filename, "  Cannot read file", opts.ns_id)
         return
       end
       finalize_preview(buf, win, opts.filename, lines)
@@ -966,8 +1018,10 @@ end
 ---@param win number|nil Window ID
 ---@param filename string File name for winbar
 ---@param msg string Message to display
-function M._set_preview_empty(buf, win, filename, msg)
+---@param ns_id? number Namespace ID to clear
+function M._set_preview_empty(buf, win, filename, msg, ns_id)
   if not vim.api.nvim_buf_is_valid(buf) then return end
+  if ns_id then vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1) end
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "", msg })
   vim.bo[buf].modifiable = false
@@ -996,22 +1050,19 @@ function M.open_maximize(opts)
     local hunks = diff.parse_patch(patch)
     if #hunks == 0 then return end
 
-    local lines = {}
-    local hl_lines = {}
-    for _, hunk in ipairs(hunks) do
-      for _, line_data in ipairs(hunk.lines) do
-        table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
-      end
-    end
+    local lines, groups = flatten_hunks(hunks)
 
     -- Find the start of each change group (consecutive add/del lines)
     local change_starts = {}
-    for i, hl in ipairs(hl_lines) do
-      local is_change = hl.type == "add" or hl.type == "del"
-      local prev_is_change = i > 1 and (hl_lines[i - 1].type == "add" or hl_lines[i - 1].type == "del")
-      if is_change and not prev_is_change then
-        table.insert(change_starts, i)
+    local flat_index = 0
+    local previous_type = nil
+    for _, group in ipairs(groups) do
+      for _, line_data in ipairs(group.lines) do
+        flat_index = flat_index + 1
+        local is_change = line_data.type == "add" or line_data.type == "del"
+        local prev_is_change = previous_type == "add" or previous_type == "del"
+        if is_change and not prev_is_change then table.insert(change_starts, flat_index) end
+        previous_type = line_data.type
       end
     end
 
@@ -1060,7 +1111,7 @@ function M.open_maximize(opts)
       opts.state.maximize_workdir_opts = nil
     end
 
-    M.apply_diff_highlights(opts.ns_id, buf, hl_lines)
+    apply_hunk_highlights(opts.ns_id, buf, groups)
 
     local shortcuts = config.load_shortcuts()
     local close_hint = popup_ui().popup_hint_text({
@@ -1250,20 +1301,19 @@ function M.refresh_maximize(s)
       vim.bo[buf].modifiable = true
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
       vim.bo[buf].modifiable = false
+      vim.api.nvim_buf_clear_namespace(buf, mopts.ns_id, 0, -1)
       return
     end
 
     local hunks = diff.parse_patch(patch)
-    if #hunks == 0 then return end
-
-    local lines = {}
-    local hl_lines = {}
-    for _, hunk in ipairs(hunks) do
-      for _, line_data in ipairs(hunk.lines) do
-        table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
-      end
+    if #hunks == 0 then
+      vim.bo[buf].modifiable = true
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+      vim.bo[buf].modifiable = false
+      vim.api.nvim_buf_clear_namespace(buf, mopts.ns_id, 0, -1)
+      return
     end
+    local lines, groups = flatten_hunks(hunks)
 
     local cursor = vim.api.nvim_win_get_cursor(win)
 
@@ -1271,7 +1321,7 @@ function M.refresh_maximize(s)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
 
-    M.apply_diff_highlights(mopts.ns_id, buf, hl_lines)
+    apply_hunk_highlights(mopts.ns_id, buf, groups)
 
     -- Restore cursor, clamped to new line count
     local max_line = vim.api.nvim_buf_line_count(buf)
@@ -1856,7 +1906,13 @@ function M._preview_file_at_cursor(s, opts)
     M.render_filetree(s)
     local buf = s.grid_bufs and s.grid_bufs[1]
     if buf and vim.api.nvim_buf_is_valid(buf) then
-      M._set_preview_empty(buf, s.grid_wins and s.grid_wins[1], "(no file)", "  No file at cursor")
+      M._set_preview_empty(
+        buf,
+        s.grid_wins and s.grid_wins[1],
+        "(no file)",
+        "  No file at cursor",
+        opts.ns_id
+      )
     end
     return
   end

@@ -2,10 +2,58 @@
 ---Diff parsing and display functionality
 local M = {}
 
+local inline_diff = require("raccoon.inline_diff")
 local state = require("raccoon.state")
+local inline_diff_warning_shown = false
 
 --- Namespace for diff highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
+
+local function normalize_content(content)
+  return (content or ""):gsub("\r$", "")
+end
+
+local function warn_inline_diff_fallback()
+  if inline_diff_warning_shown then return end
+  inline_diff_warning_shown = true
+  vim.notify("Inline diff planning failed; using line-level highlights", vim.log.levels.WARN)
+end
+
+--- Safely plan inline ranges, with one fallback warning per Neovim session.
+---@param lines RaccoonPatchLine[]
+---@return RaccoonInlinePlan|nil
+function M.plan_inline(lines)
+  local plan_ok, plan = pcall(inline_diff.plan, lines)
+  if plan_ok then
+    local validate_ok, valid = pcall(inline_diff.validate, plan, lines)
+    if validate_ok and valid then return plan end
+  end
+  warn_inline_diff_fallback()
+  return nil
+end
+
+--- Convert a validated plan into source-indexed rendering data.
+---@param lines RaccoonPatchLine[]
+---@return table<integer, {content:string, ranges:RaccoonInlineRange[]}>|nil
+function M.get_inline_ranges(lines)
+  local plan = M.plan_inline(lines)
+  if not plan then return nil end
+  local result = {}
+  for _, row in ipairs(plan.rows) do
+    if row.old_index then
+      result[row.old_index] = { content = row.old_content, ranges = row.old_ranges }
+    end
+    if row.new_index then
+      result[row.new_index] = { content = row.new_content, ranges = row.new_ranges }
+    end
+  end
+  return result
+end
+
+--- Test helper for the session-scoped warning guard.
+function M._reset_inline_diff_warning()
+  inline_diff_warning_shown = false
+end
 
 --- Parse a unified diff hunk header
 --- Returns start_line, count for the new file (right side)
@@ -202,49 +250,80 @@ function M.apply_highlights(buf, patch)
     return
   end
 
-  local changes = M.get_changed_lines(patch)
+  local hunks = M.parse_patch(patch)
   local line_count = vim.api.nvim_buf_line_count(buf)
+  local additions = {}
+  local grouped_deletions = {}
 
-  -- Apply green highlight to added lines
-  for _, line_num in ipairs(changes.added) do
-    local line_idx = line_num - 1
-    if line_idx >= 0 and line_idx < line_count then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
+  for _, hunk in ipairs(hunks) do
+    local inline_ranges = M.get_inline_ranges(hunk.lines)
+    for index, line in ipairs(hunk.lines) do
+      if line.kind == "addition" then
+        table.insert(additions, {
+          line_num = line.new_line,
+          inline = inline_ranges and inline_ranges[index] or nil,
+        })
+      elseif line.kind == "deletion" and line.anchor_line >= 0 then
+        if not grouped_deletions[line.anchor_line] then grouped_deletions[line.anchor_line] = {} end
+        table.insert(grouped_deletions[line.anchor_line], {
+          content = inline_ranges and inline_ranges[index].content or normalize_content(line.content),
+          ranges = inline_ranges and inline_ranges[index].ranges or nil,
+        })
+      end
     end
   end
 
-  -- For deleted lines, show virtual text with red background
-  -- Group consecutive deletions together
-  local grouped_deletions = {}
-  for _, del in ipairs(changes.deleted) do
-    local line_idx = del.line_num
-    if line_idx >= 0 then
-      if not grouped_deletions[line_idx] then
-        grouped_deletions[line_idx] = {}
+  -- Apply green highlight to added lines.
+  for _, addition in ipairs(additions) do
+    local line_idx = addition.line_num - 1
+    if line_idx >= 0 and line_idx < line_count then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
+        line_hl_group = addition.inline and "RaccoonAdd" or "RaccoonAddInline",
+        sign_text = "+",
+        sign_hl_group = "RaccoonAddSign",
+      })
+      if addition.inline then
+        for _, range in ipairs(addition.inline.ranges) do
+          pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, range.start_col, {
+            end_col = range.end_col,
+            hl_group = "RaccoonAddInline",
+            priority = 200,
+          })
+        end
       end
-      table.insert(grouped_deletions[line_idx], del.content or "")
     end
   end
 
   -- Display grouped deleted lines as virtual text
-  for line_idx, contents in pairs(grouped_deletions) do
+  for line_idx, deletions in pairs(grouped_deletions) do
     -- Ensure line_idx is within buffer bounds
     local target_line = math.min(line_idx, line_count - 1)
     if target_line >= 0 then
       -- Create virtual lines for deleted content
       local virt_lines = {}
-      for _, content in ipairs(contents) do
-        local display_content = "- " .. (content or "")
-        -- Truncate if too long
-        if #display_content > 120 then
-          display_content = display_content:sub(1, 117) .. "..."
+      for _, deletion in ipairs(deletions) do
+        local chunks = {}
+        if not deletion.ranges then
+          table.insert(chunks, { "- " .. deletion.content .. string.rep(" ", 300), "RaccoonDeleteInline" })
+        else
+          table.insert(chunks, { "- ", "RaccoonDelete" })
+          local cursor = 0
+          for _, range in ipairs(deletion.ranges) do
+            if range.start_col > cursor then
+              table.insert(chunks, { deletion.content:sub(cursor + 1, range.start_col), "RaccoonDelete" })
+            end
+            table.insert(chunks, {
+              deletion.content:sub(range.start_col + 1, range.end_col),
+              "RaccoonDeleteInline",
+            })
+            cursor = range.end_col
+          end
+          if cursor < #deletion.content then
+            table.insert(chunks, { deletion.content:sub(cursor + 1), "RaccoonDelete" })
+          end
+          table.insert(chunks, { string.rep(" ", 300), "RaccoonDelete" })
         end
-        local pad = string.rep(" ", 300)
-        table.insert(virt_lines, { { display_content .. pad, "RaccoonDelete" } })
+        table.insert(virt_lines, chunks)
       end
 
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target_line, 0, {

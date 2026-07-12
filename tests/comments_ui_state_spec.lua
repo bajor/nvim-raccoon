@@ -466,6 +466,7 @@ describe("raccoon.comments UI state restore", function()
       rest_called = true
       assert.equals("lua/a.lua", opts.path)
       assert.equals(2, opts.line)
+      assert.equals("RIGHT", opts.side)
       callback({ id = 55 }, nil)
     end
     open.sync = function()

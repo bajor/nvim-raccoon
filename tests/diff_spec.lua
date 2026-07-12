@@ -1,4 +1,5 @@
 local diff = require("raccoon.diff")
+local inline_diff = require("raccoon.inline_diff")
 local state = require("raccoon.state")
 
 describe("raccoon.diff", function()
@@ -310,6 +311,7 @@ describe("raccoon.diff", function()
 
   describe("next_diff and prev_diff", function()
     local original_notify
+    local test_buf
 
     before_each(function()
       original_notify = vim.notify
@@ -318,7 +320,25 @@ describe("raccoon.diff", function()
 
     after_each(function()
       vim.notify = original_notify
+      if test_buf and vim.api.nvim_buf_is_valid(test_buf) then
+        vim.api.nvim_buf_delete(test_buf, { force = true })
+      end
     end)
+
+    local function activate_session_with_addition_and_deletion()
+      state.start({ owner = "owner", repo = "repo", number = 1 })
+      state.set_files({ {
+        filename = "test.lua",
+        patch = "@@ -2,0 +3,1 @@\n+added\n@@ -7,1 +8,0 @@\n-deleted",
+      } })
+
+      test_buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(test_buf, 0, -1, false, {
+        "line 1", "line 2", "added", "line 3", "line 4",
+        "line 5", "line 6", "line 8", "line 9",
+      })
+      vim.api.nvim_set_current_buf(test_buf)
+    end
 
     it("next_diff returns false when no session", function()
       assert.is_false(diff.next_diff())
@@ -326,6 +346,26 @@ describe("raccoon.diff", function()
 
     it("prev_diff returns false when no session", function()
       assert.is_false(diff.prev_diff())
+    end)
+
+    it("next_diff uses the addition new line and deletion post-image anchor", function()
+      activate_session_with_addition_and_deletion()
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+      assert.is_true(diff.next_diff())
+      assert.equals(3, vim.api.nvim_win_get_cursor(0)[1])
+      assert.is_true(diff.next_diff())
+      assert.equals(7, vim.api.nvim_win_get_cursor(0)[1])
+    end)
+
+    it("prev_diff uses the deletion post-image anchor and addition new line", function()
+      activate_session_with_addition_and_deletion()
+      vim.api.nvim_win_set_cursor(0, { 9, 0 })
+
+      assert.is_true(diff.prev_diff())
+      assert.equals(7, vim.api.nvim_win_get_cursor(0)[1])
+      assert.is_true(diff.prev_diff())
+      assert.equals(3, vim.api.nvim_win_get_cursor(0)[1])
     end)
   end)
 
@@ -539,6 +579,95 @@ describe("raccoon.diff", function()
       assert.is_number(ns)
 
       vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("renders subdued rows, exact spans, and unchanged signs", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "local total_size = 1", "unchanged" })
+      local patch = table.concat({
+        "@@ -1,2 +1,2 @@",
+        "-local total_count = 1",
+        "+local total_size = 1",
+        " unchanged",
+      }, "\n")
+
+      diff.apply_highlights(buf, patch)
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+      local add_row, add_inline, delete_row
+      for _, mark in ipairs(marks) do
+        local details = mark[4]
+        if details.sign_text == "+ " then add_row = details end
+        if details.hl_group == "RaccoonAddInline" then
+          add_inline = { row = mark[2], col = mark[3], details = details }
+        end
+        if details.sign_text == "- " then delete_row = details end
+      end
+
+      assert.equals("RaccoonAdd", add_row.line_hl_group)
+      assert.equals("RaccoonAddSign", add_row.sign_hl_group)
+      assert.same({ row = 0, col = 12 }, { row = add_inline.row, col = add_inline.col })
+      assert.equals(16, add_inline.details.end_col)
+      assert.equals(200, add_inline.details.priority)
+      assert.equals("RaccoonDeleteSign", delete_row.sign_hl_group)
+      assert.is_true(delete_row.virt_lines_above)
+      local delete_chunks = delete_row.virt_lines[1]
+      assert.equals("RaccoonDelete", delete_chunks[1][2])
+      assert.equals("RaccoonDeleteInline", delete_chunks[3][2])
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("keeps complete deleted virtual text without an ellipsis", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "remaining" })
+      local deleted = string.rep("long-content-", 20)
+      local patch = "@@ -1,2 +1,1 @@\n-" .. deleted .. "\n remaining"
+
+      diff.apply_highlights(buf, patch)
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+      local rendered
+      for _, mark in ipairs(marks) do
+        if mark[4].virt_lines then
+          local chunks = mark[4].virt_lines[1]
+          local parts = {}
+          for _, chunk in ipairs(chunks) do table.insert(parts, chunk[1]) end
+          rendered = table.concat(parts)
+        end
+      end
+      assert.equals("- " .. deleted .. string.rep(" ", 300), rendered)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("falls back once to strong line highlights for an invalid plan", function()
+      local original_plan = inline_diff.plan
+      local original_notify = vim.notify
+      local notifications = 0
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "added" })
+      inline_diff.plan = function() return { rows = { { kind = "invalid" } } } end
+      vim.notify = function() notifications = notifications + 1 end
+      diff._reset_inline_diff_warning()
+
+      local ok, err = pcall(function()
+        diff.apply_highlights(buf, "@@ -0,0 +1 @@\n+added")
+        diff.apply_highlights(buf, "@@ -0,0 +1 @@\n+added")
+        local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+        local row_group
+        for _, mark in ipairs(marks) do
+          if mark[4].sign_text == "+ " then row_group = mark[4].line_hl_group end
+        end
+        assert.equals("RaccoonAddInline", row_group)
+        assert.equals(1, notifications)
+      end)
+
+      inline_diff.plan = original_plan
+      vim.notify = original_notify
+      diff._reset_inline_diff_warning()
+      vim.api.nvim_buf_delete(buf, { force = true })
+      if not ok then error(err) end
     end)
   end)
 
