@@ -221,7 +221,7 @@ Disabled shortcuts show as `(disabled)` in `:Raccoon shortcuts`.
 
 When you open a PR, raccoon shallow-clones the PR branch into a local directory and opens the changed files with inline diff highlighting. Each PR gets its own clone at `{clone_root}/{owner}/{repo}/pr-{number}` (default root: `~/.local/share/nvim/raccoon/repos`). You can change the root with the `clone_root` config field.
 
-Flat, commit, and local diff views use the same exact-span renderer. Added and deleted rows keep their existing layout and gutter signs, while changed identifiers, punctuation, and whitespace use a brighter highlight. Flat-review deleted virtual lines retain their complete text.
+Flat, commit, and local diff views use the same exact-span renderer. Added and deleted rows keep their existing layout and gutter signs, while changed identifiers, punctuation, and whitespace use a brighter highlight. The renderer spends up to 500 milliseconds per complete file or visible grid page, so faster hardware can analyze larger changes. If that deadline or a hard safety limit is reached, the entire view uses the stronger whole-line diff highlights instead of showing partial exact spans. Flat-review deleted virtual lines retain their complete text.
 
 The per-PR directory means previous clones stay on disk — reopening a PR is fast because it fetches updates instead of cloning from scratch. Neovim's working directory changes to the clone path during a review session, so LSP, treesitter, and other tools work on the actual source code.
 

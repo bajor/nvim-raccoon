@@ -457,7 +457,7 @@ describe("raccoon.commit_ui inline diff rendering", function()
     close_buffer(buf)
   end)
 
-  it("keeps preview planning separated by hunk and clears stale marks", function()
+  it("batches preview planning without crossing hunk boundaries and clears stale marks", function()
     local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_preview")
     local buf = vim.api.nvim_create_buf(false, true)
     local state = {
@@ -507,11 +507,107 @@ describe("raccoon.commit_ui inline diff rendering", function()
     close_buffer(buf)
   end)
 
+  it("falls back for the whole preview when batch planning fails", function()
+    local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_preview_fallback")
+    local buf = vim.api.nvim_create_buf(false, true)
+    local state = {
+      grid_bufs = { buf },
+      grid_wins = {},
+      commit_files = { ["test.lua"] = true },
+      preview_generation = 0,
+    }
+    local original_show_commit_file = git.show_commit_file
+    local original_get_inline_range_groups = diff.get_inline_range_groups
+    local patch = table.concat({
+      "@@ -1 +1 @@",
+      "-old one",
+      "+new one",
+      "@@ -10 +10 @@",
+      "-old two",
+      "+new two",
+    }, "\n")
+    git.show_commit_file = function(_, _, _, callback) callback(patch, nil) end
+    diff.get_inline_range_groups = function(line_groups)
+      assert.equals(2, #line_groups)
+      return nil
+    end
+
+    local ok, err = pcall(commit_ui.render_file_preview, state, {
+      ns_id = ns_id,
+      repo_path = "/tmp/repo",
+      sha = "abc123",
+      filename = "test.lua",
+      is_working_dir = false,
+    })
+
+    diff.get_inline_range_groups = original_get_inline_range_groups
+    git.show_commit_file = original_show_commit_file
+    if not ok then
+      close_buffer(buf)
+      error(err)
+    end
+    local marks = get_marks(buf, ns_id)
+    assert.is_not_nil(find_mark(marks, 0, "line_hl_group", "RaccoonDeleteInline"))
+    assert.is_not_nil(find_mark(marks, 1, "line_hl_group", "RaccoonAddInline"))
+    assert.is_not_nil(find_mark(marks, 2, "line_hl_group", "RaccoonDeleteInline"))
+    assert.is_not_nil(find_mark(marks, 3, "line_hl_group", "RaccoonAddInline"))
+    assert.is_nil(find_mark(marks, 0, "hl_group", "RaccoonDeleteInline"))
+    assert.is_nil(find_mark(marks, 3, "hl_group", "RaccoonAddInline"))
+
+    close_buffer(buf)
+  end)
+
+  it("falls back across every visible commit and local grid cell", function()
+    local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_grid_fallback")
+    local bufs = {
+      vim.api.nvim_create_buf(false, true),
+      vim.api.nvim_create_buf(false, true),
+    }
+    local first = diff.parse_patch("@@ -1 +1 @@\n-old one\n+new one")[1]
+    local second = diff.parse_patch("@@ -1 +1 @@\n-old two\n+new two")[1]
+    local state = {
+      grid_rows = 1,
+      grid_cols = 2,
+      current_page = 1,
+      grid_bufs = bufs,
+      grid_wins = {},
+      all_hunks = {
+        { hunk = first, filename = "one.lua" },
+        { hunk = second, filename = "two.lua" },
+      },
+    }
+    local original_get_inline_range_groups = diff.get_inline_range_groups
+    local planning_calls = 0
+    diff.get_inline_range_groups = function(line_groups)
+      planning_calls = planning_calls + 1
+      assert.equals(2, #line_groups)
+      return nil
+    end
+
+    local ok, err = pcall(commit_ui.render_grid_page, state, ns_id, function() return nil end, 1)
+    diff.get_inline_range_groups = original_get_inline_range_groups
+
+    if not ok then
+      for _, buf in ipairs(bufs) do close_buffer(buf) end
+      error(err)
+    end
+    assert.equals(1, planning_calls)
+    for _, buf in ipairs(bufs) do
+      local marks = get_marks(buf, ns_id)
+      assert.is_not_nil(find_mark(marks, 0, "line_hl_group", "RaccoonDeleteInline"))
+      assert.is_not_nil(find_mark(marks, 1, "line_hl_group", "RaccoonAddInline"))
+      assert.is_nil(find_mark(marks, 0, "hl_group", "RaccoonDeleteInline"))
+      assert.is_nil(find_mark(marks, 1, "hl_group", "RaccoonAddInline"))
+      close_buffer(buf)
+    end
+  end)
+
   it("renders maximize spans and clears them when working changes disappear", function()
     local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_maximize")
     local state = { grid_rows = 1, grid_cols = 1 }
     local original_show_commit_file = git.show_commit_file
     local original_diff_working_dir_file = git.diff_working_dir_file
+    local original_get_inline_range_groups = diff.get_inline_range_groups
     local patch = "@@ -1 +1 @@\n-local value = before\n+local value = after"
     git.show_commit_file = function(_, _, _, callback) callback(patch, nil) end
 
@@ -537,12 +633,34 @@ describe("raccoon.commit_ui inline diff rendering", function()
       repo_path = "/tmp/repo",
       filename = "test.lua",
     }
+    diff.get_inline_range_groups = function(line_groups)
+      assert.equals(2, #line_groups)
+      return nil
+    end
+    git.diff_working_dir_file = function(_, _, callback)
+      callback(table.concat({
+        "@@ -1 +1 @@",
+        "-old one",
+        "+new one",
+        "@@ -10 +10 @@",
+        "-old two",
+        "+new two",
+      }, "\n"), nil)
+    end
+    commit_ui.refresh_maximize(state)
+    marks = get_marks(state.maximize_buf, ns_id)
+    assert.is_not_nil(find_mark(marks, 0, "line_hl_group", "RaccoonDeleteInline"))
+    assert.is_not_nil(find_mark(marks, 3, "line_hl_group", "RaccoonAddInline"))
+    assert.is_nil(find_mark(marks, 0, "hl_group", "RaccoonDeleteInline"))
+    assert.is_nil(find_mark(marks, 3, "hl_group", "RaccoonAddInline"))
+
     git.diff_working_dir_file = function(_, _, callback) callback("", nil) end
     commit_ui.refresh_maximize(state)
     assert.equals(0, #get_marks(state.maximize_buf, ns_id))
 
     git.show_commit_file = original_show_commit_file
     git.diff_working_dir_file = original_diff_working_dir_file
+    diff.get_inline_range_groups = original_get_inline_range_groups
     commit_ui.close_win_pair(state, "maximize_win", "maximize_buf")
   end)
 end)

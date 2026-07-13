@@ -355,12 +355,7 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
   end
 end
 
---- Render a diff hunk into a buffer with syntax highlighting and diff signs
----@param ns_id number Namespace ID for extmarks
----@param buf number Buffer ID
----@param hunk table Parsed hunk from diff.parse_patch
----@param filename string File name (for filetype detection)
-function M.render_hunk_to_buffer(ns_id, buf, hunk, filename)
+local function populate_hunk_buffer(buf, hunk, filename)
   local lines = {}
   for _, line_data in ipairs(hunk.lines) do
     table.insert(lines, line_data.content or "")
@@ -374,23 +369,24 @@ function M.render_hunk_to_buffer(ns_id, buf, hunk, filename)
   if ft then
     vim.bo[buf].filetype = ft
   end
+end
 
+--- Render a diff hunk into a buffer with syntax highlighting and diff signs
+---@param ns_id number Namespace ID for extmarks
+---@param buf number Buffer ID
+---@param hunk table Parsed hunk from diff.parse_patch
+---@param filename string File name (for filetype detection)
+function M.render_hunk_to_buffer(ns_id, buf, hunk, filename)
+  populate_hunk_buffer(buf, hunk, filename)
   M.apply_diff_highlights(ns_id, buf, hunk.lines)
 end
 
---- Apply add/del diff highlights to buffer lines
----@param ns_id number Namespace ID for extmarks
----@param buf number Buffer ID
----@param line_list RaccoonPatchLine[] Parsed patch lines from one hunk
----@param opts? {line_offset?:number, clear?:boolean}
-function M.apply_diff_highlights(ns_id, buf, line_list, opts)
+local function apply_diff_highlights_with_ranges(ns_id, buf, line_list, opts, inline_ranges)
   opts = opts or {}
   local line_offset = opts.line_offset or 0
   if opts.clear ~= false then
     vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
   end
-
-  local inline_ranges = diff.get_inline_ranges(line_list)
   for idx, line_data in ipairs(line_list) do
     local row = line_offset + idx - 1
     local is_addition = line_data.kind == "addition" or line_data.type == "add"
@@ -430,6 +426,16 @@ function M.apply_diff_highlights(ns_id, buf, line_list, opts)
   end
 end
 
+--- Apply add/del diff highlights to buffer lines
+---@param ns_id number Namespace ID for extmarks
+---@param buf number Buffer ID
+---@param line_list RaccoonPatchLine[] Parsed patch lines from one hunk
+---@param opts? {line_offset?:number, clear?:boolean}
+function M.apply_diff_highlights(ns_id, buf, line_list, opts)
+  local inline_ranges = diff.get_inline_ranges(line_list)
+  apply_diff_highlights_with_ranges(ns_id, buf, line_list, opts, inline_ranges)
+end
+
 --- Flatten parsed hunks while retaining each hunk's planning boundary.
 ---@param hunks table[]
 ---@return string[] lines
@@ -452,11 +458,14 @@ end
 ---@param groups table[]
 local function apply_hunk_highlights(ns_id, buf, groups)
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-  for _, group in ipairs(groups) do
-    M.apply_diff_highlights(ns_id, buf, group.lines, {
+  local line_groups = {}
+  for index, group in ipairs(groups) do line_groups[index] = group.lines end
+  local inline_range_groups = diff.get_inline_range_groups(line_groups)
+  for index, group in ipairs(groups) do
+    apply_diff_highlights_with_ranges(ns_id, buf, group.lines, {
       line_offset = group.line_offset,
       clear = false,
-    })
+    }, inline_range_groups and inline_range_groups[index] or nil)
   end
 end
 
@@ -1620,6 +1629,17 @@ end
 function M.render_grid_page(s, ns_id, get_commit, pages)
   local cells = s.grid_rows * s.grid_cols
   local start_idx = (s.current_page - 1) * cells + 1
+  local line_groups = {}
+  local range_group_by_cell = {}
+
+  for index, buf in ipairs(s.grid_bufs) do
+    local hunk_data = s.all_hunks[start_idx + index - 1]
+    if vim.api.nvim_buf_is_valid(buf) and hunk_data then
+      table.insert(line_groups, hunk_data.hunk.lines)
+      range_group_by_cell[index] = #line_groups
+    end
+  end
+  local inline_range_groups = diff.get_inline_range_groups(line_groups)
 
   for i, buf in ipairs(s.grid_bufs) do
     if not vim.api.nvim_buf_is_valid(buf) then
@@ -1631,7 +1651,10 @@ function M.render_grid_page(s, ns_id, get_commit, pages)
 
     local win = s.grid_wins[i]
     if hunk_data then
-      M.render_hunk_to_buffer(ns_id, buf, hunk_data.hunk, hunk_data.filename)
+      populate_hunk_buffer(buf, hunk_data.hunk, hunk_data.filename)
+      local range_group = range_group_by_cell[i]
+      local inline_ranges = inline_range_groups and inline_range_groups[range_group] or nil
+      apply_diff_highlights_with_ranges(ns_id, buf, hunk_data.hunk.lines, nil, inline_ranges)
       if win and vim.api.nvim_win_is_valid(win) then
         vim.wo[win].winbar = " " .. hunk_data.filename .. "%=#" .. i
       end

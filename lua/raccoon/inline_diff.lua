@@ -18,14 +18,58 @@
 
 local M = {}
 
-local MAX_LINE_PAIR_CELLS = 4096
-local MAX_TOKENS_PER_LINE = 256
-local MAX_TOKEN_LCS_CELLS = 16384
-local MAX_CHAR_LCS_CELLS = 16384
-local MAX_LINE_SIMILARITY_CELLS = 262144
+local MAX_LINE_PAIR_CELLS = 16384
+local MAX_TOKENS_PER_LINE = 2048
+local MAX_TOKEN_LCS_CELLS = 4194304
+local MAX_CHAR_LCS_CELLS = 4194304
+local INLINE_DIFF_TIMEOUT_MS = 500
+local DEADLINE_CHECK_STEPS = 1024
+local LCS_DIRECTION_BASE = 4
+local LCS_DIRECTIONS_PER_WORD = 16
+local LCS_DIRECTION_UP = 1
+local LCS_DIRECTION_LEFT = 2
+local LCS_DIRECTION_MATCH = 3
 local MIN_LINE_SIMILARITY = 0.55
 local MIN_CHAR_REFINE_SIMILARITY = 0.50
 local SCORE_EPSILON = 0.0000001
+local PLANNING_ABORTED = {}
+local LCS_DIRECTION_POWERS = {}
+for index = 0, LCS_DIRECTIONS_PER_WORD - 1 do
+  LCS_DIRECTION_POWERS[index + 1] = LCS_DIRECTION_BASE ^ index
+end
+
+local function default_clock_ms()
+  return os.clock() * 1000
+end
+
+local function new_deadline(options)
+  options = options or {}
+  local timeout_ms = options.timeout_ms or INLINE_DIFF_TIMEOUT_MS
+  local clock = options.clock or default_clock_ms
+  assert(type(timeout_ms) == "number" and timeout_ms > 0, "inline diff timeout must be positive")
+  assert(type(clock) == "function", "inline diff clock must be a function")
+  return {
+    clock = clock,
+    started_at = clock(),
+    timeout_ms = timeout_ms,
+    steps = 0,
+  }
+end
+
+local function abort_planning()
+  error(PLANNING_ABORTED, 0)
+end
+
+local function check_deadline(deadline, force)
+  deadline.steps = force and DEADLINE_CHECK_STEPS or deadline.steps + 1
+  if deadline.steps < DEADLINE_CHECK_STEPS then return end
+  deadline.steps = 0
+  if deadline.clock() - deadline.started_at >= deadline.timeout_ms then abort_planning() end
+end
+
+local function check_cell_limit(left_count, right_count, limit)
+  if left_count > 0 and right_count > math.floor(limit / left_count) then abort_planning() end
+end
 
 local function normalize_content(content)
   return (content or ""):gsub("\r$", "")
@@ -96,10 +140,11 @@ local function is_continuation(byte)
   return byte and byte >= 0x80 and byte <= 0xBF
 end
 
-local function split_codepoints(text, start_col, end_col)
+local function split_codepoints(text, start_col, end_col, deadline)
   local result = {}
   local cursor = start_col
   while cursor < end_col do
+    check_deadline(deadline)
     local first = text:byte(cursor + 1)
     local width = utf8_width(first)
     if cursor + width > end_col then
@@ -132,16 +177,18 @@ local function is_word(unit)
   return byte >= 0x80 or unit.text:match("^[A-Za-z0-9_]$") ~= nil
 end
 
-local function tokenize(text)
-  local units = split_codepoints(text, 0, #text)
+local function tokenize(text, deadline)
+  local units = split_codepoints(text, 0, #text, deadline)
   local tokens = {}
   local index = 1
   while index <= #units do
+    check_deadline(deadline)
     local first = units[index]
     local category = is_whitespace(first) and "whitespace" or (is_word(first) and "word" or "punctuation")
     local last = index
     if category ~= "punctuation" then
       while last + 1 <= #units do
+        check_deadline(deadline)
         local next_unit = units[last + 1]
         local next_category = is_whitespace(next_unit) and "whitespace"
           or (is_word(next_unit) and "word" or "punctuation")
@@ -159,39 +206,80 @@ local function tokenize(text)
   return tokens
 end
 
-local function lcs_pairs(left, right, equals)
-  local rows = { [1] = {} }
-  for column = 0, #right do rows[1][column + 1] = 0 end
+local function lcs_pairs(left, right, equals, deadline)
+  check_deadline(deadline)
+  local previous, current = {}, {}
+  for column = 0, #right do previous[column + 1] = 0 end
+  -- Scores use rolling rows; only packed two-bit directions are retained for backtracking.
+  local directions = {}
+  local direction_word, direction_offset = 0, 0
 
   for left_index = 1, #left do
-    rows[left_index + 1] = { [1] = 0 }
+    check_deadline(deadline)
+    current[1] = 0
     for right_index = 1, #right do
+      local direction
       if equals(left[left_index], right[right_index]) then
-        rows[left_index + 1][right_index + 1] = rows[left_index][right_index] + 1
+        current[right_index + 1] = previous[right_index] + 1
+        direction = LCS_DIRECTION_MATCH
+      elseif previous[right_index + 1] >= current[right_index] then
+        current[right_index + 1] = previous[right_index + 1]
+        direction = LCS_DIRECTION_UP
       else
-        rows[left_index + 1][right_index + 1] = math.max(
-          rows[left_index][right_index + 1],
-          rows[left_index + 1][right_index]
-        )
+        current[right_index + 1] = current[right_index]
+        direction = LCS_DIRECTION_LEFT
+      end
+      direction_word = direction_word + direction * LCS_DIRECTION_POWERS[direction_offset + 1]
+      direction_offset = direction_offset + 1
+      if direction_offset == LCS_DIRECTIONS_PER_WORD then
+        table.insert(directions, direction_word)
+        direction_word, direction_offset = 0, 0
       end
     end
+    previous, current = current, previous
   end
+  if direction_offset > 0 then table.insert(directions, direction_word) end
 
   local pairs = {}
   local left_index, right_index = #left, #right
   while left_index > 0 and right_index > 0 do
-    if equals(left[left_index], right[right_index])
-        and rows[left_index + 1][right_index + 1] == rows[left_index][right_index] + 1 then
+    check_deadline(deadline)
+    local cell_index = (left_index - 1) * #right + right_index - 1
+    local word_index = math.floor(cell_index / LCS_DIRECTIONS_PER_WORD) + 1
+    local offset = cell_index % LCS_DIRECTIONS_PER_WORD
+    local direction = math.floor(
+      directions[word_index] / LCS_DIRECTION_POWERS[offset + 1]
+    ) % LCS_DIRECTION_BASE
+    if direction == LCS_DIRECTION_MATCH then
       table.insert(pairs, 1, { left_index, right_index })
       left_index = left_index - 1
       right_index = right_index - 1
-    elseif rows[left_index][right_index + 1] >= rows[left_index + 1][right_index] then
+    elseif direction == LCS_DIRECTION_UP then
       left_index = left_index - 1
     else
       right_index = right_index - 1
     end
   end
   return pairs
+end
+
+local function lcs_length(left, right, equals, deadline)
+  check_deadline(deadline)
+  local previous, current = {}, {}
+  for right_index = 0, #right do previous[right_index + 1] = 0 end
+  for left_index = 1, #left do
+    check_deadline(deadline)
+    current[1] = 0
+    for right_index = 1, #right do
+      if equals(left[left_index], right[right_index]) then
+        current[right_index + 1] = previous[right_index] + 1
+      else
+        current[right_index + 1] = math.max(previous[right_index + 1], current[right_index])
+      end
+    end
+    previous, current = current, previous
+  end
+  return previous[#right + 1]
 end
 
 local function merge_ranges(ranges)
@@ -218,26 +306,34 @@ local function append_all(target, values)
   for _, value in ipairs(values) do table.insert(target, value) end
 end
 
-local function refine_window(old_content, new_content, old_start, old_end, new_start, new_end)
-  local old_units = split_codepoints(old_content, old_start, old_end)
-  local new_units = split_codepoints(new_content, new_start, new_end)
+local function refine_window(old_content, new_content, old_start, old_end, new_start, new_end, deadline)
+  local old_units = split_codepoints(old_content, old_start, old_end, deadline)
+  local new_units = split_codepoints(new_content, new_start, new_end, deadline)
   local prefix = 0
   while prefix < #old_units and prefix < #new_units
       and old_units[prefix + 1].text == new_units[prefix + 1].text do
+    check_deadline(deadline)
     prefix = prefix + 1
   end
   local suffix = 0
   while suffix < #old_units - prefix and suffix < #new_units - prefix
       and old_units[#old_units - suffix].text == new_units[#new_units - suffix].text do
+    check_deadline(deadline)
     suffix = suffix + 1
   end
 
   local old_middle, new_middle = {}, {}
-  for index = prefix + 1, #old_units - suffix do table.insert(old_middle, old_units[index]) end
-  for index = prefix + 1, #new_units - suffix do table.insert(new_middle, new_units[index]) end
-  if #old_middle * #new_middle > MAX_CHAR_LCS_CELLS then return nil, nil end
+  for index = prefix + 1, #old_units - suffix do
+    check_deadline(deadline)
+    table.insert(old_middle, old_units[index])
+  end
+  for index = prefix + 1, #new_units - suffix do
+    check_deadline(deadline)
+    table.insert(new_middle, new_units[index])
+  end
+  check_cell_limit(#old_middle, #new_middle, MAX_CHAR_LCS_CELLS)
 
-  local pairs = lcs_pairs(old_middle, new_middle, function(left, right) return left.text == right.text end)
+  local pairs = lcs_pairs(old_middle, new_middle, function(left, right) return left.text == right.text end, deadline)
   local total = #old_units + #new_units
   local similarity = total == 0 and 1 or (2 * (prefix + suffix + #pairs) / total)
   if similarity < MIN_CHAR_REFINE_SIMILARITY then
@@ -265,15 +361,15 @@ local function refine_window(old_content, new_content, old_start, old_end, new_s
   return old_ranges, new_ranges
 end
 
-local function refine_pair(old_content, new_content)
-  local old_tokens = tokenize(old_content)
-  local new_tokens = tokenize(new_content)
-  if #old_tokens > MAX_TOKENS_PER_LINE or #new_tokens > MAX_TOKENS_PER_LINE
-      or #old_tokens * #new_tokens > MAX_TOKEN_LCS_CELLS then
-    return {}, {}
-  end
+local function refine_pair(old_content, new_content, deadline)
+  local old_tokens = tokenize(old_content, deadline)
+  local new_tokens = tokenize(new_content, deadline)
+  if #old_tokens > MAX_TOKENS_PER_LINE or #new_tokens > MAX_TOKENS_PER_LINE then abort_planning() end
+  check_cell_limit(#old_tokens, #new_tokens, MAX_TOKEN_LCS_CELLS)
 
-  local token_pairs = lcs_pairs(old_tokens, new_tokens, function(left, right) return left.text == right.text end)
+  local token_pairs = lcs_pairs(old_tokens, new_tokens, function(left, right)
+    return left.text == right.text
+  end, deadline)
   local old_ranges, new_ranges = {}, {}
   local old_cursor, new_cursor = 0, 0
   for _, pair in ipairs(token_pairs) do
@@ -285,9 +381,9 @@ local function refine_pair(old_content, new_content)
       old_cursor,
       old_token.start_col,
       new_cursor,
-      new_token.start_col
+      new_token.start_col,
+      deadline
     )
-    if not refined_old then return {}, {} end
     append_all(old_ranges, refined_old)
     append_all(new_ranges, refined_new)
     old_cursor = old_token.end_col
@@ -300,26 +396,28 @@ local function refine_pair(old_content, new_content)
     old_cursor,
     #old_content,
     new_cursor,
-    #new_content
+    #new_content,
+    deadline
   )
-  if not refined_old then return {}, {} end
   append_all(old_ranges, refined_old)
   append_all(new_ranges, refined_new)
   return merge_ranges(old_ranges), merge_ranges(new_ranges)
 end
 
-local function non_whitespace_codepoints(content)
+local function non_whitespace_codepoints(content, deadline)
   local result = {}
-  for _, unit in ipairs(split_codepoints(content, 0, #content)) do
+  for _, unit in ipairs(split_codepoints(content, 0, #content, deadline)) do
+    check_deadline(deadline)
     if not is_whitespace(unit) then table.insert(result, unit) end
   end
   return result
 end
 
-local function line_signature(content)
-  local units = non_whitespace_codepoints(content)
+local function line_signature(content, deadline)
+  local units = non_whitespace_codepoints(content, deadline)
   local signature = { normalized = {}, units = units, counts = {} }
   for _, unit in ipairs(units) do
+    check_deadline(deadline)
     table.insert(signature.normalized, unit.text)
     signature.counts[unit.text] = (signature.counts[unit.text] or 0) + 1
   end
@@ -327,26 +425,26 @@ local function line_signature(content)
   return signature
 end
 
-local function line_similarity(old_signature, new_signature, remaining_cells)
-  if old_signature.normalized == new_signature.normalized then return 1, 0 end
+local function line_similarity(old_signature, new_signature, deadline)
+  if old_signature.normalized == new_signature.normalized then return 1 end
   local old_count, new_count = #old_signature.units, #new_signature.units
-  if old_count == 0 or new_count == 0 then return 0, 0 end
+  if old_count == 0 or new_count == 0 then return 0 end
 
   local common = 0
   local smaller = old_count <= new_count and old_signature or new_signature
   local larger = smaller == old_signature and new_signature or old_signature
   for character, count in pairs(smaller.counts) do
+    check_deadline(deadline)
     common = common + math.min(count, larger.counts[character] or 0)
   end
   local upper_bound = 2 * common / (old_count + new_count)
-  if upper_bound < MIN_LINE_SIMILARITY then return upper_bound, 0 end
+  if upper_bound < MIN_LINE_SIMILARITY then return upper_bound end
 
-  local cells = old_count * new_count
-  if cells > MAX_CHAR_LCS_CELLS or cells > remaining_cells then return nil, 0 end
-  local pairs = lcs_pairs(old_signature.units, new_signature.units, function(left, right)
+  check_cell_limit(old_count, new_count, MAX_CHAR_LCS_CELLS)
+  local length = lcs_length(old_signature.units, new_signature.units, function(left, right)
     return left.text == right.text
-  end)
-  return 2 * #pairs / (old_count + new_count), cells
+  end, deadline)
+  return 2 * length / (old_count + new_count)
 end
 
 local function better_score(candidate, current, candidate_priority, current_priority)
@@ -360,28 +458,25 @@ local function better_score(candidate, current, candidate_priority, current_prio
   return candidate_priority > current_priority
 end
 
-local function pair_lines(deletions, additions, lines)
+local function pair_lines(deletions, additions, lines, deadline)
   local old_signatures, new_signatures = {}, {}
   for index, line_index in ipairs(deletions) do
-    old_signatures[index] = line_signature(normalize_content(lines[line_index].content))
+    old_signatures[index] = line_signature(normalize_content(lines[line_index].content), deadline)
   end
   for index, line_index in ipairs(additions) do
-    new_signatures[index] = line_signature(normalize_content(lines[line_index].content))
+    new_signatures[index] = line_signature(normalize_content(lines[line_index].content), deadline)
   end
 
   local similarities = {}
-  local remaining_cells = MAX_LINE_SIMILARITY_CELLS
   for old_index = 1, #deletions do
     similarities[old_index] = {}
     for new_index = 1, #additions do
-      local similarity, used_cells = line_similarity(
+      local similarity = line_similarity(
         old_signatures[old_index],
         new_signatures[new_index],
-        remaining_cells
+        deadline
       )
-      if not similarity then return nil end
       similarities[old_index][new_index] = similarity
-      remaining_cells = remaining_cells - used_cells
     end
   end
 
@@ -391,6 +486,7 @@ local function pair_lines(deletions, additions, lines)
     scores[1][new_index + 1] = { score = 0, pairs = 0, displacement = 0 }
   end
   for old_index = 1, #deletions do
+    check_deadline(deadline, true)
     scores[old_index + 1] = { [1] = { score = 0, pairs = 0, displacement = 0 } }
     actions[old_index + 1] = {}
     for new_index = 1, #additions do
@@ -421,6 +517,7 @@ local function pair_lines(deletions, additions, lines)
   local result = {}
   local old_index, new_index = #deletions, #additions
   while old_index > 0 and new_index > 0 do
+    check_deadline(deadline)
     local action = actions[old_index + 1][new_index + 1]
     if action == "pair" then
       table.insert(result, 1, { deletions[old_index], additions[new_index] })
@@ -435,22 +532,10 @@ local function pair_lines(deletions, additions, lines)
   return result
 end
 
-local function subdued_rows(block, lines)
-  local rows = {}
-  for _, index in ipairs(block) do
-    local line = lines[index]
-    if line.kind == "addition" then
-      table.insert(rows, new_addition(index, line, {}))
-    else
-      table.insert(rows, new_deletion(index, line, {}))
-    end
-  end
-  return rows
-end
-
-local function plan_block(block, lines)
+local function plan_block(block, lines, deadline)
   local deletions, additions = {}, {}
   for _, index in ipairs(block) do
+    check_deadline(deadline)
     if lines[index].kind == "deletion" then
       table.insert(deletions, index)
     else
@@ -461,6 +546,7 @@ local function plan_block(block, lines)
   if #deletions == 0 or #additions == 0 then
     local rows = {}
     for _, index in ipairs(block) do
+      check_deadline(deadline)
       local line = lines[index]
       local content = normalize_content(line.content)
       if line.kind == "addition" then
@@ -472,18 +558,18 @@ local function plan_block(block, lines)
     return rows
   end
 
-  if #deletions * #additions > MAX_LINE_PAIR_CELLS then return subdued_rows(block, lines) end
-  local pairs = pair_lines(deletions, additions, lines)
-  if not pairs then return subdued_rows(block, lines) end
+  check_cell_limit(#deletions, #additions, MAX_LINE_PAIR_CELLS)
+  local pairs = pair_lines(deletions, additions, lines, deadline)
 
   local paired_old, paired_new, rows = {}, {}, {}
   for _, pair in ipairs(pairs) do
+    check_deadline(deadline)
     local old_index, new_index = pair[1], pair[2]
     paired_old[old_index] = true
     paired_new[new_index] = true
     local old_content = normalize_content(lines[old_index].content)
     local new_content = normalize_content(lines[new_index].content)
-    local old_ranges, new_ranges = refine_pair(old_content, new_content)
+    local old_ranges, new_ranges = refine_pair(old_content, new_content, deadline)
     table.insert(rows, new_replacement(
       old_index,
       lines[old_index],
@@ -494,12 +580,14 @@ local function plan_block(block, lines)
     ))
   end
   for _, index in ipairs(deletions) do
+    check_deadline(deadline)
     if not paired_old[index] then
       local content = normalize_content(lines[index].content)
       table.insert(rows, new_deletion(index, lines[index], whole_range(content)))
     end
   end
   for _, index in ipairs(additions) do
+    check_deadline(deadline)
     if not paired_new[index] then
       local content = normalize_content(lines[index].content)
       table.insert(rows, new_addition(index, lines[index], whole_range(content)))
@@ -512,20 +600,19 @@ local function plan_block(block, lines)
   return rows
 end
 
---- Build exact inline ranges for parsed patch lines.
----@param lines RaccoonPatchLine[]
----@return RaccoonInlinePlan
-function M.plan(lines)
+local function plan_lines(lines, deadline)
   assert(type(lines) == "table", "inline diff lines must be a table")
+  check_deadline(deadline, true)
   local plan = { rows = {} }
   local block = {}
   local function flush_block()
     if #block == 0 then return end
-    for _, row in ipairs(plan_block(block, lines)) do table.insert(plan.rows, row) end
+    for _, row in ipairs(plan_block(block, lines, deadline)) do table.insert(plan.rows, row) end
     block = {}
   end
 
   for index, line in ipairs(lines) do
+    check_deadline(deadline)
     assert(type(line) == "table", "inline diff line must be a table")
     assert(line.kind == "context" or line.kind == "addition" or line.kind == "deletion",
       "inline diff line has an invalid kind")
@@ -538,6 +625,43 @@ function M.plan(lines)
   end
   flush_block()
   return plan
+end
+
+local function run_planning(callback)
+  local ok, result = pcall(callback)
+  if ok then return result end
+  if result == PLANNING_ABORTED then return nil, "inline diff budget exceeded" end
+  error(result, 0)
+end
+
+--- Build exact inline ranges for multiple independent line groups under one deadline.
+---@param line_groups RaccoonPatchLine[][]
+---@param options? {timeout_ms?:number, clock?:fun():number}
+---@return RaccoonInlinePlan[]|nil plans
+---@return string|nil reason
+function M.plan_many(line_groups, options)
+  assert(type(line_groups) == "table", "inline diff line groups must be a table")
+  local deadline = new_deadline(options)
+  return run_planning(function()
+    local plans = {}
+    for index, lines in ipairs(line_groups) do
+      check_deadline(deadline, true)
+      plans[index] = plan_lines(lines, deadline)
+    end
+    check_deadline(deadline, true)
+    return plans
+  end)
+end
+
+--- Build exact inline ranges for parsed patch lines.
+---@param lines RaccoonPatchLine[]
+---@param options? {timeout_ms?:number, clock?:fun():number}
+---@return RaccoonInlinePlan|nil plan
+---@return string|nil reason
+function M.plan(lines, options)
+  assert(type(lines) == "table", "inline diff lines must be a table")
+  local plans, reason = M.plan_many({ lines }, options)
+  return plans and plans[1] or nil, reason
 end
 
 local function is_dense_array(value)

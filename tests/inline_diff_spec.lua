@@ -27,8 +27,8 @@ local function find_row(plan, kind, old_index, new_index)
   return nil
 end
 
-local function plan_and_validate(lines)
-  local plan = inline_diff.plan(lines)
+local function plan_and_validate(lines, options)
+  local plan = inline_diff.plan(lines, options)
   local valid, reason = inline_diff.validate(plan, lines)
   assert.is_true(valid, reason)
   assert.is_nil(reason)
@@ -204,21 +204,22 @@ describe("raccoon.inline_diff", function()
     assert.same({ range(9, 10) }, row.new_ranges)
   end)
 
-  it("uses subdued-only rows when a mixed block exceeds the line-pair cell cap", function()
+  it("plans large replacement blocks that fit the raised line-pair cap", function()
     local lines = {}
     for index = 1, 65 do table.insert(lines, deletion("local value_" .. index .. " = old")) end
     for index = 1, 64 do table.insert(lines, addition("local value_" .. index .. " = new")) end
 
-    local plan = plan_and_validate(lines)
-
-    assert.equals(129, #plan.rows)
+    local plan = plan_and_validate(lines, { clock = function() return 0 end })
+    local replacements = 0
     for _, row in ipairs(plan.rows) do
-      assert.is_not_equal("replacement", row.kind)
-      assert.same({}, row.old_ranges or row.new_ranges)
+      if row.kind == "replacement" then replacements = replacements + 1 end
     end
+
+    assert.equals(65, #plan.rows)
+    assert.equals(64, replacements)
   end)
 
-  it("uses subdued rows when aggregate line-similarity work reaches its cap", function()
+  it("does not reject exact pairing because of a fixed aggregate cell budget", function()
     local lines = {}
     for index = 1, 64 do
       table.insert(lines, deletion(string.format("local old_value_%02d = source_%02d", index, index)))
@@ -227,23 +228,33 @@ describe("raccoon.inline_diff", function()
       table.insert(lines, addition(string.format("local new_value_%02d = source_%02d", index, index)))
     end
 
-    local plan = plan_and_validate(lines)
+    local plan = plan_and_validate(lines, { clock = function() return 0 end })
 
-    assert.equals(128, #plan.rows)
+    assert.equals(64, #plan.rows)
     for _, row in ipairs(plan.rows) do
-      assert.is_not_equal("replacement", row.kind)
-      assert.same({}, row.old_ranges or row.new_ranges)
+      assert.equals("replacement", row.kind)
     end
   end)
 
-  it("uses a subdued replacement when a line exceeds the token-count cap", function()
+  it("returns no plan when a mixed block exceeds the hard line-pair cap", function()
+    local lines = {}
+    for index = 1, 129 do table.insert(lines, deletion("old " .. index)) end
+    for index = 1, 128 do table.insert(lines, addition("new " .. index)) end
+
+    local plan, reason = inline_diff.plan(lines, { clock = function() return 0 end })
+
+    assert.is_nil(plan)
+    assert.matches("budget exceeded", reason)
+  end)
+
+  it("returns no plan when a line exceeds the hard token-count cap", function()
     local old_parts, new_parts = {}, {}
-    for index = 1, 129 do
+    for index = 1, 1025 do
       table.insert(old_parts, "item")
       table.insert(new_parts, "item")
-      if index < 129 then
+      if index < 1025 then
         table.insert(old_parts, " ")
-        table.insert(new_parts, index == 65 and "\t" or " ")
+        table.insert(new_parts, index == 513 and "\t" or " ")
       end
     end
     local lines = {
@@ -251,21 +262,20 @@ describe("raccoon.inline_diff", function()
       addition(table.concat(new_parts)),
     }
 
-    local row = plan_and_validate(lines).rows[1]
+    local plan, reason = inline_diff.plan(lines, { clock = function() return 0 end })
 
-    assert.equals("replacement", row.kind)
-    assert.same({}, row.old_ranges)
-    assert.same({}, row.new_ranges)
+    assert.is_nil(plan)
+    assert.matches("budget exceeded", reason)
   end)
 
-  it("uses a subdued replacement when token LCS cells exceed the cap", function()
+  it("refines token-heavy lines that exceeded the previous safety cap", function()
     local old_parts, new_parts = {}, {}
-    for index = 1, 65 do
+    for index = 1, 300 do
       table.insert(old_parts, "item")
       table.insert(new_parts, "item")
-      if index < 65 then
+      if index < 300 then
         table.insert(old_parts, " ")
-        table.insert(new_parts, index == 33 and "\t" or " ")
+        table.insert(new_parts, index == 150 and "\t" or " ")
       end
     end
     local lines = {
@@ -273,24 +283,73 @@ describe("raccoon.inline_diff", function()
       addition(table.concat(new_parts)),
     }
 
-    local row = plan_and_validate(lines).rows[1]
+    local row = plan_and_validate(lines, { clock = function() return 0 end }).rows[1]
 
     assert.equals("replacement", row.kind)
-    assert.same({}, row.old_ranges)
-    assert.same({}, row.new_ranges)
+    assert.equals(1, #row.old_ranges)
+    assert.equals(1, row.old_ranges[1].end_col - row.old_ranges[1].start_col)
+    assert.equals(1, #row.new_ranges)
+    assert.equals(1, row.new_ranges[1].end_col - row.new_ranges[1].start_col)
   end)
 
-  it("uses a subdued replacement when character refinement cells exceed the cap", function()
+  it("refines long identifiers that exceeded the previous character cap", function()
+    local changed_col = #"prefix_" + 300
     local lines = {
-      deletion("prefix" .. string.rep(" ", 129) .. "suffix"),
-      addition("prefix" .. string.rep("\t", 129) .. "suffix"),
+      deletion("prefix_" .. string.rep("a", 300) .. "x_suffix"),
+      addition("prefix_" .. string.rep("a", 300) .. "y_suffix"),
     }
 
-    local row = plan_and_validate(lines).rows[1]
+    local row = plan_and_validate(lines, { clock = function() return 0 end }).rows[1]
 
     assert.equals("replacement", row.kind)
-    assert.same({}, row.old_ranges)
-    assert.same({}, row.new_ranges)
+    assert.same({ range(changed_col, changed_col + 1) }, row.old_ranges)
+    assert.same({ range(changed_col, changed_col + 1) }, row.new_ranges)
+  end)
+
+  it("returns no plan when character LCS memory would exceed its hard cap", function()
+    local lines = {
+      deletion(string.rep("a", 2049)),
+      addition(string.rep("a", 2048) .. "b"),
+    }
+
+    local plan, reason = inline_diff.plan(lines, { clock = function() return 0 end })
+
+    assert.is_nil(plan)
+    assert.matches("budget exceeded", reason)
+  end)
+
+  it("interrupts exact LCS work when the injected deadline expires", function()
+    local clock_calls = 0
+    local function advancing_clock()
+      clock_calls = clock_calls + 1
+      return clock_calls >= 4 and 501 or 0
+    end
+    local lines = {
+      deletion(string.rep("a", 1024) .. "b"),
+      addition(string.rep("a", 1024) .. "c"),
+    }
+
+    local plan, reason = inline_diff.plan(lines, { timeout_ms = 500, clock = advancing_clock })
+
+    assert.is_nil(plan)
+    assert.matches("budget exceeded", reason)
+    assert.equals(4, clock_calls)
+  end)
+
+  it("discards earlier group plans when a later group reaches the deadline", function()
+    local clock_calls = 0
+    local function later_group_timeout()
+      clock_calls = clock_calls + 1
+      return clock_calls >= 4 and 501 or 0
+    end
+
+    local plans, reason = inline_diff.plan_many({
+      { addition("first") },
+      { addition("second") },
+    }, { timeout_ms = 500, clock = later_group_timeout })
+
+    assert.is_nil(plans)
+    assert.matches("budget exceeded", reason)
   end)
 
   it("gives pure additions and deletions whole-content bright ranges", function()

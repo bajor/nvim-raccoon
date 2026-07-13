@@ -641,13 +641,56 @@ describe("raccoon.diff", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
+    it("falls back for every hunk when whole-file batch planning fails", function()
+      local original_plan_many = inline_diff.plan_many
+      local original_notify = vim.notify
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "new one", "between", "new two" })
+      inline_diff.plan_many = function(line_groups)
+        assert.equals(2, #line_groups)
+        return nil, "inline diff budget exceeded"
+      end
+      vim.notify = function() end
+      diff._reset_inline_diff_warning()
+
+      local ok, err = pcall(function()
+        diff.apply_highlights(buf, table.concat({
+          "@@ -1 +1 @@",
+          "-old one",
+          "+new one",
+          "@@ -3 +3 @@",
+          "-old two",
+          "+new two",
+        }, "\n"))
+
+        local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+        local line_groups = {}
+        local bright_ranges = 0
+        for _, mark in ipairs(marks) do
+          if mark[4].sign_text == "+ " then line_groups[mark[2]] = mark[4].line_hl_group end
+          if mark[4].hl_group == "RaccoonAddInline" then bright_ranges = bright_ranges + 1 end
+        end
+        assert.equals("RaccoonAddInline", line_groups[0])
+        assert.equals("RaccoonAddInline", line_groups[2])
+        assert.equals(0, bright_ranges)
+      end)
+
+      inline_diff.plan_many = original_plan_many
+      vim.notify = original_notify
+      diff._reset_inline_diff_warning()
+      vim.api.nvim_buf_delete(buf, { force = true })
+      if not ok then error(err) end
+    end)
+
     it("falls back once to strong line highlights for an invalid plan", function()
-      local original_plan = inline_diff.plan
+      local original_plan_many = inline_diff.plan_many
       local original_notify = vim.notify
       local notifications = 0
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "added" })
-      inline_diff.plan = function() return { rows = { { kind = "invalid" } } } end
+      inline_diff.plan_many = function()
+        return { { rows = { { kind = "invalid" } } } }
+      end
       vim.notify = function() notifications = notifications + 1 end
       diff._reset_inline_diff_warning()
 
@@ -663,7 +706,7 @@ describe("raccoon.diff", function()
         assert.equals(1, notifications)
       end)
 
-      inline_diff.plan = original_plan
+      inline_diff.plan_many = original_plan_many
       vim.notify = original_notify
       diff._reset_inline_diff_warning()
       vim.api.nvim_buf_delete(buf, { force = true })

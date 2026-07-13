@@ -16,28 +16,44 @@ end
 local function warn_inline_diff_fallback()
   if inline_diff_warning_shown then return end
   inline_diff_warning_shown = true
-  vim.notify("Inline diff planning failed; using line-level highlights", vim.log.levels.WARN)
+  vim.notify("Inline diff planning exceeded its safety budget; using line-level highlights", vim.log.levels.WARN)
+end
+
+local function monotonic_clock_ms()
+  local uv = vim.uv or vim.loop
+  if uv and uv.hrtime then return uv.hrtime() / 1000000 end
+  return os.clock() * 1000
+end
+
+--- Safely plan every line group under one deadline.
+---@param line_groups RaccoonPatchLine[][]
+---@return RaccoonInlinePlan[]|nil
+function M.plan_inline_groups(line_groups)
+  local plan_ok, plans = pcall(inline_diff.plan_many, line_groups, { clock = monotonic_clock_ms })
+  if plan_ok and type(plans) == "table" and #plans == #line_groups then
+    for index = 1, #line_groups do
+      local plan = plans[index]
+      local validate_ok, valid = pcall(inline_diff.validate, plan, line_groups[index])
+      if not validate_ok or not valid then
+        warn_inline_diff_fallback()
+        return nil
+      end
+    end
+    return plans
+  end
+  warn_inline_diff_fallback()
+  return nil
 end
 
 --- Safely plan inline ranges, with one fallback warning per Neovim session.
 ---@param lines RaccoonPatchLine[]
 ---@return RaccoonInlinePlan|nil
 function M.plan_inline(lines)
-  local plan_ok, plan = pcall(inline_diff.plan, lines)
-  if plan_ok then
-    local validate_ok, valid = pcall(inline_diff.validate, plan, lines)
-    if validate_ok and valid then return plan end
-  end
-  warn_inline_diff_fallback()
-  return nil
+  local plans = M.plan_inline_groups({ lines })
+  return plans and plans[1] or nil
 end
 
---- Convert a validated plan into source-indexed rendering data.
----@param lines RaccoonPatchLine[]
----@return table<integer, {content:string, ranges:RaccoonInlineRange[]}>|nil
-function M.get_inline_ranges(lines)
-  local plan = M.plan_inline(lines)
-  if not plan then return nil end
+local function ranges_from_plan(plan)
   local result = {}
   for _, row in ipairs(plan.rows) do
     if row.old_index then
@@ -48,6 +64,25 @@ function M.get_inline_ranges(lines)
     end
   end
   return result
+end
+
+--- Convert validated plans into source-indexed rendering data.
+---@param line_groups RaccoonPatchLine[][]
+---@return table<integer, table<integer, {content:string, ranges:RaccoonInlineRange[]}>>|nil
+function M.get_inline_range_groups(line_groups)
+  local plans = M.plan_inline_groups(line_groups)
+  if not plans then return nil end
+  local result = {}
+  for index, plan in ipairs(plans) do result[index] = ranges_from_plan(plan) end
+  return result
+end
+
+--- Convert a validated plan into source-indexed rendering data.
+---@param lines RaccoonPatchLine[]
+---@return table<integer, {content:string, ranges:RaccoonInlineRange[]}>|nil
+function M.get_inline_ranges(lines)
+  local groups = M.get_inline_range_groups({ lines })
+  return groups and groups[1] or nil
 end
 
 --- Test helper for the session-scoped warning guard.
@@ -254,9 +289,12 @@ function M.apply_highlights(buf, patch)
   local line_count = vim.api.nvim_buf_line_count(buf)
   local additions = {}
   local grouped_deletions = {}
+  local line_groups = {}
+  for index, hunk in ipairs(hunks) do line_groups[index] = hunk.lines end
+  local inline_range_groups = M.get_inline_range_groups(line_groups)
 
-  for _, hunk in ipairs(hunks) do
-    local inline_ranges = M.get_inline_ranges(hunk.lines)
+  for hunk_index, hunk in ipairs(hunks) do
+    local inline_ranges = inline_range_groups and inline_range_groups[hunk_index] or nil
     for index, line in ipairs(hunk.lines) do
       if line.kind == "addition" then
         table.insert(additions, {
