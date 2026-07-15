@@ -2,6 +2,7 @@
 ---Diff parsing and display functionality
 local M = {}
 
+local diff_render = require("raccoon.diff_render")
 local state = require("raccoon.state")
 
 --- Namespace for diff highlights
@@ -241,66 +242,7 @@ function M.apply_highlights(buf, patch)
     return
   end
 
-  -- Clear existing highlights
-  vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-
-  if not patch or patch == "" then
-    return
-  end
-
-  local changes = M.get_changed_lines(patch)
-  local line_count = vim.api.nvim_buf_line_count(buf)
-
-  -- Apply green highlight to added lines
-  for _, line_num in ipairs(changes.added) do
-    local line_idx = line_num - 1
-    if line_idx >= 0 and line_idx < line_count then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, line_idx, 0, {
-        line_hl_group = "RaccoonAdd",
-        sign_text = "+",
-        sign_hl_group = "RaccoonAddSign",
-      })
-    end
-  end
-
-  -- For deleted lines, show virtual text with red background
-  -- Group consecutive deletions together
-  local grouped_deletions = {}
-  for _, del in ipairs(changes.deleted) do
-    local line_idx = del.line_num
-    if line_idx >= 0 then
-      if not grouped_deletions[line_idx] then
-        grouped_deletions[line_idx] = {}
-      end
-      table.insert(grouped_deletions[line_idx], del.content or "")
-    end
-  end
-
-  -- Display grouped deleted lines as virtual text
-  for line_idx, contents in pairs(grouped_deletions) do
-    -- Ensure line_idx is within buffer bounds
-    local target_line = math.min(line_idx, line_count - 1)
-    if target_line >= 0 then
-      -- Create virtual lines for deleted content
-      local virt_lines = {}
-      for _, content in ipairs(contents) do
-        local display_content = "- " .. (content or "")
-        -- Truncate if too long
-        if #display_content > 120 then
-          display_content = display_content:sub(1, 117) .. "..."
-        end
-        local pad = string.rep(" ", 300)
-        table.insert(virt_lines, { { display_content .. pad, "RaccoonDelete" } })
-      end
-
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target_line, 0, {
-        virt_lines = virt_lines,
-        virt_lines_above = true,
-        sign_text = "-",
-        sign_hl_group = "RaccoonDeleteSign",
-      })
-    end
-  end
+  diff_render.apply_flat_hunks(ns_id, buf, M.parse_patch(patch))
 end
 
 --- Clear diff highlights from a buffer

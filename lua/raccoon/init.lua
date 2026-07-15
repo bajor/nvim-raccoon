@@ -8,19 +8,27 @@ M.config = {
   -- Config will be loaded from ~/.config/raccoon/config.json
 }
 
---- Setup highlight groups for diff display
---- Uses dark green/red backgrounds for added/deleted lines
+--- Setup highlight groups for diff display without replacing user overrides.
 local function setup_highlights()
-  -- Green background for added lines (high contrast)
+  -- Subdued row backgrounds leave native syntax foregrounds visible.
   vim.api.nvim_set_hl(0, "RaccoonAdd", {
-    bg = "#2d5a2d",
+    bg = "#203d2a",
     default = true,
   })
 
-  -- Red background for deleted lines (high contrast)
   vim.api.nvim_set_hl(0, "RaccoonDelete", {
-    bg = "#5a2020",
-    fg = "#e88888",
+    bg = "#442525",
+    default = true,
+  })
+
+  -- Stronger backgrounds mark only the changed bytes within paired rows.
+  vim.api.nvim_set_hl(0, "RaccoonAddText", {
+    bg = "#367a45",
+    default = true,
+  })
+
+  vim.api.nvim_set_hl(0, "RaccoonDeleteText", {
+    bg = "#7a3030",
     default = true,
   })
 

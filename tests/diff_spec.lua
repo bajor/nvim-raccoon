@@ -314,6 +314,54 @@ describe("raccoon.diff", function()
       diff.apply_highlights(buf, "")
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    it("applies inline additions and chunked deleted virtual lines in flat buffers", function()
+      local old = "old_timeout = calculate_timeout(config)"
+      local new = "new_timeout = calculate_timeout(options)"
+      local patch = "@@ -1,2 +1,2 @@\n-" .. old .. "\n+" .. new .. "\n tail"
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { new, "tail" })
+
+      diff.apply_highlights(buf, patch)
+      local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+      local add_text_found = false
+      local delete_chunks_found = false
+      for _, mark in ipairs(marks) do
+        local details = mark[4]
+        if mark[2] == 0 and mark[3] == 32 and details.end_col == 39
+            and details.hl_group == "RaccoonAddText" then
+          add_text_found = true
+        end
+        if details.virt_lines then
+          local chunks = details.virt_lines[1]
+          delete_chunks_found = chunks[2][1] == "old"
+              and chunks[2][2] == "RaccoonDeleteText"
+              and chunks[4][1] == "config"
+              and chunks[4][2] == "RaccoonDeleteText"
+        end
+      end
+
+      assert.is_true(add_text_found)
+      assert.is_true(delete_chunks_found)
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("clears only the diff namespace before reapplying flat highlights", function()
+      local patch = "@@ -1 +1 @@\n-old\n+new"
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "new" })
+      local unrelated = vim.api.nvim_create_namespace("raccoon_diff_spec_unrelated")
+      vim.api.nvim_buf_set_extmark(buf, unrelated, 0, 0, { virt_text = { { "note", "Comment" } } })
+
+      diff.apply_highlights(buf, patch)
+      local first = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, {})
+      diff.apply_highlights(buf, patch)
+      local second = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, {})
+
+      assert.equals(#first, #second)
+      assert.equals(1, #vim.api.nvim_buf_get_extmarks(buf, unrelated, 0, -1, {}))
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 
   describe("open_file", function()
