@@ -15,13 +15,66 @@ local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
 function M.parse_hunk_header(header)
   -- Format: @@ -old_start,old_count +new_start,new_count @@
   -- Sometimes count is omitted if it's 1
-  local new_start, new_count = header:match("^@@.-+(%d+),?(%d*)%s*@@")
+  local _, _, new_start, new_count = header:match(
+    "^@@%s+%-(%d+),?(%d*)%s+%+(%d+),?(%d*)%s+@@"
+  )
   if not new_start then
     return nil, nil
   end
   new_start = tonumber(new_start)
   new_count = tonumber(new_count) or 1
   return new_start, new_count
+end
+
+--- Parse both sides of a unified diff hunk header.
+---@param header string
+---@return number|nil old_start
+---@return number|nil old_count
+---@return number|nil new_start
+---@return number|nil new_count
+local function parse_hunk_coordinates(header)
+  local old_start, old_count, new_start, new_count = header:match(
+    "^@@%s+%-(%d+),?(%d*)%s+%+(%d+),?(%d*)%s+@@"
+  )
+  if not old_start then
+    return nil, nil, nil, nil
+  end
+
+  return tonumber(old_start), tonumber(old_count) or 1, tonumber(new_start), tonumber(new_count) or 1
+end
+
+---@class RaccoonPatchLine
+---@field kind "context"|"addition"|"deletion"
+---@field type "ctx"|"add"|"del" Compatibility discriminator
+---@field content string
+---@field old_line_num number|nil One-based pre-image line number
+---@field new_line_num number|nil One-based post-image line number
+---@field anchor_new_line_num number One-based post-image row before which a deletion is rendered
+---@field line_num number Compatibility post-image coordinate
+---@field hunk_line_index number One-based position within the parsed hunk
+
+---@class RaccoonChangeBlock
+---@field kind "change"
+---@field deletions RaccoonPatchLine[]
+---@field additions RaccoonPatchLine[]
+---@field anchor_new_line_num number
+
+local function start_group(hunk, kind, anchor_new_line_num)
+  if kind == "context" then
+    local group = { kind = "context", lines = {} }
+    table.insert(hunk.groups, group)
+    return group
+  end
+
+  local group = {
+    kind = "change",
+    deletions = {},
+    additions = {},
+    anchor_new_line_num = anchor_new_line_num,
+  }
+  table.insert(hunk.groups, group)
+  table.insert(hunk.change_blocks, group)
+  return group
 end
 
 --- Parse a unified diff patch into structured hunks
@@ -39,38 +92,92 @@ function M.parse_patch(patch)
 
   local hunks = {}
   local current_hunk = nil
-  local line_num = 0
+  local current_group = nil
+  local old_line_num = 0
+  local new_line_num = 0
 
   for line in normalized_patch:gmatch("(.-)\n") do
+    line = line:gsub("\r$", "")
     if line:match("^@@") then
       -- New hunk
       if current_hunk then
         table.insert(hunks, current_hunk)
       end
-      local start_line, count = M.parse_hunk_header(line)
+      local old_start, old_count, new_start, new_count = parse_hunk_coordinates(line)
       current_hunk = {
         header = line,
         lines = {},
-        start_line = start_line or 1,
-        count = count or 0,
+        groups = {},
+        change_blocks = {},
+        old_start_line = old_start or 1,
+        old_count = old_count or 0,
+        new_start_line = new_start or 1,
+        new_count = new_count or 0,
+        start_line = new_start or 1,
+        count = new_count or 0,
         changes = {},
       }
-      line_num = (start_line or 1) - 1
+      current_group = nil
+      old_line_num = (old_start or 1) - 1
+      new_line_num = (new_start or 1) - 1
     elseif current_hunk then
       if line:match("^%+") and not line:match("^%+%+%+") then
         -- Added line
-        line_num = line_num + 1
-        table.insert(current_hunk.lines, { type = "add", content = line:sub(2), line_num = line_num })
-        table.insert(current_hunk.changes, { type = "add", line_num = line_num })
+        if not current_group or current_group.kind ~= "change" then
+          current_group = start_group(current_hunk, "change", new_line_num + 1)
+        end
+        new_line_num = new_line_num + 1
+        local parsed_line = {
+          kind = "addition",
+          type = "add",
+          content = line:sub(2),
+          old_line_num = nil,
+          new_line_num = new_line_num,
+          anchor_new_line_num = new_line_num,
+          line_num = new_line_num,
+          hunk_line_index = #current_hunk.lines + 1,
+        }
+        table.insert(current_hunk.lines, parsed_line)
+        table.insert(current_group.additions, parsed_line)
+        table.insert(current_hunk.changes, { type = "add", line_num = new_line_num })
       elseif line:match("^%-") and not line:match("^%-%-%-") then
         -- Removed line (doesn't increment line number in new file)
-        -- Store the content for virtual text display
-        table.insert(current_hunk.lines, { type = "del", content = line:sub(2), line_num = line_num })
-        table.insert(current_hunk.changes, { type = "del", line_num = line_num, content = line:sub(2) })
+        if not current_group or current_group.kind ~= "change" then
+          current_group = start_group(current_hunk, "change", new_line_num + 1)
+        end
+        old_line_num = old_line_num + 1
+        local parsed_line = {
+          kind = "deletion",
+          type = "del",
+          content = line:sub(2),
+          old_line_num = old_line_num,
+          new_line_num = nil,
+          anchor_new_line_num = current_group.anchor_new_line_num,
+          line_num = new_line_num,
+          hunk_line_index = #current_hunk.lines + 1,
+        }
+        table.insert(current_hunk.lines, parsed_line)
+        table.insert(current_group.deletions, parsed_line)
+        table.insert(current_hunk.changes, { type = "del", line_num = new_line_num, content = line:sub(2) })
       elseif not line:match("^\\ No newline at end of file$") and (line:match("^%s") or line == "") then
         -- Context line
-        line_num = line_num + 1
-        table.insert(current_hunk.lines, { type = "ctx", content = line:sub(2), line_num = line_num })
+        if not current_group or current_group.kind ~= "context" then
+          current_group = start_group(current_hunk, "context")
+        end
+        old_line_num = old_line_num + 1
+        new_line_num = new_line_num + 1
+        local parsed_line = {
+          kind = "context",
+          type = "ctx",
+          content = line:sub(2),
+          old_line_num = old_line_num,
+          new_line_num = new_line_num,
+          anchor_new_line_num = new_line_num,
+          line_num = new_line_num,
+          hunk_line_index = #current_hunk.lines + 1,
+        }
+        table.insert(current_hunk.lines, parsed_line)
+        table.insert(current_group.lines, parsed_line)
       end
     end
   end

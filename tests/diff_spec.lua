@@ -121,6 +121,98 @@ describe("raccoon.diff", function()
       assert.is_true(add_found)
       assert.is_true(del_found)
     end)
+
+    it("retains old, new, anchor, and compatibility coordinates", function()
+      local patch = table.concat({
+        "@@ -9,4 +11,4 @@",
+        " keep",
+        "-old_timeout = calculate_timeout(config)",
+        "-old_mode = config.mode",
+        "+new_timeout = calculate_timeout(options)",
+        "+new_mode = options.mode",
+        " tail",
+      }, "\n")
+
+      local hunk = diff.parse_patch(patch)[1]
+      assert.equals(9, hunk.old_start_line)
+      assert.equals(11, hunk.new_start_line)
+      assert.equals(4, hunk.old_count)
+      assert.equals(4, hunk.new_count)
+
+      assert.same({
+        kind = "context",
+        type = "ctx",
+        content = "keep",
+        old_line_num = 9,
+        new_line_num = 11,
+        anchor_new_line_num = 11,
+        line_num = 11,
+        hunk_line_index = 1,
+      }, hunk.lines[1])
+
+      assert.equals("deletion", hunk.lines[2].kind)
+      assert.equals(10, hunk.lines[2].old_line_num)
+      assert.is_nil(hunk.lines[2].new_line_num)
+      assert.equals(12, hunk.lines[2].anchor_new_line_num)
+      assert.equals(11, hunk.lines[2].line_num)
+      assert.equals(11, hunk.lines[3].old_line_num)
+      assert.equals(12, hunk.lines[3].anchor_new_line_num)
+
+      assert.equals("addition", hunk.lines[4].kind)
+      assert.is_nil(hunk.lines[4].old_line_num)
+      assert.equals(12, hunk.lines[4].new_line_num)
+      assert.equals(12, hunk.lines[4].line_num)
+      assert.equals(13, hunk.lines[5].new_line_num)
+
+      assert.equals(12, hunk.lines[6].old_line_num)
+      assert.equals(14, hunk.lines[6].new_line_num)
+    end)
+
+    it("separates context groups from contiguous change blocks", function()
+      local patch = table.concat({
+        "@@ -1,5 +1,6 @@",
+        " before",
+        "-old one",
+        "+new one",
+        " middle",
+        "-old two",
+        "+new two",
+        "+inserted",
+        " after",
+      }, "\n")
+
+      local hunk = diff.parse_patch(patch)[1]
+      assert.equals(5, #hunk.groups)
+      assert.equals(2, #hunk.change_blocks)
+      assert.equals("context", hunk.groups[1].kind)
+      assert.equals("change", hunk.groups[2].kind)
+      assert.equals("context", hunk.groups[3].kind)
+      assert.equals("change", hunk.groups[4].kind)
+      assert.equals("context", hunk.groups[5].kind)
+
+      local first = hunk.change_blocks[1]
+      assert.equals(1, #first.deletions)
+      assert.equals(1, #first.additions)
+      assert.equals(2, first.anchor_new_line_num)
+      assert.equals("old one", first.deletions[1].content)
+      assert.equals("new one", first.additions[1].content)
+
+      local second = hunk.change_blocks[2]
+      assert.equals(1, #second.deletions)
+      assert.equals(2, #second.additions)
+      assert.equals(4, second.anchor_new_line_num)
+    end)
+
+    it("normalizes CRLF and ignores no-newline metadata", function()
+      local patch = "@@ -1 +1 @@\r\n-old\r\n+new\r\n\\ No newline at end of file\r\n"
+      local hunk = diff.parse_patch(patch)[1]
+
+      assert.equals("@@ -1 +1 @@", hunk.header)
+      assert.equals(2, #hunk.lines)
+      assert.equals("old", hunk.lines[1].content)
+      assert.equals("new", hunk.lines[2].content)
+      assert.equals(1, #hunk.change_blocks)
+    end)
   end)
 
   describe("get_changed_lines", function()
