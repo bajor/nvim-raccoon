@@ -355,10 +355,15 @@ function M.lock_maximize_buf(buf, grid_rows, grid_cols, skip_keys)
   end
 end
 
+local function normalize_hunk_content(content)
+  local normalized = (content or ""):gsub("\r$", "")
+  return normalized
+end
+
 local function populate_hunk_buffer(buf, hunk, filename)
   local lines = {}
   for _, line_data in ipairs(hunk.lines) do
-    table.insert(lines, line_data.content or "")
+    table.insert(lines, normalize_hunk_content(line_data.content))
   end
 
   vim.bo[buf].modifiable = true
@@ -443,13 +448,33 @@ end
 local function flatten_hunks(hunks)
   local lines = {}
   local groups = {}
-  for _, hunk in ipairs(hunks) do
+  for hunk_index, hunk in ipairs(hunks) do
+    if hunk_index > 1 then table.insert(lines, "...") end
     table.insert(groups, { lines = hunk.lines, line_offset = #lines })
     for _, line_data in ipairs(hunk.lines) do
-      table.insert(lines, line_data.content or "")
+      table.insert(lines, normalize_hunk_content(line_data.content))
     end
   end
   return lines, groups
+end
+
+--- Find the first changed line in each consecutive add/delete block.
+---@param groups table[]
+---@return number[]
+local function find_change_starts(groups)
+  local change_starts = {}
+  for _, group in ipairs(groups) do
+    local previous_type = nil
+    for line_index, line_data in ipairs(group.lines) do
+      local is_change = line_data.type == "add" or line_data.type == "del"
+      local previous_is_change = previous_type == "add" or previous_type == "del"
+      if is_change and not previous_is_change then
+        table.insert(change_starts, group.line_offset + line_index)
+      end
+      previous_type = line_data.type
+    end
+  end
+  return change_starts
 end
 
 --- Highlight flattened hunks without allowing replacements to cross hunk boundaries.
@@ -825,6 +850,8 @@ function M.close_win_pair(s, win_key, buf_key)
   if win_key == "maximize_win" then
     M.stop_maximize_watcher(s)
     s.maximize_workdir_opts = nil
+    s.maximize_change_starts = nil
+    s.maximize_refresh_generation = (s.maximize_refresh_generation or 0) + 1
   end
 end
 
@@ -1061,19 +1088,7 @@ function M.open_maximize(opts)
 
     local lines, groups = flatten_hunks(hunks)
 
-    -- Find the start of each change group (consecutive add/del lines)
-    local change_starts = {}
-    local flat_index = 0
-    local previous_type = nil
-    for _, group in ipairs(groups) do
-      for _, line_data in ipairs(group.lines) do
-        flat_index = flat_index + 1
-        local is_change = line_data.type == "add" or line_data.type == "del"
-        local prev_is_change = previous_type == "add" or previous_type == "del"
-        if is_change and not prev_is_change then table.insert(change_starts, flat_index) end
-        previous_type = line_data.type
-      end
-    end
+    local change_starts = find_change_starts(groups)
 
     local width = math.max(1, math.floor(vim.o.columns * 0.85))
     local height = math.max(1, math.floor(vim.o.lines * 0.85))
@@ -1108,6 +1123,7 @@ function M.open_maximize(opts)
 
     opts.state.maximize_win = win
     opts.state.maximize_buf = buf
+    opts.state.maximize_change_starts = change_starts
     M.stop_maximize_watcher(opts.state)
     if opts.is_working_dir then
       opts.state.maximize_workdir_opts = {
@@ -1151,7 +1167,7 @@ function M.open_maximize(opts)
     if #change_starts > 0 and config.is_enabled(shortcuts.commit_viewer.next_page) then
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_viewer.next_page, function()
         local cur = vim.api.nvim_win_get_cursor(0)[1]
-        for _, start in ipairs(change_starts) do
+        for _, start in ipairs(opts.state.maximize_change_starts or {}) do
           if start > cur then
             vim.api.nvim_win_set_cursor(0, { start, 0 })
             return
@@ -1162,9 +1178,10 @@ function M.open_maximize(opts)
     if #change_starts > 0 and config.is_enabled(shortcuts.commit_viewer.prev_page) then
       vim.keymap.set(NORMAL_MODE, shortcuts.commit_viewer.prev_page, function()
         local cur = vim.api.nvim_win_get_cursor(0)[1]
-        for i = #change_starts, 1, -1 do
-          if change_starts[i] < cur then
-            vim.api.nvim_win_set_cursor(0, { change_starts[i], 0 })
+        local current_change_starts = opts.state.maximize_change_starts or {}
+        for i = #current_change_starts, 1, -1 do
+          if current_change_starts[i] < cur then
+            vim.api.nvim_win_set_cursor(0, { current_change_starts[i], 0 })
             return
           end
         end
@@ -1301,12 +1318,16 @@ function M.refresh_maximize(s)
   local git = require("raccoon.git")
   local buf = s.maximize_buf
   local win = s.maximize_win
+  local refresh_generation = (s.maximize_refresh_generation or 0) + 1
+  s.maximize_refresh_generation = refresh_generation
 
   git.diff_working_dir_file(mopts.repo_path, mopts.filename, function(patch, err)
-    if not s.maximize_workdir_opts then return end
+    if s.maximize_workdir_opts ~= mopts then return end
+    if s.maximize_refresh_generation ~= refresh_generation then return end
     if not vim.api.nvim_buf_is_valid(buf) then return end
 
     if err or not patch or patch == "" then
+      s.maximize_change_starts = {}
       vim.bo[buf].modifiable = true
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
       vim.bo[buf].modifiable = false
@@ -1316,6 +1337,7 @@ function M.refresh_maximize(s)
 
     local hunks = diff.parse_patch(patch)
     if #hunks == 0 then
+      s.maximize_change_starts = {}
       vim.bo[buf].modifiable = true
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
       vim.bo[buf].modifiable = false
@@ -1323,6 +1345,7 @@ function M.refresh_maximize(s)
       return
     end
     local lines, groups = flatten_hunks(hunks)
+    s.maximize_change_starts = find_change_starts(groups)
 
     local cursor = vim.api.nvim_win_get_cursor(win)
 

@@ -31,6 +31,8 @@ local LCS_DIRECTION_LEFT = 2
 local LCS_DIRECTION_MATCH = 3
 local MIN_LINE_SIMILARITY = 0.55
 local MIN_CHAR_REFINE_SIMILARITY = 0.50
+local MIN_FORCED_PAIR_TOKEN_SIMILARITY = 0.50
+local MAX_FORCED_PAIR_EXACT_CODEPOINTS = 32
 local SCORE_EPSILON = 0.0000001
 local PLANNING_ABORTED = {}
 local LCS_DIRECTION_POWERS = {}
@@ -203,7 +205,7 @@ local function tokenize(text, deadline)
     })
     index = last + 1
   end
-  return tokens
+  return tokens, #units
 end
 
 local function lcs_pairs(left, right, equals, deadline)
@@ -306,7 +308,16 @@ local function append_all(target, values)
   for _, value in ipairs(values) do table.insert(target, value) end
 end
 
-local function refine_window(old_content, new_content, old_start, old_end, new_start, new_end, deadline)
+local function refine_window(
+  old_content,
+  new_content,
+  old_start,
+  old_end,
+  new_start,
+  new_end,
+  deadline,
+  allow_low_similarity
+)
   local old_units = split_codepoints(old_content, old_start, old_end, deadline)
   local new_units = split_codepoints(new_content, new_start, new_end, deadline)
   local prefix = 0
@@ -336,7 +347,7 @@ local function refine_window(old_content, new_content, old_start, old_end, new_s
   local pairs = lcs_pairs(old_middle, new_middle, function(left, right) return left.text == right.text end, deadline)
   local total = #old_units + #new_units
   local similarity = total == 0 and 1 or (2 * (prefix + suffix + #pairs) / total)
-  if similarity < MIN_CHAR_REFINE_SIMILARITY then
+  if not allow_low_similarity and similarity < MIN_CHAR_REFINE_SIMILARITY then
     local old_ranges, new_ranges = {}, {}
     append_range(old_ranges, old_start, old_end)
     append_range(new_ranges, new_start, new_end)
@@ -361,15 +372,33 @@ local function refine_window(old_content, new_content, old_start, old_end, new_s
   return old_ranges, new_ranges
 end
 
-local function refine_pair(old_content, new_content, deadline)
-  local old_tokens = tokenize(old_content, deadline)
-  local new_tokens = tokenize(new_content, deadline)
+local function refine_pair(old_content, new_content, deadline, require_related_tokens)
+  local old_tokens, old_codepoint_count = tokenize(old_content, deadline)
+  local new_tokens, new_codepoint_count = tokenize(new_content, deadline)
   if #old_tokens > MAX_TOKENS_PER_LINE or #new_tokens > MAX_TOKENS_PER_LINE then abort_planning() end
   check_cell_limit(#old_tokens, #new_tokens, MAX_TOKEN_LCS_CELLS)
 
   local token_pairs = lcs_pairs(old_tokens, new_tokens, function(left, right)
     return left.text == right.text
   end, deadline)
+  if require_related_tokens then
+    local total_tokens = #old_tokens + #new_tokens
+    local token_similarity = total_tokens == 0 and 1 or (2 * #token_pairs / total_tokens)
+    if token_similarity < MIN_FORCED_PAIR_TOKEN_SIMILARITY then
+      local allow_low_similarity = old_codepoint_count <= MAX_FORCED_PAIR_EXACT_CODEPOINTS
+        and new_codepoint_count <= MAX_FORCED_PAIR_EXACT_CODEPOINTS
+      return refine_window(
+        old_content,
+        new_content,
+        0,
+        #old_content,
+        0,
+        #new_content,
+        deadline,
+        allow_low_similarity
+      )
+    end
+  end
   local old_ranges, new_ranges = {}, {}
   local old_cursor, new_cursor = 0, 0
   for _, pair in ipairs(token_pairs) do
@@ -560,6 +589,11 @@ local function plan_block(block, lines, deadline)
 
   check_cell_limit(#deletions, #additions, MAX_LINE_PAIR_CELLS)
   local pairs = pair_lines(deletions, additions, lines, deadline)
+  local require_related_tokens = false
+  if #deletions == 1 and #additions == 1 and #pairs == 0 then
+    pairs = { { deletions[1], additions[1] } }
+    require_related_tokens = true
+  end
 
   local paired_old, paired_new, rows = {}, {}, {}
   for _, pair in ipairs(pairs) do
@@ -569,7 +603,12 @@ local function plan_block(block, lines, deadline)
     paired_new[new_index] = true
     local old_content = normalize_content(lines[old_index].content)
     local new_content = normalize_content(lines[new_index].content)
-    local old_ranges, new_ranges = refine_pair(old_content, new_content, deadline)
+    local old_ranges, new_ranges = refine_pair(
+      old_content,
+      new_content,
+      deadline,
+      require_related_tokens
+    )
     table.insert(rows, new_replacement(
       old_index,
       lines[old_index],
@@ -690,6 +729,17 @@ local function validate_ranges(ranges, content)
   return true
 end
 
+local function content_outside_ranges(content, ranges)
+  local parts = {}
+  local cursor = 0
+  for _, range in ipairs(ranges) do
+    table.insert(parts, content:sub(cursor + 1, range.start_col))
+    cursor = range.end_col
+  end
+  table.insert(parts, content:sub(cursor + 1))
+  return table.concat(parts)
+end
+
 local function validate_side(row, side, expected_kind, lines, seen)
   local index = row[side .. "_index"]
   local line = row[side .. "_line"]
@@ -723,6 +773,10 @@ function M.validate(plan, lines)
     if row.kind == "replacement" then
       valid, reason = validate_side(row, "old", "deletion", lines, seen)
       if valid then valid, reason = validate_side(row, "new", "addition", lines, seen) end
+      if valid and content_outside_ranges(row.old_content, row.old_ranges)
+          ~= content_outside_ranges(row.new_content, row.new_ranges) then
+        return false, "replacement content outside ranges must match"
+      end
     elseif row.kind == "addition" then
       if row.old_index or row.old_line or row.old_content or row.old_ranges then
         return false, "addition row cannot contain an old side"

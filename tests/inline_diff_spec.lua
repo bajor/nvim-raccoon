@@ -45,6 +45,17 @@ local function row_signature(row)
   }
 end
 
+local function content_outside_ranges(content, ranges)
+  local parts = {}
+  local cursor = 0
+  for _, item in ipairs(ranges) do
+    table.insert(parts, content:sub(cursor + 1, item.start_col))
+    cursor = item.end_col
+  end
+  table.insert(parts, content:sub(cursor + 1))
+  return table.concat(parts)
+end
+
 describe("raccoon.inline_diff", function()
   it("pairs similar lines after an inserted line without index pairing", function()
     local lines = {
@@ -66,18 +77,21 @@ describe("raccoon.inline_diff", function()
     assert.is_not_nil(find_row(plan, "addition", nil, 3))
   end)
 
-  it("keeps low-similarity lines as separate whole-content changes", function()
+  it("keeps unrelated one-to-one lines as a readable whole-content replacement", function()
     local lines = {
       deletion("local count = calculate_total(items)"),
       addition("raise RuntimeError('connection unavailable')"),
     }
 
-    local plan = plan_and_validate(lines)
+    local first = plan_and_validate(lines)
+    local second = plan_and_validate(lines)
+    local row = first.rows[1]
 
-    assert.equals(2, #plan.rows)
-    assert.is_nil(find_row(plan, "replacement"))
-    assert.same({ range(0, #lines[1].content) }, find_row(plan, "deletion", 1).old_ranges)
-    assert.same({ range(0, #lines[2].content) }, find_row(plan, "addition", nil, 2).new_ranges)
+    assert.equals(1, #first.rows)
+    assert.equals("replacement", row.kind)
+    assert.same({ range(0, #lines[1].content) }, row.old_ranges)
+    assert.same({ range(0, #lines[2].content) }, row.new_ranges)
+    assert.same(row_signature(row), row_signature(second.rows[1]))
   end)
 
   it("resolves repeated ambiguous input deterministically", function()
@@ -136,6 +150,66 @@ describe("raccoon.inline_diff", function()
     assert.equals("replacement", row.kind)
     assert.same({}, row.old_ranges)
     assert.same({ range(15, 16) }, row.new_ranges)
+  end)
+
+  it("keeps unchanged call punctuation outside a short identifier replacement", function()
+    local lines = {
+      deletion("foo()"),
+      addition("bar()"),
+    }
+
+    local row = plan_and_validate(lines).rows[1]
+
+    assert.equals("replacement", row.kind)
+    assert.same({ range(0, 3) }, row.old_ranges)
+    assert.same({ range(0, 3) }, row.new_ranges)
+  end)
+
+  it("keeps an unchanged terminator outside a short identifier replacement", function()
+    local lines = {
+      deletion("foo;"),
+      addition("bar;"),
+    }
+
+    local row = plan_and_validate(lines).rows[1]
+
+    assert.equals("replacement", row.kind)
+    assert.same({ range(0, 3) }, row.old_ranges)
+    assert.same({ range(0, 3) }, row.new_ranges)
+  end)
+
+  it("keeps internal punctuation outside a short low-similarity replacement", function()
+    local row = plan_and_validate({ deletion("a.b"), addition("x.y") }).rows[1]
+
+    assert.equals("replacement", row.kind)
+    assert.same({ range(0, 1), range(2, 3) }, row.old_ranges)
+    assert.same({ range(0, 1), range(2, 3) }, row.new_ranges)
+  end)
+
+  it("keeps internal punctuation outside a short UTF-8 replacement", function()
+    local row = plan_and_validate({ deletion("α.β"), addition("γ.δ") }).rows[1]
+
+    assert.equals("replacement", row.kind)
+    assert.same({ range(0, 2), range(3, 5) }, row.old_ranges)
+    assert.same({ range(0, 2), range(3, 5) }, row.new_ranges)
+  end)
+
+  it("keeps long low-similarity singleton replacements conservative", function()
+    local old_content = string.rep("a", 33) .. "." .. string.rep("b", 33)
+    local new_content = string.rep("x", 33) .. "." .. string.rep("y", 33)
+    local row = plan_and_validate({ deletion(old_content), addition(new_content) }).rows[1]
+
+    assert.equals("replacement", row.kind)
+    assert.same({ range(0, #old_content) }, row.old_ranges)
+    assert.same({ range(0, #new_content) }, row.new_ranges)
+  end)
+
+  it("refines a short identifier without shared token anchors", function()
+    local row = plan_and_validate({ deletion("ab"), addition("ac") }).rows[1]
+
+    assert.equals("replacement", row.kind)
+    assert.same({ range(1, 2) }, row.old_ranges)
+    assert.same({ range(1, 2) }, row.new_ranges)
   end)
 
   it("refines a changed identifier to its differing suffix", function()
@@ -202,6 +276,28 @@ describe("raccoon.inline_diff", function()
     assert.equals("value = 12", row.new_content)
     assert.same({ range(9, 10) }, row.old_ranges)
     assert.same({ range(9, 10) }, row.new_ranges)
+  end)
+
+  it("leaves identical content outside ranges for representative one-to-one edits", function()
+    local cases = {
+      { old = "abc", new = "axbc" },
+      { old = "alpha\tbeta", new = "alphabeta" },
+      { old = 'local icon = "✓"', new = 'local icon = "🚀"' },
+    }
+
+    for _, case in ipairs(cases) do
+      local lines = { deletion(case.old), addition(case.new) }
+      local first = plan_and_validate(lines, { clock = function() return 0 end })
+      local second = plan_and_validate(lines, { clock = function() return 0 end })
+      local row = first.rows[1]
+
+      assert.equals("replacement", row.kind)
+      assert.equals(
+        content_outside_ranges(row.old_content, row.old_ranges),
+        content_outside_ranges(row.new_content, row.new_ranges)
+      )
+      assert.same(row_signature(row), row_signature(second.rows[1]))
+    end
   end)
 
   it("plans large replacement blocks that fit the raised line-pair cap", function()
@@ -462,6 +558,30 @@ describe("raccoon.inline_diff", function()
       assert.matches("missing", missing_reason)
       assert.is_false(valid_duplicate)
       assert.matches("more than once", duplicate_reason)
+    end)
+
+    it("rejects replacements whose unhighlighted content differs", function()
+      local lines = { deletion("abc"), addition("xyz") }
+      local plan = {
+        rows = {
+          {
+            kind = "replacement",
+            old_index = 1,
+            old_line = lines[1],
+            old_content = "abc",
+            old_ranges = { range(1, 2) },
+            new_index = 2,
+            new_line = lines[2],
+            new_content = "xyz",
+            new_ranges = { range(1, 2) },
+          },
+        },
+      }
+
+      local valid, reason = inline_diff.validate(plan, lines)
+
+      assert.is_false(valid)
+      assert.matches("outside ranges", reason)
     end)
   end)
 end)
