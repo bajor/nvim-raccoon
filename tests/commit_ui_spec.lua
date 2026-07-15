@@ -381,3 +381,189 @@ describe("raccoon.commit_ui", function()
     assert.equals(10, commit_ui.compute_effective_sidebar_width(cols, 10))
   end)
 end)
+
+describe("raccoon.commit_ui inline diff routes", function()
+  local diff = require("raccoon.diff")
+  local git = require("raccoon.git")
+  local original_git = {}
+  local resources = {}
+
+  local patch = table.concat({
+    "@@ -1,2 +1,2 @@",
+    "-old_timeout = calculate_timeout(config)",
+    "+new_timeout = calculate_timeout(options)",
+    " context",
+  }, "\n")
+
+  local function track_buffer(buf)
+    table.insert(resources, { kind = "buffer", id = buf })
+    return buf
+  end
+
+  local function track_window(win)
+    table.insert(resources, { kind = "window", id = win })
+    return win
+  end
+
+  local function marks(buf, ns_id)
+    return vim.api.nvim_buf_get_extmarks(buf, ns_id, 0, -1, { details = true })
+  end
+
+  local function has_group(buf, ns_id, group)
+    for _, mark in ipairs(marks(buf, ns_id)) do
+      if mark[4].hl_group == group or mark[4].line_hl_group == group then return true end
+    end
+    return false
+  end
+
+  before_each(function()
+    original_git.show_commit_file = git.show_commit_file
+    original_git.diff_working_dir_file = git.diff_working_dir_file
+    resources = {}
+  end)
+
+  after_each(function()
+    git.show_commit_file = original_git.show_commit_file
+    git.diff_working_dir_file = original_git.diff_working_dir_file
+    for index = #resources, 1, -1 do
+      local resource = resources[index]
+      if resource.kind == "window" and vim.api.nvim_win_is_valid(resource.id) then
+        pcall(vim.api.nvim_win_close, resource.id, true)
+      elseif resource.kind == "buffer" and vim.api.nvim_buf_is_valid(resource.id) then
+        pcall(vim.api.nvim_buf_delete, resource.id, { force = true })
+      end
+    end
+  end)
+
+  it("renders inline ranges in grid hunk cells and preserves filetype", function()
+    local buf = track_buffer(commit_ui.create_scratch_buf())
+    local ns_id = vim.api.nvim_create_namespace("raccoon_commit_grid_inline")
+    local hunk = diff.parse_patch(patch)[1]
+
+    commit_ui.render_hunk_to_buffer(ns_id, buf, hunk, "example.lua")
+
+    assert.equals("lua", vim.bo[buf].filetype)
+    assert.is_true(has_group(buf, ns_id, "RaccoonDelete"))
+    assert.is_true(has_group(buf, ns_id, "RaccoonAdd"))
+    assert.is_true(has_group(buf, ns_id, "RaccoonDeleteText"))
+    assert.is_true(has_group(buf, ns_id, "RaccoonAddText"))
+  end)
+
+  it("renders inline ranges in changed-file previews", function()
+    git.show_commit_file = function(_, _, _, callback) callback(patch, nil) end
+    local buf = track_buffer(commit_ui.create_scratch_buf())
+    local ns_id = vim.api.nvim_create_namespace("raccoon_commit_preview_inline")
+    local state = {
+      grid_bufs = { buf },
+      grid_wins = {},
+      commit_files = { ["example.lua"] = true },
+      preview_generation = 0,
+    }
+
+    commit_ui.render_file_preview(state, {
+      ns_id = ns_id,
+      repo_path = "/tmp/repo",
+      sha = "abc123",
+      filename = "example.lua",
+      is_working_dir = false,
+    })
+
+    assert.equals("lua", vim.bo[buf].filetype)
+    assert.is_true(has_group(buf, ns_id, "RaccoonDeleteText"))
+    assert.is_true(has_group(buf, ns_id, "RaccoonAddText"))
+  end)
+
+  it("uses the same inline preview path for working-directory changes", function()
+    local requested = false
+    git.diff_working_dir_file = function(_, _, callback)
+      requested = true
+      callback(patch, nil)
+    end
+    local buf = track_buffer(commit_ui.create_scratch_buf())
+    local ns_id = vim.api.nvim_create_namespace("raccoon_local_preview_inline")
+    local state = {
+      grid_bufs = { buf },
+      grid_wins = {},
+      commit_files = { ["example.lua"] = true },
+      preview_generation = 0,
+    }
+
+    commit_ui.render_file_preview(state, {
+      ns_id = ns_id,
+      repo_path = "/tmp/repo",
+      filename = "example.lua",
+      is_working_dir = true,
+    })
+
+    assert.is_true(requested)
+    assert.is_true(has_group(buf, ns_id, "RaccoonDeleteText"))
+    assert.is_true(has_group(buf, ns_id, "RaccoonAddText"))
+  end)
+
+  it("renders inline ranges in maximized full-file diffs", function()
+    git.show_commit_file = function(_, _, _, callback) callback(patch, nil) end
+    local ns_id = vim.api.nvim_create_namespace("raccoon_commit_maximize_inline")
+    local state = { grid_rows = 1, grid_cols = 1 }
+
+    commit_ui.open_maximize({
+      ns_id = ns_id,
+      repo_path = "/tmp/repo",
+      sha = "abc123",
+      filename = "example.lua",
+      generation = 1,
+      get_generation = function() return 1 end,
+      state = state,
+    })
+
+    assert.is_true(vim.api.nvim_buf_is_valid(state.maximize_buf))
+    track_buffer(state.maximize_buf)
+    track_window(state.maximize_win)
+    assert.equals("lua", vim.bo[state.maximize_buf].filetype)
+    assert.is_true(has_group(state.maximize_buf, ns_id, "RaccoonDeleteText"))
+    assert.is_true(has_group(state.maximize_buf, ns_id, "RaccoonAddText"))
+  end)
+
+  it("refreshes Current changes without stale or duplicated inline marks", function()
+    local callbacks = {}
+    git.diff_working_dir_file = function(_, _, callback) table.insert(callbacks, callback) end
+
+    local buf = track_buffer(commit_ui.create_scratch_buf())
+    local win = track_window(vim.api.nvim_open_win(buf, false, {
+      relative = "editor",
+      row = 0,
+      col = 0,
+      width = 50,
+      height = 5,
+    }))
+    local ns_id = vim.api.nvim_create_namespace("raccoon_local_refresh_inline")
+    local state = {
+      maximize_buf = buf,
+      maximize_win = win,
+      maximize_workdir_opts = {
+        ns_id = ns_id,
+        repo_path = "/tmp/repo",
+        filename = "example.lua",
+      },
+    }
+
+    commit_ui.refresh_maximize(state)
+    commit_ui.refresh_maximize(state)
+    assert.equals(2, #callbacks)
+
+    local newest_patch = patch:gsub("new_timeout", "next_timeout")
+    callbacks[2](newest_patch, nil)
+    local newest_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.truthy(newest_lines[2]:find("next_timeout", 1, true))
+    local current_count = #marks(buf, ns_id)
+
+    callbacks[1](patch, nil)
+    local after_stale = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.truthy(after_stale[2]:find("next_timeout", 1, true))
+    assert.equals(current_count, #marks(buf, ns_id))
+    assert.is_true(has_group(buf, ns_id, "RaccoonAddText"))
+
+    git.diff_working_dir_file = function(_, _, callback) callback("", nil) end
+    commit_ui.refresh_maximize(state)
+    assert.equals(0, #marks(buf, ns_id))
+  end)
+end)

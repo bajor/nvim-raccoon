@@ -104,6 +104,18 @@ function M.flatten_hunks(hunks, plan)
   return lines, ranges
 end
 
+--- Plan and flatten hunks once for scratch-buffer population and rendering.
+---@param hunks table[]
+---@param opts? table Planner options
+---@return RaccoonPatchLine[] lines
+---@return table<number, RaccoonInlineRange[]> ranges
+---@return table plan
+function M.prepare_hunks(hunks, opts)
+  local plan = intraline.plan_hunks(hunks, opts)
+  local lines, ranges = M.flatten_hunks(hunks, plan)
+  return lines, ranges, plan
+end
+
 --- Plan and highlight parsed hunks rendered as real scratch-buffer lines.
 ---@param ns_id number
 ---@param buf number
@@ -111,8 +123,7 @@ end
 ---@param opts? table Planner options
 ---@return table plan
 function M.apply_real_hunks(ns_id, buf, hunks, opts)
-  local plan = intraline.plan_hunks(hunks, opts)
-  local lines, ranges = M.flatten_hunks(hunks, plan)
+  local lines, ranges, plan = M.prepare_hunks(hunks, opts)
   M.apply_real_lines(ns_id, buf, lines, ranges)
   return plan
 end
