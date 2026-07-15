@@ -228,6 +228,24 @@ describe("raccoon.intraline", function()
       assert.same({ 1 }, result.unpaired_additions)
     end)
 
+    it("aligns an insertion inside a replacement block", function()
+      local block = one_block({
+        "-local first = old_value",
+        "-local second = old_value",
+        "+local first = new_value",
+        "+inserted unrelated",
+        "+local second = new_value",
+      }, 2, 3)
+      local result = intraline.pair_changed_lines(block)
+
+      assert.same({
+        { deletion_index = 1, addition_index = 1, changed = true },
+        { deletion_index = 2, addition_index = 3, changed = true },
+      }, result.pairs)
+      assert.same({}, result.unpaired_deletions)
+      assert.same({ 2 }, result.unpaired_additions)
+    end)
+
     it("aligns a removed line instead of shifting every later pair", function()
       local block = one_block({
         "-removed unrelated",
@@ -243,6 +261,24 @@ describe("raccoon.intraline", function()
         { deletion_index = 3, addition_index = 2, changed = true },
       }, result.pairs)
       assert.same({ 1 }, result.unpaired_deletions)
+      assert.same({}, result.unpaired_additions)
+    end)
+
+    it("aligns a deletion inside a replacement block", function()
+      local block = one_block({
+        "-local first = old_value",
+        "-removed unrelated",
+        "-local second = old_value",
+        "+local first = new_value",
+        "+local second = new_value",
+      }, 3, 2)
+      local result = intraline.pair_changed_lines(block)
+
+      assert.same({
+        { deletion_index = 1, addition_index = 1, changed = true },
+        { deletion_index = 3, addition_index = 2, changed = true },
+      }, result.pairs)
+      assert.same({ 2 }, result.unpaired_deletions)
       assert.same({}, result.unpaired_additions)
     end)
 
