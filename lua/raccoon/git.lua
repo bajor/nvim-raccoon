@@ -122,7 +122,10 @@ end
 ---@param branch string Branch name
 ---@param url string|nil Optional: update remote URL before fetching (for auth)
 ---@param callback fun(success: boolean, err: string|nil)
-function M.fetch_reset(path, branch, url, callback)
+---@param revision? string Exact fetched revision to reset to (defaults to origin/<branch>)
+function M.fetch_reset(path, branch, url, callback, revision)
+  local reset_target = type(revision) == "string" and revision ~= "" and revision
+    or "origin/" .. branch
   local function do_fetch()
     run_git({ "fetch", "origin", branch }, {
       cwd = path,
@@ -136,46 +139,19 @@ function M.fetch_reset(path, branch, url, callback)
           return
         end
 
-        -- Then checkout the branch
-        run_git({ "checkout", branch }, {
+        -- Reset the branch and worktree in one checkout. Unlike a separate
+        -- checkout followed by reset, -B does not move the branch if checkout fails.
+        run_git({ "checkout", "-f", "-B", branch, reset_target }, {
           cwd = path,
-          on_exit = function(checkout_code, _, _)
-            if checkout_code ~= 0 then
-              -- Branch might not exist locally, try creating it
-              run_git({ "checkout", "-b", branch, "origin/" .. branch }, {
-                cwd = path,
-                on_exit = function(create_code, _, _)
-                  if create_code ~= 0 then
-                    -- Already exists, just reset
-                    run_git({ "reset", "--hard", "origin/" .. branch }, {
-                      cwd = path,
-                      on_exit = function(reset_code, _, reset_stderr)
-                        if reset_code == 0 then
-                          callback(true, nil)
-                        else
-                          local err_msg = table.concat(reset_stderr, "\n")
-                          callback(false, err_msg)
-                        end
-                      end,
-                    })
-                  else
-                    callback(true, nil)
-                  end
-                end,
-              })
+          on_exit = function(checkout_code, _, checkout_stderr)
+            if checkout_code == 0 then
+              callback(true, nil)
             else
-              -- Reset to remote
-              run_git({ "reset", "--hard", "origin/" .. branch }, {
-                cwd = path,
-                on_exit = function(reset_code, _, reset_stderr)
-                  if reset_code == 0 then
-                    callback(true, nil)
-                  else
-                    local err_msg = table.concat(reset_stderr, "\n")
-                    callback(false, err_msg)
-                  end
-                end,
-              })
+              local err_msg = table.concat(checkout_stderr, "\n")
+              if err_msg == "" then
+                err_msg = "Git checkout failed with code " .. checkout_code
+              end
+              callback(false, err_msg)
             end
           end,
         })
@@ -590,6 +566,73 @@ local function parse_diff_output(stdout)
   return files
 end
 
+local function extract_patch(stdout)
+  local lines = {}
+  local in_patch = false
+  for _, line in ipairs(stdout) do
+    if line:match("^@@") then in_patch = true end
+    if in_patch then table.insert(lines, line) end
+  end
+  return table.concat(lines, "\n")
+end
+
+local function resolve_pr_diff_revisions(path, base_branch, callback, base_revision, head_revision)
+  run_git({ "rev-parse", "--verify", "HEAD^{commit}" }, {
+    cwd = path,
+    on_exit = function(head_code, head_stdout, head_stderr)
+      if head_code ~= 0 or not head_stdout[1] then
+        callback(nil, table.concat(head_stderr, "\n"))
+        return
+      end
+
+      local head_sha = head_stdout[1]
+      if head_revision and head_sha ~= head_revision then
+        callback(nil, "Checked-out head does not match the pull-request snapshot")
+        return
+      end
+      local base_target = base_revision or "origin/" .. base_branch
+      run_git({ "merge-base", base_target, head_sha }, {
+        cwd = path,
+        on_exit = function(base_code, base_stdout, base_stderr)
+          if base_code ~= 0 or not base_stdout[1] then
+            callback(nil, table.concat(base_stderr, "\n"))
+            return
+          end
+          callback({ base_sha = base_stdout[1], head_sha = head_sha }, nil)
+        end,
+      })
+    end,
+  })
+end
+
+--- Prepare immutable merge-base and head revisions for a pull-request diff.
+---@param path string Repository path
+---@param base_branch string Pull-request base branch
+---@param callback fun(revisions: {base_sha:string,head_sha:string}|nil, err: string|nil)
+---@param base_revision? string Exact pull-request base revision
+---@param head_revision? string Expected checked-out pull-request head revision
+function M.prepare_pr_diff(path, base_branch, callback, base_revision, head_revision)
+  if type(path) ~= "string" or path == ""
+      or type(base_branch) ~= "string" or base_branch == "" then
+    callback(nil, "Missing pull-request diff coordinates")
+    return
+  end
+
+  M.unshallow_if_needed(path, function(unshallow_success, unshallow_err)
+    if not unshallow_success then
+      callback(nil, unshallow_err)
+      return
+    end
+    M.fetch_branch(path, base_branch, function(fetch_success, fetch_err)
+      if not fetch_success then
+        callback(nil, fetch_err)
+        return
+      end
+      resolve_pr_diff_revisions(path, base_branch, callback, base_revision, head_revision)
+    end)
+  end)
+end
+
 --- Get diff for a single commit, split into per-file patches
 ---@param path string Repository path
 ---@param sha string Commit SHA
@@ -626,17 +669,51 @@ function M.show_commit_file(path, sha, filename, callback)
         callback(nil, table.concat(stderr, "\n"))
         return
       end
-      local lines = {}
-      local in_patch = false
-      for _, line in ipairs(stdout) do
-        if line:match("^@@") then
-          in_patch = true
-        end
-        if in_patch then
-          table.insert(lines, line)
-        end
+      callback(extract_patch(stdout), nil)
+    end,
+  })
+end
+
+--- Get a complete pull-request patch for one file from the local checkout.
+---@param path string Repository path
+---@param revisions {base_sha:string,head_sha:string} Prepared immutable revisions
+---@param filename string File path within the repo
+---@param previous_filename string|nil Previous path for a renamed file
+---@param callback fun(patch: string|nil, err: string|nil)
+function M.diff_pr_file(path, revisions, filename, previous_filename, callback)
+  if type(path) ~= "string" or path == ""
+      or type(revisions) ~= "table"
+      or type(revisions.base_sha) ~= "string" or revisions.base_sha == ""
+      or type(revisions.head_sha) ~= "string" or revisions.head_sha == ""
+      or type(filename) ~= "string" or filename == "" then
+    callback(nil, "Missing pull-request diff coordinates")
+    return
+  end
+
+  local args = {
+    "--literal-pathspecs",
+    "diff",
+    "--no-ext-diff",
+    "--find-renames",
+    "--unified=3",
+    revisions.base_sha,
+    revisions.head_sha,
+    "--",
+  }
+  if type(previous_filename) == "string" and previous_filename ~= ""
+      and previous_filename ~= filename then
+    table.insert(args, previous_filename)
+  end
+  table.insert(args, filename)
+
+  run_git(args, {
+    cwd = path,
+    on_exit = function(code, stdout, stderr)
+      if code ~= 0 then
+        callback(nil, table.concat(stderr, "\n"))
+        return
       end
-      callback(table.concat(lines, "\n"), nil)
+      callback(extract_patch(stdout), nil)
     end,
   })
 end
@@ -889,17 +966,7 @@ function M.diff_working_dir_file(path, filename, callback)
             callback(nil, table.concat(stderr, "\n"))
             return
           end
-          local lines = {}
-          local in_patch = false
-          for _, line in ipairs(stdout) do
-            if line:match("^@@") then
-              in_patch = true
-            end
-            if in_patch then
-              table.insert(lines, line)
-            end
-          end
-          callback(table.concat(lines, "\n"), nil)
+          callback(extract_patch(stdout), nil)
         end,
       })
     end,

@@ -1,4 +1,5 @@
 local git = require("raccoon.git")
+local diff = require("raccoon.diff")
 
 describe("raccoon.git", function()
 
@@ -169,6 +170,141 @@ describe("raccoon.git", function()
   end)
 end)
 
+describe("raccoon.git pull-request diff recovery", function()
+  local root
+
+  local function run_git_sync(cwd, args)
+    local command = { "git", "-c", "core.longpaths=true" }
+    if cwd then
+      table.insert(command, "-C")
+      table.insert(command, cwd)
+    end
+    for _, arg in ipairs(args) do table.insert(command, arg) end
+    local output = vim.fn.system(command)
+    assert.equals(0, vim.v.shell_error, output)
+    return vim.trim(output)
+  end
+
+  local function write_lines(path, lines)
+    vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+    vim.fn.writefile(lines, path)
+  end
+
+  after_each(function()
+    if root then vim.fn.delete(root, "rf") end
+  end)
+
+  it("recovers a renamed and edited file from a fresh shallow clone", function()
+    root = vim.fn.tempname()
+    local remote = vim.fs.joinpath(root, "remote.git")
+    local source = vim.fs.joinpath(root, "source")
+    local clone = vim.fs.joinpath(root, "clone")
+    vim.fn.mkdir(root, "p")
+
+    run_git_sync(nil, { "init", "--bare", remote })
+    run_git_sync(nil, { "init", source })
+    run_git_sync(source, { "config", "user.email", "test@example.com" })
+    run_git_sync(source, { "config", "user.name", "Raccoon Test" })
+    run_git_sync(source, { "branch", "-M", "main" })
+
+    local common_lines = {}
+    for index = 1, 10 do
+      table.insert(common_lines, string.format("local value_%d = %d", index, index))
+    end
+    local old_path = vim.fs.joinpath(source, "lua", "old.lua")
+    write_lines(old_path, common_lines)
+    run_git_sync(source, { "add", "lua/old.lua" })
+    run_git_sync(source, { "commit", "-m", "common" })
+    local common_sha = run_git_sync(source, { "rev-parse", "HEAD" })
+    run_git_sync(source, { "branch", "feature" })
+
+    write_lines(vim.fs.joinpath(source, "base-only.txt"), { "base advanced" })
+    run_git_sync(source, { "add", "base-only.txt" })
+    run_git_sync(source, { "commit", "-m", "advance base" })
+    run_git_sync(source, { "remote", "add", "origin", remote })
+    run_git_sync(source, { "push", "origin", "main" })
+
+    run_git_sync(source, { "checkout", "feature" })
+    vim.fn.mkdir(vim.fs.joinpath(source, "lua", "renamed"), "p")
+    run_git_sync(source, { "mv", "lua/old.lua", "lua/renamed/new.lua" })
+    local changed_lines = vim.deepcopy(common_lines)
+    changed_lines[5] = "local value_5 = 50"
+    write_lines(vim.fs.joinpath(source, "lua", "renamed", "new.lua"), changed_lines)
+    run_git_sync(source, { "commit", "-am", "rename and edit" })
+    local head_sha = run_git_sync(source, { "rev-parse", "HEAD" })
+    run_git_sync(source, { "push", "origin", "feature" })
+
+    run_git_sync(nil, {
+      "clone", "--depth", "1", "--branch", "feature", "file://" .. remote, clone,
+    })
+    assert.equals("true", run_git_sync(clone, { "rev-parse", "--is-shallow-repository" }))
+    local missing_base = vim.fn.system({
+      "git", "-C", clone, "show-ref", "--verify", "--quiet", "refs/remotes/origin/main",
+    })
+    assert.equals("", missing_base)
+    assert.not_equals(0, vim.v.shell_error)
+
+    local revisions, prepare_err
+    git.prepare_pr_diff(clone, "main", function(result, err)
+      revisions, prepare_err = result, err or false
+    end)
+    vim.wait(10000, function() return prepare_err ~= nil end)
+
+    assert.is_false(prepare_err)
+    assert.same({ base_sha = common_sha, head_sha = head_sha }, revisions)
+    assert.equals("false", run_git_sync(clone, { "rev-parse", "--is-shallow-repository" }))
+    run_git_sync(clone, { "show-ref", "--verify", "refs/remotes/origin/main" })
+
+    local patch, patch_err
+    git.diff_pr_file(
+      clone,
+      revisions,
+      "lua/renamed/new.lua",
+      "lua/old.lua",
+      function(result, err) patch, patch_err = result, err or false end
+    )
+    vim.wait(10000, function() return patch_err ~= nil end)
+
+    assert.is_false(patch_err)
+    assert.matches("%-local value_5 = 5", patch)
+    assert.matches("%+local value_5 = 50", patch)
+    assert.same({ additions = 1, deletions = 1, complete = true }, diff.get_patch_stats(patch))
+  end)
+
+  it("keeps the current branch and revision when an exact checkout cannot resolve", function()
+    root = vim.fn.tempname()
+    local remote = vim.fs.joinpath(root, "remote.git")
+    local source = vim.fs.joinpath(root, "source")
+    local clone = vim.fs.joinpath(root, "clone")
+    vim.fn.mkdir(root, "p")
+
+    run_git_sync(nil, { "init", "--bare", remote })
+    run_git_sync(nil, { "init", source })
+    run_git_sync(source, { "config", "user.email", "test@example.com" })
+    run_git_sync(source, { "config", "user.name", "Raccoon Test" })
+    run_git_sync(source, { "branch", "-M", "main" })
+    write_lines(vim.fs.joinpath(source, "file.txt"), { "initial" })
+    run_git_sync(source, { "add", "file.txt" })
+    run_git_sync(source, { "commit", "-m", "initial" })
+    run_git_sync(source, { "branch", "feature" })
+    run_git_sync(source, { "remote", "add", "origin", remote })
+    run_git_sync(source, { "push", "--all", "origin" })
+    run_git_sync(nil, { "clone", "--branch", "main", "file://" .. remote, clone })
+    local original_sha = run_git_sync(clone, { "rev-parse", "HEAD" })
+
+    local success, result_err
+    git.fetch_reset(clone, "feature", nil, function(ok, err)
+      success, result_err = ok, err or false
+    end, string.rep("f", 40))
+    vim.wait(10000, function() return success ~= nil end)
+
+    assert.is_false(success)
+    assert.is_not_false(result_err)
+    assert.equals("main", run_git_sync(clone, { "branch", "--show-current" }))
+    assert.equals(original_sha, run_git_sync(clone, { "rev-parse", "HEAD" }))
+  end)
+end)
+
 -- Command format tests (mock_jobstart)
 describe("raccoon.git command format", function()
   local mocks = require("tests.helpers.mocks")
@@ -230,6 +366,85 @@ describe("raccoon.git command format", function()
     local u_pos = recorded[1].cmd:find("%-U15")
     local sha_pos = recorded[1].cmd:find("abc123")
     assert.is_true(u_pos < sha_pos)
+  end)
+
+  it("fetch_reset pins the checkout to an exact PR head revision", function()
+    local revision = string.rep("c", 40)
+    local done = false
+
+    git.fetch_reset("/tmp", "feature", nil, function(success)
+      assert.is_true(success)
+      done = true
+    end, revision)
+    vim.wait(5000, function() return done end)
+
+    assert.is_true(done)
+    assert.equals(2, #recorded)
+    assert.matches("fetch origin feature$", recorded[1].cmd)
+    assert.matches("checkout %-f %-B feature " .. revision .. "$", recorded[2].cmd)
+  end)
+
+  it("prepare_pr_diff resolves immutable revisions from a fetched origin base", function()
+    local head_sha = string.rep("a", 40)
+    local base_sha = string.rep("b", 40)
+    mocks.restore()
+    recorded = mocks.mock_jobstart({
+      ["rev%-parse %-%-is%-shallow%-repository"] = { stdout = { "false" } },
+      ["rev%-parse %-%-verify HEAD%^%{commit%}"] = { stdout = { head_sha } },
+      ["merge%-base origin/main " .. head_sha] = { stdout = { base_sha } },
+    })
+    local revisions, result_err
+
+    git.prepare_pr_diff("/tmp", "main", function(result, err)
+      revisions, result_err = result, err or false
+    end)
+    vim.wait(5000, function() return result_err ~= nil end)
+
+    assert.is_false(result_err)
+    assert.same({ base_sha = base_sha, head_sha = head_sha }, revisions)
+    assert.equals(4, #recorded)
+    assert.matches(
+      "fetch origin %+refs/heads/main:refs/remotes/origin/main$",
+      recorded[2].cmd
+    )
+  end)
+
+  it("prepare_pr_diff rejects missing coordinates before starting git", function()
+    local result_err
+
+    git.prepare_pr_diff("/tmp", "", function(_, err) result_err = err end)
+
+    assert.equals(0, #recorded)
+    assert.matches("Missing pull%-request diff coordinates", result_err)
+  end)
+
+  it("diff_pr_file compares immutable revisions and includes both rename paths", function()
+    local revisions = { head_sha = string.rep("a", 40), base_sha = string.rep("b", 40) }
+    local done = false
+
+    git.diff_pr_file("/tmp", revisions, "lua/new.lua", "lua/old.lua", function(_, err)
+      assert.is_nil(err)
+      done = true
+    end)
+    vim.wait(5000, function() return done end)
+
+    assert.is_true(done)
+    assert.equals(1, #recorded)
+    assert.matches(
+      "%-%-literal%-pathspecs diff %-%-no%-ext%-diff %-%-find%-renames %-%-unified=3 "
+        .. revisions.base_sha .. " " .. revisions.head_sha .. " %-%- lua/old%.lua lua/new%.lua$",
+      recorded[1].cmd
+    )
+  end)
+
+  it("diff_pr_file rejects missing coordinates without starting git", function()
+    local result_err
+
+    git.diff_pr_file("/tmp", {}, "lua/raccoon/diff.lua", nil,
+      function(_, err) result_err = err end)
+
+    assert.equals(0, #recorded)
+    assert.matches("Missing pull%-request diff coordinates", result_err)
   end)
 
   it("diff_working_dir includes -U flag when context is provided", function()
