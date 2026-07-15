@@ -181,6 +181,69 @@ describe("raccoon.diff", function()
       assert.equals(10, hunk.start_line)
       assert.equals(4, hunk.count)
     end)
+
+    it("parses changed content beginning with file-header prefixes", function()
+      local patch = table.concat({
+        "--- a/file.lua",
+        "+++ b/file.lua",
+        "@@ -7,2 +10,2 @@",
+        "---before",
+        "+++after",
+        " trailing",
+      }, "\n")
+
+      local lines = diff.parse_patch(patch)[1].lines
+
+      assert.equals(3, #lines)
+      assert.same({ "deletion", "--before", 7, nil, 9 }, {
+        lines[1].kind, lines[1].content, lines[1].old_line, lines[1].new_line, lines[1].anchor_line,
+      })
+      assert.same({ "addition", "++after", nil, 10, 10 }, {
+        lines[2].kind, lines[2].content, lines[2].old_line, lines[2].new_line, lines[2].anchor_line,
+      })
+      assert.same({ "context", "trailing", 8, 11, 11 }, {
+        lines[3].kind, lines[3].content, lines[3].old_line, lines[3].new_line, lines[3].anchor_line,
+      })
+    end)
+  end)
+
+  describe("file patch completeness", function()
+    it("accepts complete hunks whose changed content resembles file headers", function()
+      local file = {
+        additions = 1,
+        deletions = 1,
+        patch = "@@ -1 +1 @@\n---before\n+++after",
+      }
+
+      assert.is_true(diff.is_file_patch_complete(file))
+      assert.same({ additions = 1, deletions = 1, complete = true }, diff.get_patch_stats(file.patch))
+    end)
+
+    it("rejects a patch truncated inside its final hunk", function()
+      local file = {
+        additions = 1,
+        deletions = 1,
+        patch = "@@ -1,2 +1,2 @@\n-before\n+after",
+      }
+
+      assert.is_false(diff.is_file_patch_complete(file))
+      assert.is_false(diff.get_patch_stats(file.patch).complete)
+    end)
+
+    it("rejects omitted complete hunks by comparing GitHub change totals", function()
+      local file = {
+        additions = 2,
+        deletions = 2,
+        patch = "@@ -1 +1 @@\n-old one\n+new one",
+      }
+
+      assert.is_false(diff.is_file_patch_complete(file))
+    end)
+
+    it("distinguishes an omitted text patch from a binary change", function()
+      assert.is_false(diff.is_file_patch_complete({ additions = 1, deletions = 1 }))
+      assert.is_true(diff.is_file_patch_complete({ additions = 0, deletions = 0 }))
+    end)
   end)
 
   describe("get_changed_lines", function()
@@ -286,14 +349,19 @@ describe("raccoon.diff", function()
 
   describe("open_file", function()
     local original_notify
+    local temp_dir
 
     before_each(function()
       original_notify = vim.notify
       vim.notify = function() end
+      temp_dir = vim.fn.tempname()
+      vim.fn.mkdir(temp_dir, "p")
     end)
 
     after_each(function()
       vim.notify = original_notify
+      vim.cmd("silent! enew")
+      vim.fn.delete(temp_dir, "rf")
     end)
 
     it("returns nil for nil file", function()
@@ -306,6 +374,124 @@ describe("raccoon.diff", function()
 
     it("returns nil when no active session", function()
       assert.is_nil(diff.open_file({ filename = "test.lua" }))
+    end)
+
+    it("opens a removed file as an empty post-image with its deleted lines", function()
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        clone_path = temp_dir,
+      })
+      local file = {
+        filename = "removed.lua",
+        status = "removed",
+        patch = "@@ -1,2 +0,0 @@\n-local first = 1\n-local second = 2",
+      }
+
+      local buf = diff.open_file(file)
+
+      assert.is_not_nil(buf)
+      assert.equals("nofile", vim.bo[buf].buftype)
+      assert.equals(vim.fs.joinpath(temp_dir, file.filename), vim.api.nvim_buf_get_name(buf))
+      assert.is_true(vim.wait(1000, function()
+        return #vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true }) > 0
+      end))
+      local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+      local deleted = {}
+      for _, mark in ipairs(marks) do
+        for _, virtual_line in ipairs(mark[4].virt_lines or {}) do
+          table.insert(deleted, virtual_line[2][1])
+        end
+      end
+      assert.same({ "local first = 1", "local second = 2" }, deleted)
+      assert.equals(buf, diff.open_file(file))
+    end)
+
+    it("empties a reused normal buffer when sync removes its file", function()
+      local filename = vim.fs.joinpath(temp_dir, "removed.lua")
+      vim.fn.writefile({ "stale pre-image" }, filename)
+      vim.cmd("edit! " .. vim.fn.fnameescape(filename))
+      local buf = vim.api.nvim_get_current_buf()
+      vim.fn.delete(filename)
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        clone_path = temp_dir,
+      })
+
+      local reopened = diff.open_file({
+        filename = "removed.lua",
+        status = "removed",
+        patch = "@@ -1 +0,0 @@\n-stale pre-image",
+      })
+
+      assert.equals(buf, reopened)
+      assert.equals("nofile", vim.bo[buf].buftype)
+      assert.same({ "" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+    end)
+
+    it("warns whenever a file's complete textual diff is unavailable", function()
+      vim.fn.writefile({ "current content" }, vim.fs.joinpath(temp_dir, "changed.lua"))
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        clone_path = temp_dir,
+      })
+      local notifications = {}
+      vim.notify = function(message, level)
+        table.insert(notifications, { message = message, level = level })
+      end
+
+      local buf = diff.open_file({ filename = "changed.lua", diff_unavailable = true })
+
+      assert.is_not_nil(buf)
+      assert.same({ {
+        message = "Complete diff unavailable for changed.lua",
+        level = vim.log.levels.WARN,
+      } }, notifications)
+    end)
+
+    it("clears stale highlights when a reopened patch is unavailable", function()
+      vim.fn.writefile({ "new value" }, vim.fs.joinpath(temp_dir, "changed.lua"))
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        clone_path = temp_dir,
+      })
+      local buf = diff.open_file({
+        filename = "changed.lua",
+        patch = "@@ -1 +1 @@\n-old value\n+new value",
+      })
+      assert.is_true(vim.wait(1000, function()
+        return #vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, {}) > 0
+      end))
+
+      assert.equals(buf, diff.open_file({
+        filename = "changed.lua",
+        diff_unavailable = true,
+      }))
+      assert.same({}, vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, {}))
+    end)
+
+    it("labels binary and metadata-only changes without textual hunks", function()
+      vim.fn.writefile({ "binary placeholder" }, vim.fs.joinpath(temp_dir, "asset.bin"))
+      state.start({
+        owner = "owner",
+        repo = "repo",
+        number = 1,
+        clone_path = temp_dir,
+      })
+      local message
+      vim.notify = function(value) message = value end
+
+      local buf = diff.open_file({ filename = "asset.bin", additions = 0, deletions = 0, patch = "" })
+
+      assert.is_not_nil(buf)
+      assert.equals("No textual diff for asset.bin (binary or metadata-only change)", message)
     end)
   end)
 
@@ -366,6 +552,21 @@ describe("raccoon.diff", function()
       assert.equals(7, vim.api.nvim_win_get_cursor(0)[1])
       assert.is_true(diff.prev_diff())
       assert.equals(3, vim.api.nvim_win_get_cursor(0)[1])
+    end)
+
+    it("clamps a first-line deletion anchor to line one", function()
+      state.start({ owner = "owner", repo = "repo", number = 1 })
+      state.set_files({ {
+        filename = "test.lua",
+        patch = "@@ -1,2 +1 @@\n-first\n remaining",
+      } })
+      test_buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(test_buf, 0, -1, false, { "remaining", "outside hunk" })
+      vim.api.nvim_set_current_buf(test_buf)
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+      assert.is_true(diff.prev_diff())
+      assert.equals(1, vim.api.nvim_win_get_cursor(0)[1])
     end)
   end)
 
@@ -550,6 +751,14 @@ describe("raccoon.diff", function()
   end)
 
   describe("apply_highlights edge cases", function()
+    local function find_virtual_deletion(buf)
+      local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+      for _, mark in ipairs(marks) do
+        if mark[4].virt_lines then return mark end
+      end
+      return nil
+    end
+
     it("handles invalid buffer gracefully", function()
       -- Should not error
       diff.apply_highlights(-1, "@@ -1,1 +1,2 @@\n line\n+added")
@@ -637,6 +846,38 @@ describe("raccoon.diff", function()
         end
       end
       assert.equals("- " .. deleted .. string.rep(" ", 300), rendered)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("renders deletions when the post-image file is empty", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+      local patch = "@@ -1 +0,0 @@\n-removed"
+
+      diff.apply_highlights(buf, patch)
+
+      local deletion = diff.parse_patch(patch)[1].lines[1]
+      assert.equals(0, deletion.anchor_line)
+      local mark = find_virtual_deletion(buf)
+      assert.is_not_nil(mark)
+      assert.equals(0, mark[2])
+      assert.is_true(mark[4].virt_lines_above)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("renders an EOF deletion below the last post-image line", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "remaining" })
+      local patch = "@@ -1,2 +1 @@\n remaining\n-removed"
+
+      diff.apply_highlights(buf, patch)
+
+      local mark = find_virtual_deletion(buf)
+      assert.is_not_nil(mark)
+      assert.equals(0, mark[2])
+      assert.is_false(mark[4].virt_lines_above)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)

@@ -868,9 +868,8 @@ local function jump_to_path_and_line(path, line)
   end
   state.goto_file(target_index)
   local buf = diff.open_file(target_file)
-  if buf then
-    M.show_comments(buf, state.get_comments(path))
-  end
+  if not buf then return false end
+  M.show_comments(buf, state.get_comments(path))
   if line then
     local line_count = vim.api.nvim_buf_line_count(0)
     vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(line, line_count)), 0 })

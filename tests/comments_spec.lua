@@ -1,4 +1,5 @@
 local comments = require("raccoon.comments")
+local diff = require("raccoon.diff")
 local state = require("raccoon.state")
 
 describe("raccoon.comments", function()
@@ -50,5 +51,23 @@ describe("raccoon.comments", function()
     it("ignores invalid buffers when clearing comments", function()
       comments.clear_comments(-1)
     end)
+  end)
+
+  it("reports failed file navigation when the target cannot be opened", function()
+    state.start({
+      owner = "test",
+      repo = "repo",
+      number = 1,
+      url = "https://github.com/test/repo/pull/1",
+      clone_path = "/tmp/repo",
+    })
+    state.set_files({ { filename = "missing.lua", patch = "@@ -1 +1 @@\n-old\n+new" } })
+    local original_open_file = diff.open_file
+    diff.open_file = function() return nil end
+
+    local opened = comments.jump_to_file("missing.lua")
+
+    diff.open_file = original_open_file
+    assert.is_false(opened)
   end)
 end)

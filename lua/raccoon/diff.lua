@@ -5,6 +5,7 @@ local M = {}
 local inline_diff = require("raccoon.inline_diff")
 local state = require("raccoon.state")
 local inline_diff_warning_shown = false
+local buffer_highlight_generations = {}
 
 --- Namespace for diff highlights
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
@@ -174,7 +175,7 @@ function M.parse_patch(patch)
       old_line = (old_start or 1) - 1
       new_line = (new_start or 1) - 1
     elseif current_hunk then
-      if line:match("^%+") and not line:match("^%+%+%+") then
+      if line:match("^%+") then
         -- Added line
         new_line = new_line + 1
         table.insert(current_hunk.lines, {
@@ -187,20 +188,21 @@ function M.parse_patch(patch)
           line_num = new_line,
         })
         table.insert(current_hunk.changes, { type = "add", line_num = new_line })
-      elseif line:match("^%-") and not line:match("^%-%-%-") then
+      elseif line:match("^%-") then
         -- Removed line (doesn't increment line number in new file)
         -- Store the content for virtual text display
         old_line = old_line + 1
+        local anchor_line = math.max(0, new_line)
         table.insert(current_hunk.lines, {
           kind = "deletion",
           type = "del",
           content = line:sub(2),
           old_line = old_line,
           new_line = nil,
-          anchor_line = new_line,
-          line_num = new_line,
+          anchor_line = anchor_line,
+          line_num = anchor_line,
         })
-        table.insert(current_hunk.changes, { type = "del", line_num = new_line, content = line:sub(2) })
+        table.insert(current_hunk.changes, { type = "del", line_num = anchor_line, content = line:sub(2) })
       elseif not line:match("^\\ No newline at end of file$") and (line:match("^%s") or line == "") then
         -- Context line
         old_line = old_line + 1
@@ -223,6 +225,53 @@ function M.parse_patch(patch)
   end
 
   return hunks
+end
+
+--- Summarize a patch and verify that every hunk contains its declared lines.
+---@param patch string|nil
+---@return {additions:integer,deletions:integer,complete:boolean}
+function M.get_patch_stats(patch)
+  local hunks = M.parse_patch(patch)
+  local stats = { additions = 0, deletions = 0, complete = #hunks > 0 }
+
+  for _, hunk in ipairs(hunks) do
+    local old_lines, new_lines = 0, 0
+    for _, line in ipairs(hunk.lines) do
+      if line.kind == "context" then
+        old_lines = old_lines + 1
+        new_lines = new_lines + 1
+      elseif line.kind == "addition" then
+        stats.additions = stats.additions + 1
+        new_lines = new_lines + 1
+      elseif line.kind == "deletion" then
+        stats.deletions = stats.deletions + 1
+        old_lines = old_lines + 1
+      end
+    end
+    if old_lines ~= hunk.old_count or new_lines ~= hunk.new_count then
+      stats.complete = false
+    end
+  end
+
+  return stats
+end
+
+--- Check whether a GitHub file entry contains a complete textual patch.
+---@param file table
+---@return boolean
+function M.is_file_patch_complete(file)
+  if type(file) ~= "table" then return false end
+  local expected_additions = type(file.additions) == "number" and file.additions or nil
+  local expected_deletions = type(file.deletions) == "number" and file.deletions or nil
+  if type(file.patch) ~= "string" or file.patch == "" then
+    return expected_additions == 0 and expected_deletions == 0
+  end
+
+  local stats = M.get_patch_stats(file.patch)
+  if not stats.complete then return false end
+  if expected_additions and stats.additions ~= expected_additions then return false end
+  if expected_deletions and stats.deletions ~= expected_deletions then return false end
+  return true
 end
 
 --- Get all changed line numbers from a patch
@@ -334,8 +383,9 @@ function M.apply_highlights(buf, patch)
 
   -- Display grouped deleted lines as virtual text
   for line_idx, deletions in pairs(grouped_deletions) do
-    -- Ensure line_idx is within buffer bounds
-    local target_line = math.min(line_idx, line_count - 1)
+    -- Anchor above the following row, except at EOF where there is no following row.
+    local at_eof = line_idx >= line_count
+    local target_line = at_eof and line_count - 1 or line_idx
     if target_line >= 0 then
       -- Create virtual lines for deleted content
       local virt_lines = {}
@@ -366,7 +416,7 @@ function M.apply_highlights(buf, patch)
 
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, target_line, 0, {
         virt_lines = virt_lines,
-        virt_lines_above = true,
+        virt_lines_above = not at_eof,
         sign_text = "-",
         sign_hl_group = "RaccoonDeleteSign",
       })
@@ -399,35 +449,59 @@ function M.open_file(file)
 
   local file_path = vim.fs.joinpath(clone_path, file.filename)
 
-  -- Check if file exists (might be deleted)
+  local buf
   if vim.fn.filereadable(file_path) == 0 then
     if file.status == "removed" then
-      vim.notify("File was deleted: " .. file.filename, vim.log.levels.WARN)
+      local existing_buf = vim.fn.bufnr(file_path)
+      if existing_buf >= 0 and vim.api.nvim_buf_is_valid(existing_buf) then
+        buf = existing_buf
+      else
+        buf = vim.api.nvim_create_buf(true, true)
+        vim.api.nvim_buf_set_name(buf, file_path)
+      end
+      vim.api.nvim_set_current_buf(buf)
+      vim.bo[buf].modifiable = true
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+      vim.bo[buf].buftype = "nofile"
+      vim.bo[buf].swapfile = false
+      local filetype = vim.filetype.match({ filename = file.filename })
+      if filetype then vim.bo[buf].filetype = filetype end
     else
       vim.notify("File not found: " .. file.filename, vim.log.levels.ERROR)
+      return nil
     end
-    return nil
+  else
+    -- Open the file (wrapped in pcall to handle treesitter/filetype plugin errors gracefully)
+    local ok, err = pcall(vim.cmd, "edit! " .. vim.fn.fnameescape(file_path))
+    if not ok then
+      local short_err = tostring(err):match("^[^\n]+") or "unknown error"
+      vim.notify("Failed to open file: " .. file.filename .. " (" .. short_err .. ")", vim.log.levels.WARN)
+    end
+    buf = vim.api.nvim_get_current_buf()
+    if not ok and vim.api.nvim_buf_get_name(buf) ~= file_path then return nil end
   end
-
-  -- Open the file (wrapped in pcall to handle treesitter/filetype plugin errors gracefully)
-  local ok, err = pcall(vim.cmd, "edit! " .. vim.fn.fnameescape(file_path))
-  if not ok then
-    -- Extract first line of error for cleaner display
-    local short_err = tostring(err):match("^[^\n]+") or "unknown error"
-    vim.notify("Failed to open file: " .. file.filename .. " (" .. short_err .. ")", vim.log.levels.WARN)
-    -- File may still be open despite the error, continue if buffer exists
-  end
-  local buf = vim.api.nvim_get_current_buf()
 
   -- Track buffer in session
   state.add_buffer(buf)
   vim.bo[buf].modifiable = false
+  local highlight_generation = (buffer_highlight_generations[buf] or 0) + 1
+  buffer_highlight_generations[buf] = highlight_generation
+  M.clear_highlights(buf)
+
+  local has_textual_patch = type(file.patch) == "string" and file.patch ~= ""
+  if file.diff_unavailable then
+    vim.notify("Complete diff unavailable for " .. file.filename, vim.log.levels.WARN)
+  elseif not has_textual_patch and file.additions == 0 and file.deletions == 0 then
+    vim.notify("No textual diff for " .. file.filename .. " (binary or metadata-only change)", vim.log.levels.INFO)
+  end
 
   -- Apply diff highlights
-  if file.patch then
+  if has_textual_patch then
     -- Defer to allow buffer to fully load
     vim.schedule(function()
-      M.apply_highlights(buf, file.patch)
+      if buffer_highlight_generations[buf] == highlight_generation then
+        M.apply_highlights(buf, file.patch)
+      end
     end)
   end
 
@@ -534,9 +608,10 @@ local function get_current_file_diff_hunks()
   for _, line in ipairs(changes.added) do
     table.insert(lines, line)
   end
+  local line_count = vim.api.nvim_buf_line_count(0)
   for _, del in ipairs(changes.deleted) do
     if del.line_num then
-      table.insert(lines, del.line_num)
+      table.insert(lines, math.max(1, math.min(del.line_num, line_count)))
     end
   end
 
