@@ -7,12 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Dependency-free pure-Lua exact-span diff planning for flat review, commit viewer, and local commit viewer, including UTF-8 byte-accurate identifier, punctuation, and whitespace changes.
+- Dependency-free pure-Lua exact-span diff planning for flat review, commit viewer, and local commit viewer. Character spans match Pierre's `Char` mode through an adaptation of the Myers algorithm in `diff@9.0.0` and use UTF-8 byte columns for Neovim.
 - Subdued `RaccoonAdd` and `RaccoonDelete` row highlights plus stronger `RaccoonAddInline` and `RaccoonDeleteInline` exact-span highlights. All four groups remain colorscheme-overridable defaults.
 
 ### Changed
-- Exact matching now uses a hardware-adaptive 500-millisecond deadline per complete file or visible grid page, with substantially higher line, token, and character limits. If the deadline or a hard safety limit is reached, the entire view falls back to whole-line highlights instead of keeping partial exact spans.
-- Multi-line replacements remain paired in order. Review comment coordinates and hunk navigation remain based on parsed patch positions.
+- Deletion and addition lines pair ordinally within each contiguous change block; context lines start new blocks, and surplus lines remain fully highlighted.
+- Exact character spans are suppressed when either paired line exceeds 1,000 UTF-16 units. The affected rows remain subdued, and later pairs continue receiving exact spans.
+- Raccoon's separate 500-millisecond deadline applies per complete file or visible grid page. A real timeout discards every partial plan and falls back to strong whole-line highlights for the entire view.
+- Review comment coordinates and hunk navigation remain based on parsed patch positions.
 - Flat-review deleted virtual lines retain their complete text instead of truncating after 120 bytes.
 - GitHub patch bodies are validated against hunk coordinates and file totals. Incomplete or omitted text patches are rebuilt from immutable local merge-base/head revisions after lazily completing shallow history; rename recovery includes both paths. Failed recovery and file-list omissions are reported instead of rendered as partial diffs.
 
