@@ -14,9 +14,36 @@ local state = require("raccoon.state")
 --- Sync timer
 local sync_timer = nil
 local sync_interval_ms = nil
+local sync_in_flight = false
+local sync_generation = 0
+local open_generation = 0
+
+local function invalidate_sync()
+  sync_generation = sync_generation + 1
+  sync_in_flight = false
+end
+
+local function invalidate_open()
+  open_generation = open_generation + 1
+end
 
 --- Last known commit SHA (to detect changes)
 local last_known_sha = nil
+local last_known_base_ref = nil
+local last_known_base_sha = nil
+
+local function remember_pr_snapshot(pr)
+  last_known_sha = pr and pr.head and pr.head.sha or nil
+  last_known_base_ref = pr and pr.base and pr.base.ref or nil
+  last_known_base_sha = pr and pr.base and pr.base.sha or nil
+end
+
+local function matches_known_snapshot(pr)
+  return pr
+    and pr.head and pr.head.sha == last_known_sha
+    and pr.base and pr.base.ref == last_known_base_ref
+    and pr.base.sha == last_known_base_sha
+end
 
 --- How many commits behind base branch
 local commits_behind = 0
@@ -277,6 +304,108 @@ local function apply_review_payload(files, payload)
   state.set_comments("_reviews", payload.review_bodies or {})
 end
 
+local function same_pr_snapshot(expected, actual)
+  return type(expected) == "table"
+    and type(actual) == "table"
+    and type(expected.head) == "table"
+    and type(actual.head) == "table"
+    and type(expected.base) == "table"
+    and type(actual.base) == "table"
+    and expected.head.sha == actual.head.sha
+    and expected.head.ref == actual.head.ref
+    and expected.base.sha == actual.base.sha
+    and expected.base.ref == actual.base.ref
+end
+
+local function verify_pr_snapshot(owner, repo, number, token, expected, callback)
+  api.get_pr(owner, repo, number, token, function(current, err)
+    if err then
+      callback(false, err)
+    elseif not same_pr_snapshot(expected, current) then
+      callback(false, "Pull request changed while its data was loading; retry")
+    else
+      callback(true, nil)
+    end
+  end)
+end
+
+local function recover_incomplete_patches(pr, files, callback)
+  local clone_path = state.get_clone_path()
+  local base_branch = pr and pr.base and pr.base.ref or nil
+  local unavailable = {}
+  local incomplete = {}
+
+  for _, file in ipairs(files) do
+    if not diff.is_file_patch_complete(file) then
+      table.insert(incomplete, file)
+    end
+  end
+
+  if #incomplete == 0 then
+    callback(unavailable)
+    return
+  end
+
+  local revisions
+  local index = 1
+  local function recover_next()
+    if index > #incomplete then
+      callback(unavailable)
+      return
+    end
+
+    local file = incomplete[index]
+    index = index + 1
+    local previous_filename = file.status == "renamed" and file.previous_filename or nil
+    git.diff_pr_file(clone_path, revisions, file.filename, previous_filename, function(patch, err)
+      file.patch = not err and patch or nil
+      if not diff.is_file_patch_complete(file) then
+        file.patch = nil
+        file.diff_unavailable = true
+        table.insert(unavailable, file.filename)
+      else
+        file.diff_unavailable = nil
+      end
+      recover_next()
+    end)
+  end
+
+  git.prepare_pr_diff(clone_path, base_branch, function(prepared_revisions)
+    if prepared_revisions then
+      revisions = prepared_revisions
+      recover_next()
+      return
+    end
+    for _, file in ipairs(incomplete) do
+      file.patch = nil
+      file.diff_unavailable = true
+      table.insert(unavailable, file.filename)
+    end
+    callback(unavailable)
+  end, pr.base.sha, pr.head.sha)
+end
+
+local function append_diff_warnings(payload, pr, files, unavailable)
+  if type(pr.changed_files) == "number" and pr.changed_files > #files then
+    table.insert(payload.warnings, string.format(
+      "GitHub returned %d of %d changed files; the remaining files are unavailable",
+      #files,
+      pr.changed_files
+    ))
+  end
+  if #unavailable > 0 then
+    table.insert(payload.warnings, string.format(
+      "Complete diff unavailable for %d file(s): %s",
+      #unavailable,
+      table.concat(unavailable, ", ")
+    ))
+  end
+end
+
+M._same_pr_snapshot = same_pr_snapshot
+M._recover_incomplete_patches = recover_incomplete_patches
+M._append_diff_warnings = append_diff_warnings
+
 local function resolve_viewer_login(cfg, owner, host, callback)
   local token_entry = config.get_token_entry(cfg, owner)
   if not token_entry then
@@ -326,48 +455,77 @@ local function open_first_file()
   end
 end
 
---- Fetch PR data and files
+--- Fetch PR files and review data for one exact PR snapshot.
+---@param pr table
 ---@param owner string
 ---@param repo string
 ---@param number number
 ---@param token string
+---@param is_current fun(): boolean
 ---@param callback fun(err: string|nil)
-local function fetch_pr_data(owner, repo, number, token, callback)
+local function fetch_pr_data(pr, owner, repo, number, token, is_current, callback)
   notify_loading("Fetching PR data...")
 
-  -- Fetch PR details
-  api.get_pr(owner, repo, number, token, function(pr, pr_err)
-    if pr_err then
-      callback(pr_err)
+  api.get_pr_files(owner, repo, number, token, function(files, files_err)
+    if not is_current() then return end
+    if files_err then
+      callback(files_err)
       return
     end
 
-    state.set_pr(pr)
-
-    -- Fetch files
-    api.get_pr_files(owner, repo, number, token, function(files, files_err)
-      if files_err then
-        callback(files_err)
+    build_review_payload(owner, repo, number, token, function(payload, payload_err)
+      if not is_current() then return end
+      if payload_err then
+        callback(payload_err)
         return
       end
 
-      state.set_files(files)
-
-      build_review_payload(owner, repo, number, token, function(payload, payload_err)
-        if payload_err then
-          callback(payload_err)
+      verify_pr_snapshot(owner, repo, number, token, pr, function(stable, snapshot_err)
+        if not is_current() then return end
+        if not stable then
+          callback(snapshot_err)
           return
         end
 
-        apply_review_payload(files, payload)
-        for _, warning in ipairs(payload.warnings or {}) do
-          vim.notify("Warning: " .. warning, vim.log.levels.WARN)
-        end
-        callback(nil)
+        recover_incomplete_patches(pr, files, function(unavailable)
+          if not is_current() then return end
+          append_diff_warnings(payload, pr, files, unavailable)
+          state.set_pr(pr)
+          state.set_files(files)
+          apply_review_payload(files, payload)
+          for _, warning in ipairs(payload.warnings or {}) do
+            vim.notify("Warning: " .. warning, vim.log.levels.WARN)
+          end
+          callback(nil)
+        end)
       end)
     end)
   end)
 end
+
+local function find_file_index(files, filename)
+  if not filename then return nil end
+  for index, file in ipairs(files) do
+    if file.filename == filename then
+      return index
+    end
+  end
+  return nil
+end
+
+local function select_synced_file(files, previous_filename, previous_index)
+  local selected_index = find_file_index(files, previous_filename)
+  if not selected_index and #files > 0 then
+    selected_index = math.min(math.max(previous_index or 1, 1), #files)
+  end
+  if selected_index then
+    state.goto_file(selected_index)
+  end
+  return selected_index and files[selected_index] or nil,
+    selected_index and files[selected_index].filename == previous_filename or false
+end
+
+M._select_synced_file = select_synced_file
 
 --- Stop the sync timer
 local function stop_sync_timer()
@@ -398,29 +556,87 @@ local function find_review_file_buffer(clone_path, filename)
   return nil
 end
 
+local function reload_review_file_buffer(buf)
+  if vim.bo[buf].buftype == "nofile" then
+    local filename = vim.api.nvim_buf_get_name(buf)
+    if filename ~= "" and vim.fn.filereadable(filename) == 1 then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+    return false
+  end
+  return pcall(vim.api.nvim_buf_call, buf, function()
+    vim.cmd("silent noautocmd edit!")
+  end)
+end
+
+M._reload_review_file_buffer = reload_review_file_buffer
+
+local function refresh_synced_buffer(buf, file, retained)
+  if retained then
+    if buf and reload_review_file_buffer(buf) then
+      diff.apply_highlights(buf, file.patch)
+      comments.show_comments(buf, state.get_comments(file.filename))
+      return
+    end
+  end
+
+  if buf and not retained then
+    reload_review_file_buffer(buf)
+    diff.clear_highlights(buf)
+    comments.clear_comments(buf)
+  end
+  if file then
+    local selected_buf = diff.open_file(file)
+    if selected_buf then
+      comments.show_comments(selected_buf, state.get_comments(file.filename))
+    end
+  end
+end
+
 --- Sync the PR with remote (fetch latest, update files/comments)
 ---@param silent boolean If true, don't show notifications unless something changed
 ---@param force boolean If true, bypass SHA cache and always re-fetch
 local function sync_pr(silent, force)
-  if not state.is_active() then
+  if not state.is_active() then return end
+  if silent and comments.has_unsent_text() then return end
+  if sync_in_flight then
+    if not silent then vim.notify("PR sync already in progress", vim.log.levels.INFO) end
     return
   end
 
-  if silent and comments.has_unsent_text() then
-    return
-  end
-
+  sync_in_flight = true
+  sync_generation = sync_generation + 1
+  local generation = sync_generation
+  local session_url = state.get_url()
+  local finished = false
   local overlay_snapshot = force and comments.capture_ui_state() or nil
-  if overlay_snapshot then
-    comments.close_overlays(true)
+  if overlay_snapshot then comments.close_overlays(true) end
+
+  local function is_current()
+    return generation == sync_generation and state.is_active() and state.get_url() == session_url
+  end
+
+  local function finish()
+    if finished then return end
+    finished = true
+    if generation == sync_generation then sync_in_flight = false end
+  end
+
+  local function continue_if_current()
+    if is_current() then return true end
+    finish()
+    return false
+  end
+
+  local function fail(message, quiet)
+    if not quiet then notify_error(message) end
+    if is_current() then restore_overlay_snapshot(overlay_snapshot) end
+    finish()
   end
 
   local cfg, cfg_err = config.load()
   if cfg_err then
-    if not silent then
-      notify_error("Config error: " .. cfg_err)
-    end
-    restore_overlay_snapshot(overlay_snapshot)
+    fail("Config error: " .. cfg_err, silent)
     return
   end
 
@@ -430,117 +646,116 @@ local function sync_pr(silent, force)
   local clone_path = state.get_clone_path()
   local pr = state.get_pr()
   local github_host = state.get_github_host() or cfg.github_host
-
   if not owner or not repo or not number or not clone_path or not pr then
+    fail("Sync failed: incomplete review session", silent)
     return
   end
 
-  -- Initialize API URLs for this session's host
   api.init(github_host)
-
-  local branch = pr.head.ref
   local token_entry = config.get_token_entry(cfg, owner)
   if not token_entry then
-    vim.notify(string.format("No token configured for '%s'. Add it to tokens in config.", owner), vim.log.levels.ERROR)
-    restore_overlay_snapshot(overlay_snapshot)
+    fail(string.format("No token configured for '%s'. Add it to tokens in config.", owner), false)
     return
   end
   local token = token_entry.token
   local repo_url = string.format("https://%s@%s/%s/%s.git", token, github_host, owner, repo)
 
-  -- Check remote for updates first
   api.get_pr(owner, repo, number, token, function(new_pr, pr_err)
+    if not continue_if_current() then return end
     if pr_err then
-      if not silent then
-        notify_error("Sync failed: " .. pr_err)
-      end
-      restore_overlay_snapshot(overlay_snapshot)
+      fail("Sync failed: " .. pr_err, silent)
       return
     end
 
-    -- Check if SHA changed (skip check if force = true)
     local new_sha = new_pr.head.sha
-    if new_sha == last_known_sha and not force then
-      -- No changes
-      if not silent then
-        vim.notify("PR is up to date", vim.log.levels.INFO)
-      end
+    local snapshot_unchanged = matches_known_snapshot(new_pr)
+    if snapshot_unchanged and not force then
+      if not silent then vim.notify("PR is up to date", vim.log.levels.INFO) end
       restore_overlay_snapshot(overlay_snapshot)
+      finish()
       return
     end
 
-    -- Do full sync
     if not silent then
-      if force and new_sha == last_known_sha then
-        notify_loading("Syncing PR...")
-      else
-        notify_loading("Syncing PR (new commits detected)...")
-      end
+      local message = force and snapshot_unchanged and "Syncing PR..."
+        or "Syncing PR (new commits detected)..."
+      notify_loading(message)
     end
 
-    -- Update local repo
-    git.fetch_reset(clone_path, branch, repo_url, function(success, err)
-      if not success then
-        notify_error("Sync failed: " .. (err or "git error"))
-        restore_overlay_snapshot(overlay_snapshot)
+    -- Finish all fallible API reads before mutating the local checkout.
+    api.get_pr_files(owner, repo, number, token, function(files, files_err)
+      if not continue_if_current() then return end
+      if files_err then
+        fail("Failed to fetch files: " .. files_err, false)
         return
       end
 
-      -- Also update base branch to keep it current
-      local base_branch = pr.base.ref
-      git.update_base_branch(clone_path, base_branch, function(base_success, base_err)
-        if not base_success then
-          -- Non-fatal, just warn
-          vim.notify("Warning: Could not update base branch: " .. (base_err or ""), vim.log.levels.WARN)
-        end
-      end)
-
-      -- Update PR data
-      state.set_pr(new_pr)
-      last_known_sha = new_sha
-
-      -- Re-fetch files
-      api.get_pr_files(owner, repo, number, token, function(files, files_err)
-        if files_err then
-          notify_error("Failed to fetch files: " .. files_err)
-          restore_overlay_snapshot(overlay_snapshot)
+      build_review_payload(owner, repo, number, token, function(payload, payload_err)
+        if not continue_if_current() then return end
+        if payload_err then
+          fail("Sync failed: " .. payload_err, false)
           return
         end
 
-        build_review_payload(owner, repo, number, token, function(payload, payload_err)
-          if payload_err then
-            notify_error("Sync failed: " .. payload_err)
-            restore_overlay_snapshot(overlay_snapshot)
+        verify_pr_snapshot(owner, repo, number, token, new_pr, function(stable, snapshot_err)
+          if not continue_if_current() then return end
+          if not stable then
+            fail("Sync failed: " .. snapshot_err, false)
             return
           end
 
-          state.set_files(files)
-          apply_review_payload(files, payload)
-          for _, warning in ipairs(payload.warnings or {}) do
-            vim.notify("Warning: " .. warning, vim.log.levels.WARN)
-          end
+          local previous_file = state.get_current_file()
+          local previous_filename = previous_file and previous_file.filename or nil
+          local previous_index = state.get_current_file_index()
+          local previous_buf = previous_filename
+            and find_review_file_buffer(clone_path, previous_filename) or nil
 
-          -- Refresh current file display
-          local current_file = state.get_current_file()
-          if current_file and not state.is_commit_mode() and not require("raccoon.localcommits").is_active() then
-            local buf = find_review_file_buffer(clone_path, current_file.filename)
-            if buf then
-              diff.apply_highlights(buf, current_file.patch)
-              comments.show_comments(buf, state.get_comments(current_file.filename))
+          git.fetch_reset(clone_path, new_pr.head.ref, repo_url, function(success, err)
+            if not continue_if_current() then return end
+            if not success then
+              fail("Sync failed: " .. (err or "git error"), false)
+              return
             end
-          end
 
-          if state.is_commit_mode() then
-            require("raccoon.commits").refresh_after_sync()
-          end
+            local base_branch = new_pr.base.ref
+            git.update_base_branch(clone_path, base_branch, function(base_success, base_err)
+              if not continue_if_current() then return end
+              if not base_success then
+                vim.notify("Warning: Could not update base branch: " .. (base_err or ""), vim.log.levels.WARN)
+              end
 
-          restore_overlay_snapshot(overlay_snapshot)
-          vim.notify("PR synced - new commits loaded", vim.log.levels.INFO)
+              recover_incomplete_patches(new_pr, files, function(unavailable)
+                if not continue_if_current() then return end
+                append_diff_warnings(payload, new_pr, files, unavailable)
+                state.set_pr(new_pr)
+                state.set_files(files)
+                apply_review_payload(files, payload)
+                local current_file, retained = select_synced_file(files, previous_filename, previous_index)
+                remember_pr_snapshot(new_pr)
+                for _, warning in ipairs(payload.warnings or {}) do
+                  vim.notify("Warning: " .. warning, vim.log.levels.WARN)
+                end
+
+                local flat_review = not state.is_commit_mode()
+                  and not require("raccoon.localcommits").is_active()
+                if flat_review then refresh_synced_buffer(previous_buf, current_file, retained) end
+                if state.is_commit_mode() then require("raccoon.commits").refresh_after_sync() end
+
+                restore_overlay_snapshot(overlay_snapshot)
+                finish()
+                vim.notify("PR synced - new commits loaded", vim.log.levels.INFO)
+              end)
+            end)
+          end, new_sha)
         end)
       end)
     end)
   end)
 end
+
+
+M._sync_pr = sync_pr
+M._remember_pr_snapshot = remember_pr_snapshot
 
 --- Start the periodic sync timer
 local function start_sync_timer()
@@ -556,6 +771,10 @@ end
 --- Manual sync command (bypasses SHA cache)
 function M.sync()
   sync_pr(false, true)
+end
+
+function M._get_last_known_sha()
+  return last_known_sha
 end
 
 --- Pause the sync timer (e.g., when entering commit viewer mode)
@@ -574,29 +793,35 @@ end
 ---@param clone_path string
 ---@param repo_url string
 ---@param branch string
+---@param revision string
 ---@param callback fun(err: string|nil)
-local function prepare_repo(clone_path, repo_url, branch, callback)
-  if git.is_git_repo(clone_path) then
-    notify_loading("Updating repository...")
-    -- Pass URL to update remote with auth token
+local function prepare_repo(clone_path, repo_url, branch, revision, callback)
+  local function checkout_revision()
     git.fetch_reset(clone_path, branch, repo_url, function(success, err)
       if success then
         callback(nil)
       else
         callback(err or "Failed to update repository")
       end
-    end)
+    end, revision)
+  end
+
+  if git.is_git_repo(clone_path) then
+    notify_loading("Updating repository...")
+    checkout_revision()
   else
     notify_loading("Cloning repository...")
     git.clone(repo_url, clone_path, branch, function(success, err)
       if success then
-        callback(nil)
+        checkout_revision()
       else
         callback(err or "Failed to clone repository")
       end
     end)
   end
 end
+
+M._prepare_repo = prepare_repo
 
 --- Open a PR for review
 ---@param url string GitHub PR URL
@@ -644,7 +869,13 @@ function M.open_pr(url)
   end
   local token = token_entry.token
 
+  if state.is_active() then M.close_pr() end
+
   -- Start session
+  stop_sync_timer()
+  invalidate_sync()
+  invalidate_open()
+  local generation = open_generation
   state.start({
     owner = owner,
     repo = repo,
@@ -655,13 +886,26 @@ function M.open_pr(url)
     clone_path = clone_path,
   })
 
+  local function is_current_open()
+    return generation == open_generation
+      and state.is_active()
+      and state.get_url() == url
+  end
+
+  local function fail_open(message)
+    if not is_current_open() then return end
+    notify_error(message)
+    invalidate_open()
+    state.reset()
+  end
+
   notify_loading(string.format("Opening PR #%d from %s/%s...", number, owner, repo))
 
   -- First, fetch PR data to get the branch name
   api.get_pr(owner, repo, number, token, function(pr, pr_err)
+    if not is_current_open() then return end
     if pr_err then
-      notify_error("Failed to fetch PR: " .. pr_err)
-      state.reset()
+      fail_open("Failed to fetch PR: " .. pr_err)
       return
     end
 
@@ -672,74 +916,83 @@ function M.open_pr(url)
     local repo_url = string.format("https://%s@%s/%s/%s.git", token, url_host, owner, repo)
 
     -- Clone or update the repo
-    prepare_repo(clone_path, repo_url, branch, function(repo_err)
+    prepare_repo(clone_path, repo_url, branch, pr.head.sha, function(repo_err)
+      if not is_current_open() then return end
       if repo_err then
-        notify_error("Repository error: " .. repo_err)
-        state.reset()
+        fail_open("Repository error: " .. repo_err)
         return
       end
 
       local base_branch = pr.base.ref
 
-      -- Update local base branch to match origin (keeps it current for future use)
+      local function load_review()
+        local function load_files()
+          resolve_viewer_login(cfg, owner, url_host, function(login, login_err)
+            if not is_current_open() then return end
+            if login_err then
+              fail_open("Failed to determine viewer login: " .. login_err)
+              return
+            end
+
+            state.set_viewer_login(login)
+
+            -- Fetch files and comments
+            fetch_pr_data(pr, owner, repo, number, token, is_current_open, function(data_err)
+              if not is_current_open() then return end
+              if data_err then
+                fail_open("Failed to fetch PR data: " .. data_err)
+                return
+              end
+
+              -- Change to clone directory
+              vim.cmd("cd " .. vim.fn.fnameescape(clone_path))
+
+              -- Store initial SHA for change detection
+              remember_pr_snapshot(pr)
+
+              -- Start periodic sync timer
+              start_sync_timer()
+
+              -- Open the first file
+              open_first_file()
+
+              -- Update statusline (show warning if behind base)
+              vim.defer_fn(function()
+                if is_current_open() then update_statusline() end
+              end, 100)
+
+              notify_success(string.format(
+                "PR #%d: %s (%d files) - auto-sync enabled",
+                number,
+                pr.title:sub(1, 40),
+                #state.get_files()
+              ))
+            end)
+          end)
+        end
+
+        -- Finish base-status Git operations before patch recovery can fetch or unshallow.
+        git.get_sync_status(clone_path, base_branch, function(sync_status)
+          if not is_current_open() then return end
+          if sync_status.checked then
+            commits_behind = sync_status.behind
+            has_conflicts = sync_status.has_conflicts
+            state.set_sync_status(sync_status)
+          else
+            commits_behind = 0
+            has_conflicts = false
+          end
+          load_files()
+        end)
+      end
+
+      -- Patch recovery needs the three-dot base ref to exist locally.
       git.update_base_branch(clone_path, base_branch, function(base_success, base_err)
+        if not is_current_open() then return end
         if not base_success then
-          -- Non-fatal, just warn
           vim.notify("Warning: Could not update base branch: " .. (base_err or ""), vim.log.levels.WARN)
         end
-      end)
-
-      -- Check sync status with base branch (behind count + conflicts)
-      git.get_sync_status(clone_path, base_branch, function(sync_status)
-        if sync_status.checked then
-          commits_behind = sync_status.behind
-          has_conflicts = sync_status.has_conflicts
-          state.set_sync_status(sync_status)
-        else
-          commits_behind = 0
-          has_conflicts = false
-        end
-      end)
-
-      resolve_viewer_login(cfg, owner, url_host, function(login, login_err)
-        if login_err then
-          notify_error("Failed to determine viewer login: " .. login_err)
-          state.reset()
-          return
-        end
-
-        state.set_viewer_login(login)
-
-        -- Fetch files and comments
-        fetch_pr_data(owner, repo, number, token, function(data_err)
-          if data_err then
-            notify_error("Failed to fetch PR data: " .. data_err)
-            state.reset()
-            return
-          end
-
-          -- Change to clone directory
-          vim.cmd("cd " .. vim.fn.fnameescape(clone_path))
-
-          -- Store initial SHA for change detection
-          last_known_sha = pr.head.sha
-
-          -- Start periodic sync timer
-          start_sync_timer()
-
-          -- Open the first file
-          open_first_file()
-
-          -- Update statusline (show warning if behind base)
-          vim.defer_fn(update_statusline, 100)
-
-          notify_success(string.format(
-            "PR #%d: %s (%d files) - auto-sync enabled",
-            number,
-            pr.title:sub(1, 40),
-            #state.get_files()
-          ))
-        end)
+        load_review()
       end)
     end)
   end)
@@ -760,7 +1013,9 @@ function M.close_pr()
 
   -- Stop sync timer
   stop_sync_timer()
-  last_known_sha = nil
+  invalidate_sync()
+  invalidate_open()
+  remember_pr_snapshot(nil)
   commits_behind = 0
   has_conflicts = false
 
