@@ -116,6 +116,18 @@ describe("raccoon.intraline", function()
       assert.same(first_new, second_new)
     end)
 
+    it("refines long identifiers while bounded and falls back safely above the work cap", function()
+      local prefix = string.rep("a", 900)
+      local old_ranges, new_ranges = intraline.compute_inline_ranges(prefix .. "Old", prefix .. "New")
+      assert_ranges({ { start_col = 900, end_col = 903 } }, old_ranges)
+      assert_ranges({ { start_col = 900, end_col = 903 } }, new_ranges)
+
+      prefix = string.rep("a", 1100)
+      old_ranges, new_ranges = intraline.compute_inline_ranges(prefix .. "Old", prefix .. "New")
+      assert_ranges({ { start_col = 0, end_col = 1103 } }, old_ranges)
+      assert_ranges({ { start_col = 0, end_col = 1103 } }, new_ranges)
+    end)
+
     it("returns UTF-8 byte ranges for accents, CJK, emoji, and combining marks", function()
       local cases = {
         { "café", "cafe", { { start_col = 0, end_col = 5 } }, { { start_col = 0, end_col = 4 } } },

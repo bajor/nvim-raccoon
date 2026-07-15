@@ -225,6 +225,22 @@ The per-PR directory means previous clones stay on disk — reopening a PR is fa
 
 One review session is active at a time. Opening a second PR closes the first unless a reply/new-thread composer still has unsent text.
 
+### Two-level diff highlighting
+
+Raccoon highlights every changed row with a subdued `RaccoonAdd` or `RaccoonDelete` background. Within paired replacement rows, stronger `RaccoonAddText` and `RaccoonDeleteText` backgrounds mark only the changed words or characters. The same renderer is used by flat PR diffs, deleted virtual lines, commit-viewer grids and previews, maximized diffs, and local **Current changes** views.
+
+The default comparison is word-oriented. Identifier-internal and punctuation-heavy replacements are refined to character ranges when that produces a more precise result. Replacement rows are aligned with Neovim's built-in `vim.diff` line matching; inserted or deleted rows that cannot be paired keep only their whole-line background. Extmark ranges use UTF-8 byte columns, so tabs and multibyte text do not shift the highlighted bytes.
+
+Inline comparison is skipped, while whole-line highlighting remains, when any of these safety limits is reached:
+
+- More than 2,000 bytes in either line.
+- More than 100 changed rows in one replacement block.
+- More than 64 KiB of replacement text in one hunk.
+- More than 256 KiB of replacement text in one file.
+- More than 1,000,000 unit-pair comparisons for one sequence match.
+
+These limits are internal safeguards, not configuration fields. Inline highlighting requires no Node.js process, JavaScript package, external diff executable, network request, or additional Neovim plugin. Native syntax and Tree-sitter foreground colors remain active beneath the diff backgrounds. All six Raccoon diff highlight groups are defined as defaults, so a colorscheme or user configuration can override `RaccoonAdd`, `RaccoonAddText`, `RaccoonDelete`, `RaccoonDeleteText`, `RaccoonAddSign`, and `RaccoonDeleteSign`.
+
 ## Commands
 
 | Command | Description |

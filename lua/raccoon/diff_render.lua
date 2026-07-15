@@ -77,6 +77,7 @@ function M.apply_real_lines(ns_id, buf, line_list, ranges_by_line, opts)
         line_hl_group = row_group,
         sign_text = is_addition and "+" or "-",
         sign_hl_group = sign_group,
+        hl_mode = "combine",
         priority = M.ROW_PRIORITY,
       })
       set_inline_extmarks(ns_id, buf, row, line.content or "", ranges_by_line and ranges_by_line[index], text_group)

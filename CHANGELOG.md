@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Two-level diff highlighting across flat PR diffs, deleted virtual lines, commit-viewer grids and previews, maximized diffs, and local **Current changes** views.
+- UTF-8 byte-safe word ranges with character refinement for identifiers and punctuation, powered by Neovim's built-in `vim.diff` engine with no new runtime dependency.
+- Bounded inline-comparison work with whole-line fallback for long lines, large replacement blocks, and large hunks or files.
+
 ## [0.13.2] - 2026-07-01
 
 ### Fixed
