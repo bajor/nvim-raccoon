@@ -14,6 +14,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Exact matching now uses a hardware-adaptive 500-millisecond deadline per complete file or visible grid page, with substantially higher line, token, and character limits. If the deadline or a hard safety limit is reached, the entire view falls back to whole-line highlights instead of keeping partial exact spans.
 - Multi-line replacements remain paired in order. Review comment coordinates and hunk navigation remain based on parsed patch positions.
 - Flat-review deleted virtual lines retain their complete text instead of truncating after 120 bytes.
+- GitHub patch bodies are validated against hunk coordinates and file totals. Incomplete or omitted text patches are rebuilt from immutable local merge-base/head revisions after lazily completing shallow history; rename recovery includes both paths. Failed recovery and file-list omissions are reported instead of rendered as partial diffs.
+
+### Fixed
+- Changed content beginning with `+++` or `---` is parsed as hunk content instead of being mistaken for a file header.
+- First-line, empty-file, and end-of-file deletions render and navigate at valid post-image positions.
+- Commit and local previews strip CRLF carriage returns, separate disjoint hunks with an unhighlighted `...`, refresh maximize-view navigation targets with the displayed hunks, and ignore stale out-of-order refresh callbacks.
+- Short one-line replacements preserve unchanged punctuation and validate that all unhighlighted bytes are identical.
+- Flat review shows fully removed files as empty post-images with deleted virtual lines and labels binary or metadata-only entries that have no textual diff.
+- Initial open and PR sync pin the checkout to the returned head SHA, recheck mutable API data against the head and base snapshot, stop stale session callbacks and overlapping refreshes, publish state only after success, preserve the selected filename across reordered file lists, and reload or replace review buffers before applying highlights and comments.
 
 ## [0.13.2] - 2026-07-01
 
