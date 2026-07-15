@@ -827,6 +827,39 @@ describe("raccoon.diff", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
+    it("renders over-limit replacement rows without bright spans", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      local old_content = string.rep("a", 1000) .. "x"
+      local new_content = string.rep("a", 1000) .. "y"
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { new_content })
+      local patch = table.concat({
+        "@@ -1 +1 @@",
+        "-" .. old_content,
+        "+" .. new_content,
+      }, "\n")
+
+      diff.apply_highlights(buf, patch)
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+      local add_row, delete_row, bright_ranges = nil, nil, 0
+      for _, mark in ipairs(marks) do
+        local details = mark[4]
+        if details.sign_text == "+ " then add_row = details end
+        if details.sign_text == "- " then delete_row = details end
+        if details.hl_group == "RaccoonAddInline" or details.hl_group == "RaccoonDeleteInline" then
+          bright_ranges = bright_ranges + 1
+        end
+      end
+
+      assert.equals("RaccoonAdd", add_row.line_hl_group)
+      assert.equals(0, bright_ranges)
+      for _, chunk in ipairs(delete_row.virt_lines[1]) do
+        assert.equals("RaccoonDelete", chunk[2])
+      end
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
     it("keeps complete deleted virtual text without an ellipsis", function()
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "remaining" })

@@ -433,6 +433,28 @@ describe("raccoon.commit_ui inline diff rendering", function()
     close_buffer(buf)
   end)
 
+  it("renders over-limit grid rows with subdued backgrounds and no bright ranges", function()
+    local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_suppressed")
+    local buf = vim.api.nvim_create_buf(false, true)
+    local old_content = string.rep("a", 1000) .. "x"
+    local new_content = string.rep("a", 1000) .. "y"
+    local hunk = diff.parse_patch(table.concat({
+      "@@ -1 +1 @@",
+      "-" .. old_content,
+      "+" .. new_content,
+    }, "\n"))[1]
+
+    commit_ui.render_hunk_to_buffer(ns_id, buf, hunk, "test.lua")
+
+    local marks = get_marks(buf, ns_id)
+    assert.is_not_nil(find_mark(marks, 0, "line_hl_group", "RaccoonDelete"))
+    assert.is_not_nil(find_mark(marks, 1, "line_hl_group", "RaccoonAdd"))
+    assert.is_nil(find_mark(marks, 0, "hl_group", "RaccoonDeleteInline"))
+    assert.is_nil(find_mark(marks, 1, "hl_group", "RaccoonAddInline"))
+
+    close_buffer(buf)
+  end)
+
   it("removes trailing carriage returns from rendered hunk lines", function()
     local ns_id = vim.api.nvim_create_namespace("raccoon_test_commit_inline_crlf")
     local buf = vim.api.nvim_create_buf(false, true)
