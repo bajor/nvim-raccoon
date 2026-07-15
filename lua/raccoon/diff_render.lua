@@ -187,7 +187,6 @@ local function place_virtual_block(ns_id, buf, block, ranges, line_count, target
   pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, row, 0, {
     virt_lines = virtual_lines,
     virt_lines_above = above,
-    virt_lines_overflow = "scroll",
     sign_text = "-",
     sign_hl_group = "RaccoonDeleteSign",
     priority = M.ROW_PRIORITY,
