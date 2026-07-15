@@ -16,6 +16,14 @@ local function range(start_col, end_col)
   return { start_col = start_col, end_col = end_col }
 end
 
+local function plan_and_validate(lines, options)
+  local plan = inline_diff.plan(lines, options)
+  local valid, reason = inline_diff.validate(plan, lines)
+  assert.is_true(valid, reason)
+  assert.is_nil(reason)
+  return plan
+end
+
 local function find_row(plan, kind, old_index, new_index)
   for _, row in ipairs(plan.rows) do
     if row.kind == kind
@@ -25,24 +33,6 @@ local function find_row(plan, kind, old_index, new_index)
     end
   end
   return nil
-end
-
-local function plan_and_validate(lines, options)
-  local plan = inline_diff.plan(lines, options)
-  local valid, reason = inline_diff.validate(plan, lines)
-  assert.is_true(valid, reason)
-  assert.is_nil(reason)
-  return plan
-end
-
-local function row_signature(row)
-  return {
-    kind = row.kind,
-    old_index = row.old_index,
-    new_index = row.new_index,
-    old_ranges = row.old_ranges,
-    new_ranges = row.new_ranges,
-  }
 end
 
 local function content_outside_ranges(content, ranges)
@@ -57,406 +47,350 @@ local function content_outside_ranges(content, ranges)
 end
 
 describe("raccoon.inline_diff", function()
-  it("pairs similar lines after an inserted line without index pairing", function()
-    local lines = {
-      deletion("return call(foo bar)"),
-      deletion("local line_idx = line_num - 1"),
-      addition("local ranges = add.ranges or {}"),
-      addition("return call(foo, bar)"),
-      addition("local line_idx = add.line_num - 1"),
+  describe("diff 9.0.0 character semantics", function()
+    local frozen_cases = {
+      {
+        name = "substitution",
+        old = "kitten",
+        new = "sitten",
+        old_ranges = { range(0, 1) },
+        new_ranges = { range(0, 1) },
+      },
+      {
+        name = "insertion",
+        old = "abc",
+        new = "axbc",
+        old_ranges = {},
+        new_ranges = { range(1, 2) },
+      },
+      {
+        name = "deletion",
+        old = "axbc",
+        new = "abc",
+        old_ranges = { range(1, 2) },
+        new_ranges = {},
+      },
+      {
+        name = "identifier",
+        old = "local total_count = item.count",
+        new = "local total_size = item.count",
+        old_ranges = { range(12, 17) },
+        new_ranges = { range(12, 16) },
+      },
+      {
+        name = "number",
+        old = "value = 10",
+        new = "value = 11",
+        old_ranges = { range(9, 10) },
+        new_ranges = { range(9, 10) },
+      },
+      {
+        name = "punctuation",
+        old = "return call(foo bar)",
+        new = "return call(foo, bar)",
+        old_ranges = {},
+        new_ranges = { range(15, 16) },
+      },
+      {
+        name = "tab to spaces",
+        old = "\tvalue = 1",
+        new = "  value = 1",
+        old_ranges = { range(0, 1) },
+        new_ranges = { range(0, 2) },
+      },
+      {
+        name = "inserted spaces",
+        old = "local value=1",
+        new = "local value = 1",
+        old_ranges = {},
+        new_ranges = { range(11, 12), range(13, 14) },
+      },
+      {
+        name = "ambiguous swap",
+        old = "ab",
+        new = "ba",
+        old_ranges = { range(0, 1) },
+        new_ranges = { range(1, 2) },
+      },
+      {
+        name = "ambiguous repeated subsequence",
+        old = "aba",
+        new = "aab",
+        old_ranges = { range(1, 2) },
+        new_ranges = { range(2, 3) },
+      },
+      {
+        name = "repeated insertion",
+        old = "aaa",
+        new = "aaaa",
+        old_ranges = {},
+        new_ranges = { range(3, 4) },
+      },
+      {
+        name = "empty old input",
+        old = "",
+        new = "abc",
+        old_ranges = {},
+        new_ranges = { range(0, 3) },
+      },
+      {
+        name = "empty new input",
+        old = "abc",
+        new = "",
+        old_ranges = { range(0, 3) },
+        new_ranges = {},
+      },
+      {
+        name = "BMP text",
+        old = "café",
+        new = "cafe",
+        old_ranges = { range(3, 5) },
+        new_ranges = { range(3, 4) },
+      },
+      {
+        name = "emoji",
+        old = "😀a",
+        new = "😀b",
+        old_ranges = { range(4, 5) },
+        new_ranges = { range(4, 5) },
+      },
+      {
+        name = "combining character",
+        old = "é",
+        new = "é",
+        old_ranges = { range(0, 3) },
+        new_ranges = { range(0, 2) },
+      },
+      {
+        name = "ZWJ sequence",
+        old = "👩‍💻",
+        new = "👨‍💻",
+        old_ranges = { range(0, 4) },
+        new_ranges = { range(0, 4) },
+      },
+      {
+        name = "skin-tone modifier",
+        old = "👍",
+        new = "👍🏽",
+        old_ranges = {},
+        new_ranges = { range(4, 8) },
+      },
     }
 
-    local plan = plan_and_validate(lines)
-    local punctuation_pair = find_row(plan, "replacement", 1, 4)
-    local identifier_pair = find_row(plan, "replacement", 2, 5)
+    for _, case in ipairs(frozen_cases) do
+      it("matches frozen output for " .. case.name, function()
+        local row = plan_and_validate({ deletion(case.old), addition(case.new) }, {
+          clock = function() return 0 end,
+        }).rows[1]
 
-    assert.is_not_nil(punctuation_pair)
-    assert.same({}, punctuation_pair.old_ranges)
-    assert.same({ range(15, 16) }, punctuation_pair.new_ranges)
-    assert.is_not_nil(identifier_pair)
-    assert.is_not_nil(find_row(plan, "addition", nil, 3))
+        assert.equals("replacement", row.kind)
+        assert.same(case.old_ranges, row.old_ranges)
+        assert.same(case.new_ranges, row.new_ranges)
+        assert.equals(
+          content_outside_ranges(row.old_content, row.old_ranges),
+          content_outside_ranges(row.new_content, row.new_ranges)
+        )
+      end)
+    end
+
+    it("normalizes trailing carriage returns before diffing", function()
+      local row = plan_and_validate({ deletion("value = 10\r"), addition("value = 12\r") }).rows[1]
+
+      assert.equals("value = 10", row.old_content)
+      assert.equals("value = 12", row.new_content)
+      assert.same({ range(9, 10) }, row.old_ranges)
+      assert.same({ range(9, 10) }, row.new_ranges)
+    end)
   end)
 
-  it("keeps unrelated one-to-one lines as a readable whole-content replacement", function()
-    local lines = {
-      deletion("local count = calculate_total(items)"),
-      addition("raise RuntimeError('connection unavailable')"),
-    }
+  describe("positional change-block pairing", function()
+    it("pairs deletion and addition lines by ordinal position", function()
+      local plan = plan_and_validate({
+        deletion("alpha"),
+        deletion("beta"),
+        addition("inserted"),
+        addition("alpha"),
+        addition("beta"),
+      })
 
-    local first = plan_and_validate(lines)
-    local second = plan_and_validate(lines)
-    local row = first.rows[1]
+      assert.is_not_nil(find_row(plan, "replacement", 1, 3))
+      assert.is_not_nil(find_row(plan, "replacement", 2, 4))
+      assert.is_not_nil(find_row(plan, "addition", nil, 5))
+    end)
 
-    assert.equals(1, #first.rows)
-    assert.equals("replacement", row.kind)
-    assert.same({ range(0, #lines[1].content) }, row.old_ranges)
-    assert.same({ range(0, #lines[2].content) }, row.new_ranges)
-    assert.same(row_signature(row), row_signature(second.rows[1]))
+    it("does not perform move or similarity matching", function()
+      local plan = plan_and_validate({
+        deletion("first"),
+        deletion("second"),
+        addition("second"),
+        addition("first"),
+      })
+
+      assert.is_not_nil(find_row(plan, "replacement", 1, 3))
+      assert.is_not_nil(find_row(plan, "replacement", 2, 4))
+    end)
+
+    it("leaves surplus deletions fully bright", function()
+      local plan = plan_and_validate({
+        deletion("old one"),
+        deletion("old two"),
+        addition("new one"),
+      })
+
+      assert.is_not_nil(find_row(plan, "replacement", 1, 3))
+      assert.same({ range(0, #"old two") }, find_row(plan, "deletion", 2).old_ranges)
+    end)
+
+    it("leaves surplus additions fully bright", function()
+      local plan = plan_and_validate({
+        deletion("old one"),
+        addition("new one"),
+        addition("new two"),
+      })
+
+      assert.is_not_nil(find_row(plan, "replacement", 1, 2))
+      assert.same({ range(0, #"new two") }, find_row(plan, "addition", nil, 3).new_ranges)
+    end)
+
+    it("pairs repeated lines deterministically by position", function()
+      local plan = plan_and_validate({
+        deletion("same"),
+        deletion("same"),
+        addition("same"),
+        addition("same!"),
+      })
+
+      assert.is_not_nil(find_row(plan, "replacement", 1, 3))
+      assert.is_not_nil(find_row(plan, "replacement", 2, 4))
+    end)
+
+    it("starts a new block at each context line", function()
+      local plan = plan_and_validate({
+        deletion("old"),
+        context("unchanged"),
+        addition("new"),
+      })
+
+      assert.is_nil(find_row(plan, "replacement"))
+      assert.is_not_nil(find_row(plan, "deletion", 1))
+      assert.is_not_nil(find_row(plan, "addition", nil, 3))
+    end)
+
+    it("pairs case-only function changes ordinally", function()
+      local plan = plan_and_validate({
+        deletion("FOO()"),
+        deletion("BAR()"),
+        addition("foo()"),
+        addition("bar()"),
+      })
+
+      local foo = find_row(plan, "replacement", 1, 3)
+      local bar = find_row(plan, "replacement", 2, 4)
+      assert.same({ range(0, 3) }, foo.old_ranges)
+      assert.same({ range(0, 3) }, foo.new_ranges)
+      assert.same({ range(0, 3) }, bar.old_ranges)
+      assert.same({ range(0, 3) }, bar.new_ranges)
+    end)
   end)
 
-  it("resolves repeated ambiguous input deterministically", function()
-    local lines = {
-      deletion("value = repeat(alpha)"),
-      deletion("value = repeat(beta)"),
-      deletion("value = repeat(alpha)"),
-      addition("value = repeat(alpha)"),
-      addition("value = repeat(alpha)"),
-      addition("value = repeat(beta)"),
-    }
-
-    local first = plan_and_validate(lines)
-    local second = plan_and_validate(lines)
-    local first_signature, second_signature = {}, {}
-    for _, row in ipairs(first.rows) do table.insert(first_signature, row_signature(row)) end
-    for _, row in ipairs(second.rows) do table.insert(second_signature, row_signature(row)) end
-
-    assert.same(first_signature, second_signature)
-  end)
-
-  it("keeps the earliest common prefix when repeated characters are ambiguous", function()
-    local lines = {
-      deletion("value = 10"),
-      addition("value = 11"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(9, 10) }, row.old_ranges)
-    assert.same({ range(9, 10) }, row.new_ranges)
-  end)
-
-  it("pairs a short insertion that has few shared character bigrams", function()
-    local lines = {
-      deletion("abc"),
-      addition("axbc"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({}, row.old_ranges)
-    assert.same({ range(1, 2) }, row.new_ranges)
-  end)
-
-  it("highlights an inserted punctuation codepoint exactly", function()
-    local lines = {
-      deletion("return call(foo bar)"),
-      addition("return call(foo, bar)"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({}, row.old_ranges)
-    assert.same({ range(15, 16) }, row.new_ranges)
-  end)
-
-  it("keeps unchanged call punctuation outside a short identifier replacement", function()
-    local lines = {
-      deletion("foo()"),
-      addition("bar()"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(0, 3) }, row.old_ranges)
-    assert.same({ range(0, 3) }, row.new_ranges)
-  end)
-
-  it("keeps an unchanged terminator outside a short identifier replacement", function()
-    local lines = {
-      deletion("foo;"),
-      addition("bar;"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(0, 3) }, row.old_ranges)
-    assert.same({ range(0, 3) }, row.new_ranges)
-  end)
-
-  it("keeps internal punctuation outside a short low-similarity replacement", function()
-    local row = plan_and_validate({ deletion("a.b"), addition("x.y") }).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(0, 1), range(2, 3) }, row.old_ranges)
-    assert.same({ range(0, 1), range(2, 3) }, row.new_ranges)
-  end)
-
-  it("keeps internal punctuation outside a short UTF-8 replacement", function()
-    local row = plan_and_validate({ deletion("α.β"), addition("γ.δ") }).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(0, 2), range(3, 5) }, row.old_ranges)
-    assert.same({ range(0, 2), range(3, 5) }, row.new_ranges)
-  end)
-
-  it("keeps long low-similarity singleton replacements conservative", function()
-    local old_content = string.rep("a", 33) .. "." .. string.rep("b", 33)
-    local new_content = string.rep("x", 33) .. "." .. string.rep("y", 33)
-    local row = plan_and_validate({ deletion(old_content), addition(new_content) }).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(0, #old_content) }, row.old_ranges)
-    assert.same({ range(0, #new_content) }, row.new_ranges)
-  end)
-
-  it("refines a short identifier without shared token anchors", function()
-    local row = plan_and_validate({ deletion("ab"), addition("ac") }).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(1, 2) }, row.old_ranges)
-    assert.same({ range(1, 2) }, row.new_ranges)
-  end)
-
-  it("refines a changed identifier to its differing suffix", function()
-    local lines = {
-      deletion("local total_count = item.count"),
-      addition("local total_size = item.count"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(12, 17) }, row.old_ranges)
-    assert.same({ range(12, 16) }, row.new_ranges)
-  end)
-
-  it("includes inserted spaces in final spans while ignoring them for line pairing", function()
-    local lines = {
-      deletion("local value=1"),
-      addition("local value = 1"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({}, row.old_ranges)
-    assert.same({ range(11, 12), range(13, 14) }, row.new_ranges)
-  end)
-
-  it("highlights a tab-to-spaces replacement on both sides", function()
-    local lines = {
-      deletion("\tvalue = 1"),
-      addition("  value = 1"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(0, 1) }, row.old_ranges)
-    assert.same({ range(0, 2) }, row.new_ranges)
-  end)
-
-  it("returns zero-based end-exclusive UTF-8 byte columns", function()
-    local lines = {
-      deletion('local icon = "✓"'),
-      addition('local icon = "✗"'),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(14, 17) }, row.old_ranges)
-    assert.same({ range(14, 17) }, row.new_ranges)
-  end)
-
-  it("normalizes trailing carriage returns before matching and range validation", function()
-    local lines = {
-      deletion("value = 10\r"),
-      addition("value = 12\r"),
-    }
-
-    local row = plan_and_validate(lines).rows[1]
-
-    assert.equals("value = 10", row.old_content)
-    assert.equals("value = 12", row.new_content)
-    assert.same({ range(9, 10) }, row.old_ranges)
-    assert.same({ range(9, 10) }, row.new_ranges)
-  end)
-
-  it("leaves identical content outside ranges for representative one-to-one edits", function()
-    local cases = {
-      { old = "abc", new = "axbc" },
-      { old = "alpha\tbeta", new = "alphabeta" },
-      { old = 'local icon = "✓"', new = 'local icon = "🚀"' },
-    }
-
-    for _, case in ipairs(cases) do
-      local lines = { deletion(case.old), addition(case.new) }
-      local first = plan_and_validate(lines, { clock = function() return 0 end })
-      local second = plan_and_validate(lines, { clock = function() return 0 end })
-      local row = first.rows[1]
+  describe("Pierre line-length suppression", function()
+    it("processes exactly 1000 ASCII UTF-16 units", function()
+      local prefix = string.rep("a", 999)
+      local row = plan_and_validate({ deletion(prefix .. "x"), addition(prefix .. "y") }, {
+        clock = function() return 0 end,
+      }).rows[1]
 
       assert.equals("replacement", row.kind)
-      assert.equals(
-        content_outside_ranges(row.old_content, row.old_ranges),
-        content_outside_ranges(row.new_content, row.new_ranges)
-      )
-      assert.same(row_signature(row), row_signature(second.rows[1]))
-    end
-  end)
+      assert.same({ range(999, 1000) }, row.old_ranges)
+      assert.same({ range(999, 1000) }, row.new_ranges)
+    end)
 
-  it("plans large replacement blocks that fit the raised line-pair cap", function()
-    local lines = {}
-    for index = 1, 65 do table.insert(lines, deletion("local value_" .. index .. " = old")) end
-    for index = 1, 64 do table.insert(lines, addition("local value_" .. index .. " = new")) end
+    it("suppresses 1001 ASCII UTF-16 units without failing the plan", function()
+      local prefix = string.rep("a", 1000)
+      local row = plan_and_validate({ deletion(prefix .. "x"), addition(prefix .. "y") }).rows[1]
 
-    local plan = plan_and_validate(lines, { clock = function() return 0 end })
-    local replacements = 0
-    for _, row in ipairs(plan.rows) do
-      if row.kind == "replacement" then replacements = replacements + 1 end
-    end
+      assert.equals("suppressed_replacement", row.kind)
+      assert.is_nil(row.old_ranges)
+      assert.is_nil(row.new_ranges)
+    end)
 
-    assert.equals(65, #plan.rows)
-    assert.equals(64, replacements)
-  end)
+    it("counts non-BMP code points as two UTF-16 units at the 1000-unit boundary", function()
+      local prefix = string.rep("😀", 499)
+      local row = plan_and_validate({ deletion(prefix .. "👍"), addition(prefix .. "👎") }, {
+        clock = function() return 0 end,
+      }).rows[1]
+      local changed_start = #prefix
 
-  it("does not reject exact pairing because of a fixed aggregate cell budget", function()
-    local lines = {}
-    for index = 1, 64 do
-      table.insert(lines, deletion(string.format("local old_value_%02d = source_%02d", index, index)))
-    end
-    for index = 1, 64 do
-      table.insert(lines, addition(string.format("local new_value_%02d = source_%02d", index, index)))
-    end
-
-    local plan = plan_and_validate(lines, { clock = function() return 0 end })
-
-    assert.equals(64, #plan.rows)
-    for _, row in ipairs(plan.rows) do
       assert.equals("replacement", row.kind)
-    end
+      assert.same({ range(changed_start, changed_start + 4) }, row.old_ranges)
+      assert.same({ range(changed_start, changed_start + 4) }, row.new_ranges)
+    end)
+
+    it("suppresses a non-BMP line with 1001 UTF-16 units", function()
+      local prefix = string.rep("😀", 500)
+      local row = plan_and_validate({ deletion(prefix .. "x"), addition(prefix .. "y") }).rows[1]
+
+      assert.equals("suppressed_replacement", row.kind)
+    end)
+
+    it("keeps exact spans for later pairs after a suppressed pair", function()
+      local long_prefix = string.rep("a", 1000)
+      local plan = plan_and_validate({
+        deletion(long_prefix .. "x"),
+        deletion("abc"),
+        addition(long_prefix .. "y"),
+        addition("axc"),
+      })
+
+      assert.is_not_nil(find_row(plan, "suppressed_replacement", 1, 3))
+      local exact = find_row(plan, "replacement", 2, 4)
+      assert.same({ range(1, 2) }, exact.old_ranges)
+      assert.same({ range(1, 2) }, exact.new_ranges)
+    end)
   end)
 
-  it("returns no plan when a mixed block exceeds the hard line-pair cap", function()
-    local lines = {}
-    for index = 1, 129 do table.insert(lines, deletion("old " .. index)) end
-    for index = 1, 128 do table.insert(lines, addition("new " .. index)) end
-
-    local plan, reason = inline_diff.plan(lines, { clock = function() return 0 end })
-
-    assert.is_nil(plan)
-    assert.matches("budget exceeded", reason)
-  end)
-
-  it("returns no plan when a line exceeds the hard token-count cap", function()
-    local old_parts, new_parts = {}, {}
-    for index = 1, 1025 do
-      table.insert(old_parts, "item")
-      table.insert(new_parts, "item")
-      if index < 1025 then
-        table.insert(old_parts, " ")
-        table.insert(new_parts, index == 513 and "\t" or " ")
+  describe("deadline behavior", function()
+    it("interrupts character planning when the injected deadline expires", function()
+      local clock_calls = 0
+      local function advancing_clock()
+        clock_calls = clock_calls + 1
+        return clock_calls >= 4 and 501 or 0
       end
-    end
-    local lines = {
-      deletion(table.concat(old_parts)),
-      addition(table.concat(new_parts)),
-    }
+      local lines = {
+        deletion(string.rep("a", 999) .. "b"),
+        addition(string.rep("a", 999) .. "c"),
+      }
 
-    local plan, reason = inline_diff.plan(lines, { clock = function() return 0 end })
+      local plan, reason = inline_diff.plan(lines, { timeout_ms = 500, clock = advancing_clock })
 
-    assert.is_nil(plan)
-    assert.matches("budget exceeded", reason)
-  end)
+      assert.is_nil(plan)
+      assert.matches("budget exceeded", reason)
+    end)
 
-  it("refines token-heavy lines that exceeded the previous safety cap", function()
-    local old_parts, new_parts = {}, {}
-    for index = 1, 300 do
-      table.insert(old_parts, "item")
-      table.insert(new_parts, "item")
-      if index < 300 then
-        table.insert(old_parts, " ")
-        table.insert(new_parts, index == 150 and "\t" or " ")
+    it("discards all earlier group plans when a later group reaches the deadline", function()
+      local clock_calls = 0
+      local function later_group_timeout()
+        clock_calls = clock_calls + 1
+        return clock_calls >= 4 and 501 or 0
       end
-    end
-    local lines = {
-      deletion(table.concat(old_parts)),
-      addition(table.concat(new_parts)),
-    }
 
-    local row = plan_and_validate(lines, { clock = function() return 0 end }).rows[1]
+      local plans, reason = inline_diff.plan_many({
+        { addition("first") },
+        { addition("second") },
+      }, { timeout_ms = 500, clock = later_group_timeout })
 
-    assert.equals("replacement", row.kind)
-    assert.equals(1, #row.old_ranges)
-    assert.equals(1, row.old_ranges[1].end_col - row.old_ranges[1].start_col)
-    assert.equals(1, #row.new_ranges)
-    assert.equals(1, row.new_ranges[1].end_col - row.new_ranges[1].start_col)
-  end)
-
-  it("refines long identifiers that exceeded the previous character cap", function()
-    local changed_col = #"prefix_" + 300
-    local lines = {
-      deletion("prefix_" .. string.rep("a", 300) .. "x_suffix"),
-      addition("prefix_" .. string.rep("a", 300) .. "y_suffix"),
-    }
-
-    local row = plan_and_validate(lines, { clock = function() return 0 end }).rows[1]
-
-    assert.equals("replacement", row.kind)
-    assert.same({ range(changed_col, changed_col + 1) }, row.old_ranges)
-    assert.same({ range(changed_col, changed_col + 1) }, row.new_ranges)
-  end)
-
-  it("returns no plan when character LCS memory would exceed its hard cap", function()
-    local lines = {
-      deletion(string.rep("a", 2049)),
-      addition(string.rep("a", 2048) .. "b"),
-    }
-
-    local plan, reason = inline_diff.plan(lines, { clock = function() return 0 end })
-
-    assert.is_nil(plan)
-    assert.matches("budget exceeded", reason)
-  end)
-
-  it("interrupts exact LCS work when the injected deadline expires", function()
-    local clock_calls = 0
-    local function advancing_clock()
-      clock_calls = clock_calls + 1
-      return clock_calls >= 4 and 501 or 0
-    end
-    local lines = {
-      deletion(string.rep("a", 1024) .. "b"),
-      addition(string.rep("a", 1024) .. "c"),
-    }
-
-    local plan, reason = inline_diff.plan(lines, { timeout_ms = 500, clock = advancing_clock })
-
-    assert.is_nil(plan)
-    assert.matches("budget exceeded", reason)
-    assert.equals(4, clock_calls)
-  end)
-
-  it("discards earlier group plans when a later group reaches the deadline", function()
-    local clock_calls = 0
-    local function later_group_timeout()
-      clock_calls = clock_calls + 1
-      return clock_calls >= 4 and 501 or 0
-    end
-
-    local plans, reason = inline_diff.plan_many({
-      { addition("first") },
-      { addition("second") },
-    }, { timeout_ms = 500, clock = later_group_timeout })
-
-    assert.is_nil(plans)
-    assert.matches("budget exceeded", reason)
+      assert.is_nil(plans)
+      assert.matches("budget exceeded", reason)
+    end)
   end)
 
   it("gives pure additions and deletions whole-content bright ranges", function()
-    local lines = {
+    local plan = plan_and_validate({
       deletion("removed line"),
       context("unchanged"),
       addition("added line"),
       addition(""),
-    }
-
-    local plan = plan_and_validate(lines)
+    })
 
     assert.same({ range(0, #"removed line") }, find_row(plan, "deletion", 1).old_ranges)
     assert.same({ range(0, #"added line") }, find_row(plan, "addition", nil, 3).new_ranges)
@@ -465,7 +399,6 @@ describe("raccoon.inline_diff", function()
 
   describe("validate", function()
     it("rejects invalid row discriminants and side combinations", function()
-      local add_line = addition("added")
       local invalid_kind = { rows = { { kind = "context" } } }
       local invalid_side = {
         rows = {
@@ -475,8 +408,8 @@ describe("raccoon.inline_diff", function()
             old_line = deletion("removed"),
             old_content = "removed",
             old_ranges = { range(0, 7) },
-            new_index = 1,
-            new_line = add_line,
+            new_index = 2,
+            new_line = addition("added"),
             new_content = "added",
             new_ranges = { range(0, 5) },
           },
@@ -526,21 +459,18 @@ describe("raccoon.inline_diff", function()
 
     it("rejects plans that omit or duplicate a changed source line", function()
       local lines = { deletion("removed"), addition("added") }
-      local missing = {
-        rows = {
-          {
-            kind = "deletion",
-            old_index = 1,
-            old_line = lines[1],
-            old_content = "removed",
-            old_ranges = { range(0, 7) },
-          },
-        },
+      local deletion_row = {
+        kind = "deletion",
+        old_index = 1,
+        old_line = lines[1],
+        old_content = "removed",
+        old_ranges = { range(0, 7) },
       }
+      local missing = { rows = { deletion_row } }
       local duplicate = {
         rows = {
-          missing.rows[1],
-          missing.rows[1],
+          deletion_row,
+          deletion_row,
           {
             kind = "addition",
             new_index = 2,
@@ -582,6 +512,28 @@ describe("raccoon.inline_diff", function()
 
       assert.is_false(valid)
       assert.matches("outside ranges", reason)
+    end)
+
+    it("accepts suppression only for an over-limit pair without ranges", function()
+      local lines = { deletion("short"), addition("other") }
+      local invalid = {
+        rows = {
+          {
+            kind = "suppressed_replacement",
+            old_index = 1,
+            old_line = lines[1],
+            old_content = "short",
+            new_index = 2,
+            new_line = lines[2],
+            new_content = "other",
+          },
+        },
+      }
+
+      local valid, reason = inline_diff.validate(invalid, lines)
+
+      assert.is_false(valid)
+      assert.matches("over%-limit", reason)
     end)
   end)
 end)

@@ -58,10 +58,10 @@ local function ranges_from_plan(plan)
   local result = {}
   for _, row in ipairs(plan.rows) do
     if row.old_index then
-      result[row.old_index] = { content = row.old_content, ranges = row.old_ranges }
+      result[row.old_index] = { content = row.old_content, ranges = row.old_ranges or {} }
     end
     if row.new_index then
-      result[row.new_index] = { content = row.new_content, ranges = row.new_ranges }
+      result[row.new_index] = { content = row.new_content, ranges = row.new_ranges or {} }
     end
   end
   return result
