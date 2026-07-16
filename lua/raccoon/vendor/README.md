@@ -56,11 +56,14 @@ covered by the same BSD 3-Clause license.
 - Original source paths:
   - `packages/diffs/src/utils/parseDiffDecorations.ts`
   - `packages/diffs/src/utils/renderDiffWithHighlighter.ts`
+  - `packages/diffs/src/utils/iterateOverDiff.ts`
 - Copied function or behavior:
   - `pushOrJoinSpan`, including the default `word-alt` rule that joins a
-    single neutral whitespace character between changed spans.
+    single neutral UTF-16 code unit between changed spans.
   - The use of `diffWordsWithSpace` for word spans and `diffChars` for
     character spans.
+  - Positional deletion/addition row pairing within a change block, used as a
+    fallback when Neovim's primary line matcher leaves possible pairs uncovered.
 - Original license: Apache License 2.0
 - License text: `licenses/pierre-diffs.txt`
 - Local destination: `lua/raccoon/intraline.lua`
@@ -69,9 +72,13 @@ covered by the same BSD 3-Clause license.
   - TypeScript tuples became named Lua tables.
   - DOM/Shiki decoration offsets became zero-based, end-exclusive Neovim byte
     ranges after spans are assembled.
+  - JavaScript's one-UTF-16-code-unit join condition is checked before ranges
+    are converted to Neovim byte columns.
   - Adjacent or overlapping final ranges are merged before extmark creation.
-  - Raccoon's existing safety limits and smarter `vim.diff` line alignment
-    remain outside the vendored inline matcher.
+  - Raccoon's safety limits remain outside the vendored inline matcher.
+    `vim.diff` line alignment runs first; Pierre's positional behavior replaces
+    that result only when it cannot cover every possible old/new pair or is
+    bypassed to protect it from an oversized line.
   - The pinned word behavior is the baseline. Raccoon additionally applies
     the pinned character matcher inside structured identifiers when unchanged
     content makes refinement useful; this preserves code-focused changes such

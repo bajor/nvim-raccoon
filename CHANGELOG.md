@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - UTF-8 byte-safe `@pierre/diffs`-compatible word ranges with character refinement for structured identifiers, powered by pinned Lua adaptations of `diff@9.0.0` and Pierre's `word-alt` span policy with no new runtime dependency.
 - Bounded inline-comparison work with whole-line fallback for long lines, large replacement blocks, and large hunks or files.
 
+### Fixed
+- Replacement blocks now fall back to Pierre's positional row pairing when `vim.diff` leaves possible pairs uncovered, so both added and deleted sides keep inline emphasis in moved-line and low-similarity blocks.
+- Oversized lines now disable only their own inline pair instead of suppressing neighboring pairs in the same block.
+- Non-BMP neutral characters now follow Pierre's UTF-16-unit span-joining rule without producing invalid Neovim byte ranges.
+
 ## [0.13.2] - 2026-07-01
 
 ### Fixed

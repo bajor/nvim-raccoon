@@ -173,6 +173,18 @@ describe("raccoon.intraline", function()
       assert_ranges({ { start_col = 0, end_col = 3 } }, new_ranges)
     end)
 
+    it("uses Pierre's UTF-16 unit rule when joining neutral spans", function()
+      local old_ranges, new_ranges = intraline.compute_inline_ranges("a🙂b", "x🙂y")
+      assert_ranges({
+        { start_col = 0, end_col = 1 },
+        { start_col = 5, end_col = 6 },
+      }, old_ranges)
+      assert_ranges({
+        { start_col = 0, end_col = 1 },
+        { start_col = 5, end_col = 6 },
+      }, new_ranges)
+    end)
+
     it("skips lines and sequences above explicit safety limits", function()
       local old_ranges, new_ranges, reason = intraline.compute_inline_ranges(
         "123456", "abcdef", { max_line_length = 5 }
@@ -309,6 +321,25 @@ describe("raccoon.intraline", function()
       assert.same({}, result.unpaired_additions)
     end)
 
+    it("falls back to Pierre row pairing when linematch leaves replacement rows uncovered", function()
+      local block = one_block({
+        "-}",
+        "-return old;",
+        "+if (ready) {",
+        "+return new;",
+        "+}",
+      }, 2, 3)
+      local result = intraline.pair_changed_lines(block)
+
+      assert.equals("incomplete_linematch", result.fallback_reason)
+      assert.same({
+        { deletion_index = 1, addition_index = 1, changed = true },
+        { deletion_index = 2, addition_index = 2, changed = true },
+      }, result.pairs)
+      assert.same({}, result.unpaired_deletions)
+      assert.same({ 3 }, result.unpaired_additions)
+    end)
+
     it("handles add-only and delete-only blocks", function()
       local additions = one_block({ "+one", "+two" }, 0, 2)
       local result = intraline.pair_changed_lines(additions)
@@ -368,14 +399,23 @@ describe("raccoon.intraline", function()
       assert_ranges({ { start_col = 0, end_col = 5 } }, plan.ranges[3])
     end)
 
-    it("skips long lines without losing the parsed change block", function()
+    it("skips a long pair without suppressing shorter pairs in the block", function()
       local content = string.rep("x", 20)
-      local block = one_block({ "-" .. content, "+" .. string.rep("y", 20) }, 1, 1)
+      local block = one_block({
+        "-" .. content,
+        "-return old;",
+        "+" .. string.rep("y", 20),
+        "+return new;",
+      }, 2, 2)
       local hunk = { change_blocks = { block } }
-      local plan = intraline.plan_hunk(hunk, { max_line_length = 10 })
+      local plan = intraline.plan_hunk(hunk, { max_line_length = 15 })
 
-      assert.same({}, plan.ranges)
-      assert.equals("line_too_long", plan.skipped_blocks[1].reason)
+      assert.is_nil(plan.ranges[1])
+      assert_ranges({ { start_col = 7, end_col = 10 } }, plan.ranges[2])
+      assert.is_nil(plan.ranges[3])
+      assert_ranges({ { start_col = 7, end_col = 10 } }, plan.ranges[4])
+      assert.equals(2, #plan.pairs)
+      assert.same({}, plan.skipped_blocks)
     end)
 
     it("enforces hunk and file byte budgets", function()

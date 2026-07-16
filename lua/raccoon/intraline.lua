@@ -49,9 +49,9 @@ local function append_range(ranges, start_col, end_col)
   table.insert(ranges, { start_col = start_col, end_col = end_col })
 end
 
-local function is_one_character(text)
+local function is_one_utf16_code_unit(text)
   local ok, character_count = pcall(vim.str_utfindex, text)
-  return (ok and character_count == 1) or (not ok and #text == 1)
+  return (ok and character_count == 1 and #text <= 3) or (not ok and #text == 1)
 end
 
 -- Mechanically adapted from @pierre/diffs 1.2.12
@@ -66,7 +66,7 @@ local function push_or_join_span(spans, item, enable_join, is_neutral, is_last_i
 
   local previous_is_neutral = not previous.highlighted
   if is_neutral == previous_is_neutral
-      or (is_neutral and is_one_character(item.value) and not previous_is_neutral) then
+      or (is_neutral and is_one_utf16_code_unit(item.value) and not previous_is_neutral) then
     previous.value = previous.value .. item.value
   else
     table.insert(spans, { highlighted = not is_neutral, value = item.value })
@@ -227,10 +227,40 @@ local function next_index(start_index, count)
   return count == 0 and start_index + 1 or start_index + count
 end
 
---- Pair replacement lines using vim.diff's built-in linematch pass.
+-- @pierre/diffs 1.2.12 iterates a change block in split-row order, pairing
+-- deletion and addition content at the same index up to the shorter side.
+local function positional_pairing(deletions, additions, fallback_reason)
+  local result = {
+    pairs = {},
+    unpaired_deletions = {},
+    unpaired_additions = {},
+    fallback_reason = fallback_reason,
+  }
+  local pair_count = math.min(#deletions, #additions)
+  for index = 1, pair_count do
+    table.insert(result.pairs, {
+      deletion_index = index,
+      addition_index = index,
+      changed = true,
+    })
+  end
+  for index = pair_count + 1, #deletions do table.insert(result.unpaired_deletions, index) end
+  for index = pair_count + 1, #additions do table.insert(result.unpaired_additions, index) end
+  return result
+end
+
+local function has_oversized_line(lines, max_line_length)
+  for _, line in ipairs(lines) do
+    if #normalize_line(line.content) > max_line_length then return true end
+  end
+  return false
+end
+
+--- Pair replacement lines using vim.diff, with Pierre's row order as a
+--- bounded fallback when linematch cannot cover every possible pair.
 ---@param block RaccoonChangeBlock
 ---@param opts? table Safety-limit overrides
----@return table result {pairs, unpaired_deletions, unpaired_additions, skipped_reason?}
+---@return table result {pairs, unpaired_deletions, unpaired_additions, skipped_reason?, fallback_reason?}
 function M.pair_changed_lines(block, opts)
   local limits = get_limits(opts)
   local deletions = block and block.deletions or {}
@@ -248,16 +278,9 @@ function M.pair_changed_lines(block, opts)
     for index = 1, #additions do table.insert(result.unpaired_additions, index) end
     return result
   end
-  for _, line in ipairs(deletions) do
-    if #normalize_line(line.content) > limits.max_line_length then result.skipped_reason = "line_too_long" end
-  end
-  for _, line in ipairs(additions) do
-    if #normalize_line(line.content) > limits.max_line_length then result.skipped_reason = "line_too_long" end
-  end
-  if result.skipped_reason then
-    for index = 1, #deletions do table.insert(result.unpaired_deletions, index) end
-    for index = 1, #additions do table.insert(result.unpaired_additions, index) end
-    return result
+  if has_oversized_line(deletions, limits.max_line_length)
+      or has_oversized_line(additions, limits.max_line_length) then
+    return positional_pairing(deletions, additions, "line_too_long_for_linematch")
   end
 
   local old_text = join_block_lines(deletions)
@@ -268,10 +291,7 @@ function M.pair_changed_lines(block, opts)
     linematch = limits.max_change_block_lines,
   })) or nil
   if type(diff_result) ~= "table" then
-    result.skipped_reason = "diff_failed"
-    for index = 1, #deletions do table.insert(result.unpaired_deletions, index) end
-    for index = 1, #additions do table.insert(result.unpaired_additions, index) end
-    return result
+    return positional_pairing(deletions, additions, "linematch_failed")
   end
 
   local paired_deletions = {}
@@ -317,6 +337,9 @@ function M.pair_changed_lines(block, opts)
   end
   for index = 1, #additions do
     if not paired_additions[index] then table.insert(result.unpaired_additions, index) end
+  end
+  if #result.pairs < math.min(#deletions, #additions) then
+    return positional_pairing(deletions, additions, "incomplete_linematch")
   end
   return result
 end

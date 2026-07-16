@@ -188,6 +188,39 @@ describe("raccoon.diff_render", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
+    it("highlights the added and deleted sides after Pierre row fallback", function()
+      local patch = table.concat({
+        "@@ -1,2 +1,3 @@",
+        "-}",
+        "-return old;",
+        "+if (ready) {",
+        "+return new;",
+        "+}",
+      }, "\n")
+      local buf = create_buffer({ "if (ready) {", "return new;", "}" })
+      local ns_id = vim.api.nvim_create_namespace("raccoon_test_flat_pairing_fallback")
+
+      diff_render.apply_flat_hunks(ns_id, buf, diff.parse_patch(patch))
+      local marks = extmarks(buf, ns_id)
+      assert.is_not_nil(find_mark(marks, function(row, col, details)
+        return row == 1 and col == 7 and details.end_col == 10
+            and details.hl_group == "RaccoonAddText"
+      end))
+
+      local virtual = find_mark(marks, function(_, _, details)
+        return details.virt_lines ~= nil
+      end)
+      assert.is_not_nil(virtual)
+      local old_is_highlighted = false
+      for _, chunk in ipairs(virtual[4].virt_lines[2]) do
+        if chunk[1] == "old" and chunk[2] == "RaccoonDeleteText" then
+          old_is_highlighted = true
+        end
+      end
+      assert.is_true(old_is_highlighted)
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
     it("renders an EOF deletion below the final real line", function()
       local patch = "@@ -1,2 +1 @@\n keep\n-deleted at eof"
       local buf = create_buffer({ "keep" })
