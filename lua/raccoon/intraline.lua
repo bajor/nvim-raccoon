@@ -7,17 +7,21 @@
 ---@field addition_index number
 ---@field changed boolean
 
+local jsdiff = require("raccoon.vendor.jsdiff")
+
 local M = {}
 
--- These caps bound the input passed to vim.diff. Exceeding a cap disables only
--- inline emphasis; callers still render the authoritative whole-line diff.
+-- These caps bound the input passed to the inline and line-matching engines.
+-- Exceeding a cap disables only inline emphasis; callers still render the
+-- authoritative whole-line diff.
 M.MAX_LINE_LENGTH = 2000
 M.MAX_CHANGE_BLOCK_LINES = 100
 M.MAX_HUNK_INLINE_BYTES = 64 * 1024
 M.MAX_FILE_INLINE_BYTES = 256 * 1024
 M.MAX_SEQUENCE_PRODUCT = 1000 * 1000
+M.MAX_EDIT_LENGTH = 256
 
-local MIN_COMMON_CHARS_FOR_REFINEMENT = 3
+local MIN_COMMON_CHARACTERS_FOR_IDENTIFIER_REFINEMENT = 3
 
 local function normalize_line(text)
   return (text or ""):gsub("\r$", "")
@@ -31,6 +35,7 @@ local function get_limits(opts)
     max_hunk_inline_bytes = opts.max_hunk_inline_bytes or M.MAX_HUNK_INLINE_BYTES,
     max_file_inline_bytes = opts.max_file_inline_bytes or M.MAX_FILE_INLINE_BYTES,
     max_sequence_product = opts.max_sequence_product or M.MAX_SEQUENCE_PRODUCT,
+    max_edit_length = opts.max_edit_length or M.MAX_EDIT_LENGTH,
   }
 end
 
@@ -44,193 +49,130 @@ local function append_range(ranges, start_col, end_col)
   table.insert(ranges, { start_col = start_col, end_col = end_col })
 end
 
-local function utf8_width(text, byte_index)
-  local first = text:byte(byte_index)
-  if not first or first < 0x80 then return 1 end
+local function is_one_character(text)
+  local ok, character_count = pcall(vim.str_utfindex, text)
+  return (ok and character_count == 1) or (not ok and #text == 1)
+end
 
-  local width
-  if first >= 0xC2 and first <= 0xDF then
-    width = 2
-  elseif first >= 0xE0 and first <= 0xEF then
-    width = 3
-  elseif first >= 0xF0 and first <= 0xF4 then
-    width = 4
+-- Mechanically adapted from @pierre/diffs 1.2.12
+-- packages/diffs/src/utils/parseDiffDecorations.ts. The tuple became a named
+-- Lua table and byte-length conversion is deferred until spans are complete.
+local function push_or_join_span(spans, item, enable_join, is_neutral, is_last_item)
+  local previous = spans[#spans]
+  if not previous or is_last_item or not enable_join then
+    table.insert(spans, { highlighted = not is_neutral, value = item.value })
+    return
+  end
+
+  local previous_is_neutral = not previous.highlighted
+  if is_neutral == previous_is_neutral
+      or (is_neutral and is_one_character(item.value) and not previous_is_neutral) then
+    previous.value = previous.value .. item.value
   else
-    return 1
+    table.insert(spans, { highlighted = not is_neutral, value = item.value })
   end
-
-  if byte_index + width - 1 > #text then return 1 end
-  for offset = 1, width - 1 do
-    local byte = text:byte(byte_index + offset)
-    if not byte or byte < 0x80 or byte > 0xBF then return 1 end
-  end
-
-  -- Reject overlong encodings, UTF-16 surrogates, and values beyond U+10FFFF.
-  local second = text:byte(byte_index + 1)
-  if first == 0xE0 and second < 0xA0 then return 1 end
-  if first == 0xED and second > 0x9F then return 1 end
-  if first == 0xF0 and second < 0x90 then return 1 end
-  if first == 0xF4 and second > 0x8F then return 1 end
-  return width
 end
 
-local function split_characters(text, base_col)
-  local units = {}
-  local byte_index = 1
-  base_col = base_col or 0
-  while byte_index <= #text do
-    local width = utf8_width(text, byte_index)
-    table.insert(units, {
-      text = text:sub(byte_index, byte_index + width - 1),
-      start_col = base_col + byte_index - 1,
-      end_col = base_col + byte_index + width - 1,
-      kind = "character",
-    })
-    byte_index = byte_index + width
+local function ranges_from_spans(spans)
+  local ranges = {}
+  local byte_col = 0
+  for _, span in ipairs(spans) do
+    local end_col = byte_col + #span.value
+    if span.highlighted then append_range(ranges, byte_col, end_col) end
+    byte_col = end_col
   end
-  return units
+  return ranges
 end
 
-local function character_kind(character)
-  local byte = character:byte(1)
-  if #character > 1 then return "unicode" end
-  if (byte >= 48 and byte <= 57) or (byte >= 65 and byte <= 90) or (byte >= 97 and byte <= 122) then
-    return "word"
-  end
-  if character == " " or character == "\t" or character == "\v" or character == "\f" then
-    return "whitespace"
-  end
-  if character == "_" then return "identifier_separator" end
-  return "punctuation"
-end
-
-local function split_words(text)
-  local characters = split_characters(text)
-  local units = {}
-  for _, character in ipairs(characters) do
-    local kind = character_kind(character.text)
-    local previous = units[#units]
-    if previous and previous.kind == kind then
-      previous.text = previous.text .. character.text
-      previous.end_col = character.end_col
+local function ranges_from_changes(changes, enable_join)
+  local deletion_spans = {}
+  local addition_spans = {}
+  for index, item in ipairs(changes) do
+    local is_last_item = index == #changes
+    local is_neutral = not item.added and not item.removed
+    if is_neutral then
+      push_or_join_span(deletion_spans, item, enable_join, true, is_last_item)
+      push_or_join_span(addition_spans, item, enable_join, true, is_last_item)
+    elseif item.removed then
+      push_or_join_span(deletion_spans, item, enable_join, false, is_last_item)
     else
-      table.insert(units, {
-        text = character.text,
-        start_col = character.start_col,
-        end_col = character.end_col,
-        kind = kind,
-      })
+      push_or_join_span(addition_spans, item, enable_join, false, is_last_item)
     end
   end
-  return units
+  return ranges_from_spans(deletion_spans), ranges_from_spans(addition_spans)
 end
 
-local function encode_units(units)
-  local encoded = {}
-  for _, unit in ipairs(units) do
-    if unit.text:find("\n", 1, true) or unit.text:find("\0", 1, true) then return nil end
-    table.insert(encoded, unit.text)
+local function is_ascii_identifier(text)
+  return text:match("^[A-Za-z_][A-Za-z0-9_]*$") ~= nil
+end
+
+local function has_identifier_structure(text)
+  return text:find("_", 1, true) ~= nil
+    or text:find("%l%u") ~= nil
+    or text:find("%d") ~= nil
+end
+
+local function useful_character_refinement(changes, old_value, new_value)
+  local common_characters = 0
+  local has_deletion = false
+  local has_addition = false
+  for _, item in ipairs(changes) do
+    if item.removed then
+      has_deletion = true
+    elseif item.added then
+      has_addition = true
+    else
+      common_characters = common_characters + item.count
+    end
   end
-  if #encoded == 0 then return "" end
-  return table.concat(encoded, "\n") .. "\n"
+  local minimum_common = MIN_COMMON_CHARACTERS_FOR_IDENTIFIER_REFINEMENT
+  if old_value:find("%d") or new_value:find("%d") then minimum_common = 1 end
+  return has_deletion and has_addition and common_characters >= minimum_common
 end
 
-local function diff_units(old_units, new_units, opts)
-  local old_text = encode_units(old_units)
-  local new_text = encode_units(new_units)
-  if not old_text or not new_text then return nil end
-
-  local ok, result = pcall(vim.diff, old_text, new_text, opts)
-  if not ok or type(result) ~= "table" then return nil end
-  return result
-end
-
-local function unit_range(units, start_index, count)
-  if count <= 0 then return nil end
-  local first = units[start_index]
-  local last = units[start_index + count - 1]
-  if not first or not last then return nil end
-  return first.start_col, last.end_col
-end
-
-local function ranges_from_diff(old_units, new_units, diff_result)
-  local old_ranges = {}
-  local new_ranges = {}
-  for _, hunk in ipairs(diff_result) do
-    local old_start, old_count, new_start, new_count = unpack(hunk)
-    local old_range_start, old_range_end = unit_range(old_units, old_start, old_count)
-    local new_range_start, new_range_end = unit_range(new_units, new_start, new_count)
-    if old_range_start then append_range(old_ranges, old_range_start, old_range_end) end
-    if new_range_start then append_range(new_ranges, new_range_start, new_range_end) end
-  end
-  return old_ranges, new_ranges
-end
-
-local function segment(units, start_index, count, text)
-  local start_col, end_col = unit_range(units, start_index, count)
-  if not start_col then return "", 0 end
-  return text:sub(start_col + 1, end_col), start_col
-end
-
-local function contains_refinable_punctuation(units, start_index, count)
-  for index = start_index, start_index + count - 1 do
-    local unit = units[index]
-    if unit and (unit.kind == "punctuation" or unit.kind == "identifier_separator") then return true end
-  end
-  return false
-end
-
-local function common_edge_count(old_characters, new_characters)
-  local shorter = math.min(#old_characters, #new_characters)
-  local prefix = 0
-  while prefix < shorter and old_characters[prefix + 1].text == new_characters[prefix + 1].text do
-    prefix = prefix + 1
+local function refine_change_group(group, limits)
+  local old_parts = {}
+  local new_parts = {}
+  for _, item in ipairs(group) do
+    if item.removed then table.insert(old_parts, item.value) end
+    if item.added then table.insert(new_parts, item.value) end
   end
 
-  local suffix = 0
-  while suffix < shorter - prefix
-      and old_characters[#old_characters - suffix].text == new_characters[#new_characters - suffix].text do
-    suffix = suffix + 1
-  end
-  return prefix + suffix
-end
+  local old_value = table.concat(old_parts)
+  local new_value = table.concat(new_parts)
+  local structured = has_identifier_structure(old_value) or has_identifier_structure(new_value)
+  if not structured or not is_ascii_identifier(old_value) or not is_ascii_identifier(new_value) then return group end
 
-local function should_refine(old_units, new_units, old_start, old_count, new_start, new_count, old_text, new_text)
-  if old_count == 0 or new_count == 0 then return false end
-  if contains_refinable_punctuation(old_units, old_start, old_count)
-      or contains_refinable_punctuation(new_units, new_start, new_count) then
-    return true
-  end
-  if old_count ~= 1 or new_count ~= 1 then return false end
-
-  local old_segment = segment(old_units, old_start, old_count, old_text)
-  local new_segment = segment(new_units, new_start, new_count, new_text)
-  local old_characters = split_characters(old_segment)
-  local new_characters = split_characters(new_segment)
-  local common = common_edge_count(old_characters, new_characters)
-  if common >= MIN_COMMON_CHARS_FOR_REFINEMENT then return true end
-
-  local contains_digit = old_segment:find("%d") or new_segment:find("%d")
-  return contains_digit and common > 0
-end
-
-local function refined_ranges(old_units, new_units, old_start, old_count, new_start, new_count,
-                              old_text, new_text, max_sequence_product)
-  local old_segment, old_base = segment(old_units, old_start, old_count, old_text)
-  local new_segment, new_base = segment(new_units, new_start, new_count, new_text)
-  local old_characters = split_characters(old_segment, old_base)
-  local new_characters = split_characters(new_segment, new_base)
-  if #old_characters * #new_characters > max_sequence_product then return nil end
-
-  local result = diff_units(old_characters, new_characters, {
-    result_type = "indices",
-    algorithm = "minimal",
+  local refined = jsdiff.diff_chars(old_value, new_value, {
+    max_sequence_product = limits.max_sequence_product,
+    max_edit_length = limits.max_edit_length,
   })
-  if not result then return nil end
-  return ranges_from_diff(old_characters, new_characters, result)
+  if not refined or not useful_character_refinement(refined, old_value, new_value) then return group end
+  return refined
 end
 
---- Compute byte ranges for a paired line using only Neovim's built-in diff engine.
+local function refine_identifier_changes(changes, limits)
+  local refined = {}
+  local group = {}
+  local function flush_group()
+    if #group == 0 then return end
+    for _, item in ipairs(refine_change_group(group, limits)) do table.insert(refined, item) end
+    group = {}
+  end
+
+  for _, item in ipairs(changes) do
+    if item.added or item.removed then
+      table.insert(group, item)
+    else
+      flush_group()
+      table.insert(refined, item)
+    end
+  end
+  flush_group()
+  return refined
+end
+
+--- Compute byte ranges for a paired line using the pinned jsdiff/Pierre behavior.
 ---@param old_text string
 ---@param new_text string
 ---@param opts? table Supports mode="word"|"character"|"none" and safety-limit overrides
@@ -255,44 +197,14 @@ function M.compute_inline_ranges(old_text, new_text, opts)
   end
   if old_text == new_text then return {}, {}, nil end
 
-  local old_units = mode == "character" and split_characters(old_text) or split_words(old_text)
-  local new_units = mode == "character" and split_characters(new_text) or split_words(new_text)
-  if #old_units * #new_units > limits.max_sequence_product then
-    return nil, nil, "comparison_too_large"
-  end
-
-  local result = diff_units(old_units, new_units, {
-    result_type = "indices",
-    algorithm = "minimal",
+  local diff_function = mode == "character" and jsdiff.diff_chars or jsdiff.diff_words_with_space
+  local changes, reason = diff_function(old_text, new_text, {
+    max_sequence_product = limits.max_sequence_product,
+    max_edit_length = limits.max_edit_length,
   })
-  if not result then return nil, nil, "diff_failed" end
-  if mode == "character" then
-    local old_ranges, new_ranges = ranges_from_diff(old_units, new_units, result)
-    return old_ranges, new_ranges, nil
-  end
-
-  local old_ranges = {}
-  local new_ranges = {}
-  for _, hunk in ipairs(result) do
-    local old_start, old_count, new_start, new_count = unpack(hunk)
-    local refined
-    if should_refine(old_units, new_units, old_start, old_count, new_start, new_count, old_text, new_text) then
-      refined = { refined_ranges(
-        old_units, new_units, old_start, old_count, new_start, new_count,
-        old_text, new_text, limits.max_sequence_product
-      ) }
-    end
-
-    if refined and refined[1] then
-      for _, range in ipairs(refined[1]) do append_range(old_ranges, range.start_col, range.end_col) end
-      for _, range in ipairs(refined[2]) do append_range(new_ranges, range.start_col, range.end_col) end
-    else
-      local old_range_start, old_range_end = unit_range(old_units, old_start, old_count)
-      local new_range_start, new_range_end = unit_range(new_units, new_start, new_count)
-      if old_range_start then append_range(old_ranges, old_range_start, old_range_end) end
-      if new_range_start then append_range(new_ranges, new_range_start, new_range_end) end
-    end
-  end
+  if not changes then return nil, nil, reason or "diff_failed" end
+  if mode == "word" then changes = refine_identifier_changes(changes, limits) end
+  local old_ranges, new_ranges = ranges_from_changes(changes, mode == "word")
   return old_ranges, new_ranges, nil
 end
 

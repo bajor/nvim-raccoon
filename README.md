@@ -229,7 +229,7 @@ One review session is active at a time. Opening a second PR closes the first unl
 
 Raccoon highlights every changed row with a subdued `RaccoonAdd` or `RaccoonDelete` background. Within paired replacement rows, stronger `RaccoonAddText` and `RaccoonDeleteText` backgrounds mark only the changed words or characters. The same renderer is used by flat PR diffs, deleted virtual lines, commit-viewer grids and previews, maximized diffs, and local **Current changes** views.
 
-The default comparison is word-oriented. Identifier-internal and punctuation-heavy replacements are refined to character ranges when that produces a more precise result. Replacement rows are aligned with Neovim's built-in `vim.diff` line matching; inserted or deleted rows that cannot be paired keep only their whole-line background. Extmark ranges use UTF-8 byte columns, so tabs and multibyte text do not shift the highlighted bytes.
+The default comparison follows `@pierre/diffs` 1.2.12's `word-alt` behavior: words, punctuation, and whitespace are matched with the same `diff@9.0.0` algorithm, including its single-space span joining. Structured identifiers such as `old_timeout` and `new_timeout` are refined with that release's character matcher when enough unchanged content makes the result more precise; short version-like identifiers such as `v1` and `v2` are also refined. Ordinary prose remains word-oriented. Replacement rows are aligned with Neovim's built-in `vim.diff` line matching; inserted or deleted rows that cannot be paired keep only their whole-line background. Extmark ranges use UTF-8 byte columns, so tabs and multibyte text do not shift the highlighted bytes.
 
 Inline comparison is skipped, while whole-line highlighting remains, when any of these safety limits is reached:
 
@@ -238,8 +238,11 @@ Inline comparison is skipped, while whole-line highlighting remains, when any of
 - More than 64 KiB of replacement text in one hunk.
 - More than 256 KiB of replacement text in one file.
 - More than 1,000,000 unit-pair comparisons for one sequence match.
+- More than 256 edit operations in one inline sequence match.
 
 These limits are internal safeguards, not configuration fields. Inline highlighting requires no Node.js process, JavaScript package, external diff executable, network request, or additional Neovim plugin. Native syntax and Tree-sitter foreground colors remain active beneath the diff backgrounds. All six Raccoon diff highlight groups are defined as defaults, so a colorscheme or user configuration can override `RaccoonAdd`, `RaccoonAddText`, `RaccoonDelete`, `RaccoonDeleteText`, `RaccoonAddSign`, and `RaccoonDeleteSign`.
+
+The minimal algorithmic sources are mechanically adapted to Lua and pinned permanently; they never download or check for updates. Exact revisions, copied functions, local modifications, fixture origins, and license locations are recorded in [`lua/raccoon/vendor/README.md`](lua/raccoon/vendor/README.md). The complete BSD 3-Clause and Apache 2.0 texts are preserved under [`licenses/`](licenses/).
 
 ## Commands
 

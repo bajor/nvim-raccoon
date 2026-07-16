@@ -44,6 +44,10 @@ describe("raccoon.intraline", function()
       local old_ranges, new_ranges = intraline.compute_inline_ranges("oldTimeout", "newTimeout")
       assert_ranges({ { start_col = 0, end_col = 3 } }, old_ranges)
       assert_ranges({ { start_col = 0, end_col = 3 } }, new_ranges)
+
+      old_ranges, new_ranges = intraline.compute_inline_ranges("v1", "v2")
+      assert_ranges({ { start_col = 1, end_col = 2 } }, old_ranges)
+      assert_ranges({ { start_col = 1, end_col = 2 } }, new_ranges)
     end)
 
     it("keeps short prose replacements at word granularity", function()
@@ -163,6 +167,12 @@ describe("raccoon.intraline", function()
       assert_ranges({ { start_col = 0, end_col = 3 } }, new_ranges)
     end)
 
+    it("ports Pierre word-alt single-space span joining", function()
+      local old_ranges, new_ranges = intraline.compute_inline_ranges("aa ", "a a")
+      assert_ranges({ { start_col = 0, end_col = 3 } }, old_ranges)
+      assert_ranges({ { start_col = 0, end_col = 3 } }, new_ranges)
+    end)
+
     it("skips lines and sequences above explicit safety limits", function()
       local old_ranges, new_ranges, reason = intraline.compute_inline_ranges(
         "123456", "abcdef", { max_line_length = 5 }
@@ -177,6 +187,13 @@ describe("raccoon.intraline", function()
       assert.is_nil(old_ranges)
       assert.is_nil(new_ranges)
       assert.equals("comparison_too_large", reason)
+
+      old_ranges, new_ranges, reason = intraline.compute_inline_ranges(
+        "abcd", "wxyz", { mode = "character", max_edit_length = 7 }
+      )
+      assert.is_nil(old_ranges)
+      assert.is_nil(new_ranges)
+      assert.equals("max_edit_length_exceeded", reason)
     end)
 
     it("supports none mode and rejects unknown modes", function()
