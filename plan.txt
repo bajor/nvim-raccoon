@@ -1,0 +1,556 @@
+You are working in the GitHub repository:
+
+bajor/nvim-raccoon
+
+Implement inline diff highlighting with exact semantic parity to the pinned
+@pierre/diffs release described below.
+
+This is a complete restart. Previous inline-diff branches and PRs, including
+PR #131 and PR #132, are rejected experiments. Start from the latest main
+branch. Do not cherry-pick or reuse their algorithmic implementation. You may
+inspect them only for integration locations and regression cases.
+
+Read and obey the repository's AGENTS.md before doing anything.
+
+Proceed through research, implementation, testing, commits, push, and a fresh
+draft PR without asking for implementation confirmation.
+
+## Absolute priority
+
+Exact upstream behavior is the primary requirement.
+
+This instruction supersedes any earlier requirement that conflicts with exact
+Pierre behavior.
+
+Do not improve, reinterpret, or hybridize the upstream algorithm. If Pierre's
+output looks less intuitive for a particular input, reproduce it anyway.
+
+In particular, do not add:
+
+- Neovim `vim.diff` line pairing.
+- Line-similarity pairing.
+- Identifier-specific character refinement.
+- A fallback pairing strategy.
+- Custom word-boundary logic.
+- Custom span merging.
+- Grapheme normalization.
+- Additional suppression thresholds.
+- “Smarter” behavior copied from VS Code, GitHub, IntelliJ, or another diff
+  implementation.
+
+## Exact upstream target
+
+Use only these pinned sources:
+
+### @pierre/diffs
+
+Repository:
+https://github.com/pierrecomputer/pierre
+
+Release/tag:
+diffs-v1.2.12
+
+Commit:
+9466c467ae6fc03501b6bca74c12f717d70293a7
+
+Package version:
+1.2.12
+
+License:
+Apache-2.0
+
+Required source inspection:
+
+- packages/diffs/src/utils/parsePatchFiles.ts
+- packages/diffs/src/utils/iterateOverDiff.ts
+- packages/diffs/src/utils/parseDiffFromFile.ts
+- packages/diffs/src/utils/renderDiffWithHighlighter.ts
+- packages/diffs/src/utils/parseDiffDecorations.ts
+- packages/diffs/src/utils/cleanLastNewline.ts
+- packages/diffs/src/renderers/DiffHunksRenderer.ts
+- packages/diffs/src/worker/WorkerPoolManager.ts
+- packages/diffs/src/types.ts
+- relevant upstream tests and fixtures
+- apps/diffshub/components/DiffsHubViewer.tsx
+- apps/diffshub/components/WorkerPoolContext.tsx
+
+Inspect the Diffshub application to confirm which package options it actually
+sets. At this pinned revision it does not override `lineDiffType`, so the
+effective default must be verified as:
+
+- lineDiffType = "word-alt"
+- maxLineDiffLength = 1000
+
+Do not use the moving main branch or the current live website as an unstated
+source of behavior.
+
+### jsdiff
+
+Repository:
+https://github.com/kpdecker/jsdiff
+
+Release/tag:
+v9.0.0
+
+Commit:
+ed13aca03aa25735fafc0645d1185e7a1c68fd8c
+
+Package:
+diff@9.0.0
+
+License:
+BSD-3-Clause
+
+Required source inspection:
+
+- src/diff/base.ts
+- src/diff/word.ts
+- src/diff/character.ts
+- relevant upstream tests and fixtures
+
+## Definition of exact parity
+
+“Exact parity” means that for the same parsed patch and effective options,
+Raccoon produces exactly the same:
+
+1. Context and change groups.
+2. Change-block boundaries.
+3. Deletion/addition row pairings.
+4. Decision to compute or suppress an inline diff.
+5. jsdiff change-object sequence.
+6. Highlighted UTF-16 ranges on the deletion side.
+7. Highlighted UTF-16 ranges on the addition side.
+8. Changed text coverage after conversion to Neovim byte columns.
+
+Pixel-perfect browser rendering is out of scope because Neovim uses native
+syntax highlighting and extmarks instead of Shiki, HAST, CSS, and the DOM.
+Do not describe the result as pixel-identical. It must be semantically exact.
+
+## Required row pairing
+
+Reproduce `iterateOverDiff.ts` exactly.
+
+A contiguous change block containing D deletions and A additions has
+`max(D, A)` split rows.
+
+For zero-based row index i:
+
+- Pair deletion[i] with addition[i] when both exist.
+- A deletion with no addition has whole-line deletion highlighting only.
+- An addition with no deletion has whole-line addition highlighting only.
+- Never realign rows by similarity or content.
+- Never use `vim.diff` to change this pairing.
+
+Examples:
+
+- 2 deletions and 3 additions:
+  - deletion 1 pairs with addition 1
+  - deletion 2 pairs with addition 2
+  - addition 3 is unpaired
+
+- 3 deletions and 1 addition:
+  - deletion 1 pairs with addition 1
+  - deletions 2 and 3 are unpaired
+
+This positional behavior is required even when an inserted line appears at the
+start or middle of a block.
+
+## Required inline algorithm
+
+For every paired deletion/addition row, mechanically reproduce
+`computeLineDiffDecorations` from the pinned release.
+
+Required sequence:
+
+1. Apply the exact `cleanLastNewline` behavior.
+2. Measure line length using JavaScript UTF-16 code units, not UTF-8 bytes,
+   Unicode code points, display cells, or grapheme clusters.
+3. Skip inline decorations when either side contains more than 1000 UTF-16
+   code units.
+4. A line containing exactly 1000 UTF-16 code units remains eligible.
+5. Run `diffWordsWithSpace` from `diff@9.0.0`.
+6. Apply Pierre's exact `word-alt` `pushOrJoinSpan` behavior.
+7. Preserve the `isLastItem` behavior exactly.
+8. Treat `item.value.length === 1` as one JavaScript UTF-16 code unit. Do not
+   reinterpret the condition as “one Unicode character” or “one whitespace
+   character.”
+9. Produce exactly the upstream deletion and addition decorations.
+10. Only after upstream UTF-16 spans are complete, convert them to valid
+    zero-based, end-exclusive Neovim UTF-8 byte columns.
+
+Do not add a second `diffChars` pass. Pierre's pinned Diffshub default is
+`word-alt`, not an automatic word/character hybrid.
+
+Consequently, this example must follow Pierre, even if another result appears
+more precise:
+
+-old_timeout = calculate_timeout(config)
++new_timeout = calculate_timeout(options)
+
+Expected strong spans under Pierre's default:
+
+Deletion:
+- `old_timeout`
+- `config`
+
+Addition:
+- `new_timeout`
+- `options`
+
+Do not refine `old_timeout`/`new_timeout` to only `old`/`new`.
+
+Character mode may be ported only if an existing upstream option requires it,
+but it must not replace the Diffshub default.
+
+## Exact jsdiff port
+
+Vendor the smallest exact source subset necessary to reproduce:
+
+- `diffWordsWithSpace`
+- the synchronous Myers traversal
+- upstream tokenization
+- upstream equality behavior
+- upstream tie-breaking
+- upstream change-object construction
+- `diffChars` only if required for faithfully supporting the upstream option
+
+Mechanically port the algorithm to Lua. Preserve algorithmic control flow and
+tie-breaking. Do not rewrite it from memory.
+
+JavaScript semantic details must be explicitly handled:
+
+- JavaScript strings use UTF-16 code units.
+- `diffChars` tokenization uses JavaScript `Array.from`, which iterates Unicode
+  code points.
+- The word tokenizer uses the exact pinned regular-expression character
+  ranges.
+- CRLF, LF, non-newline whitespace, punctuation, extended Latin, CJK,
+  combining marks, and astral characters must match upstream.
+- Invalid or unsupported input must not silently produce different spans.
+
+Store or expose the upstream UTF-16 range before byte conversion so tests can
+validate both representations.
+
+## Development-time oracle
+
+A temporary Node.js environment outside the repository is allowed solely as a
+development oracle. Node.js must not become a runtime, installation, test-suite,
+or maintenance dependency of Raccoon.
+
+Before implementing the Lua port:
+
+1. Check out the exact Pierre tag and jsdiff tag under `/tmp`.
+2. Verify their commits and licenses.
+3. Build a temporary oracle around the pinned upstream functions.
+4. Generate authoritative fixtures containing:
+   - parsed change groups
+   - positional row pairings
+   - jsdiff change objects
+   - deletion UTF-16 spans
+   - addition UTF-16 spans
+5. Record the exact source revision and deterministic fixture-generation seed.
+
+After implementing:
+
+- Compare the Lua jsdiff port against real `diff@9.0.0`.
+- Compare the complete local planner against the pinned Pierre oracle.
+- Require zero mismatches.
+- Do not publish while any unexplained mismatch remains.
+
+Run at least 10,000 deterministic randomized paired-line comparisons covering:
+
+- ASCII identifiers and prose
+- repeated words and repeated punctuation
+- spaces, multiple spaces, tabs, CR, LF, and CRLF
+- leading and trailing whitespace
+- punctuation-only strings
+- extended Latin
+- decomposed combining sequences
+- CJK
+- BMP symbols
+- emoji and other astral code points
+- zero-width joiners and emoji sequences
+- empty strings
+- completely unrelated strings
+- ambiguous Myers tie-breaking cases
+- lines of 999, 1000, and 1001 UTF-16 code units
+
+Also generate randomized change blocks with unequal line counts and compare the
+complete row-pair and span output against Pierre.
+
+Committed tests must use frozen fixtures and require no Node.js. Document
+fixture provenance and licensing.
+
+## Performance without semantic divergence
+
+Do not introduce Raccoon-only limits such as:
+
+- maximum edit length
+- token-product limits
+- maximum replacement-block lines
+- hunk byte budgets
+- file byte budgets
+
+Those limits change valid Pierre output and therefore violate parity.
+
+The exact upstream 1000-UTF-16-unit per-line suppression rule is allowed and
+required.
+
+If exact eligible comparisons are too expensive on Neovim's main thread:
+
+- Keep the whole-line highlight visible immediately.
+- Run the exact algorithm incrementally using Lua coroutines or scheduled
+  chunks.
+- Yield between Myers iterations without changing their order or result.
+- Cancel stale work through a render generation token.
+- Cache completed results by exact old text, new text, and effective options.
+- Apply final inline extmarks only when the buffer and render generation remain
+  valid.
+
+Do not replace an expensive exact result with a heuristic or whole-line
+fallback. If exact computation cannot be made acceptably responsive without
+changing output, stop and report that engineering limitation rather than
+claiming parity.
+
+## Patch and coordinate model
+
+Port Pierre's context/change grouping semantics while preserving Raccoon's
+GitHub review coordinates.
+
+Each deletion must retain:
+
+- complete content
+- old-side line number
+- post-image anchor line
+- hunk position
+
+Each addition must retain:
+
+- complete content
+- new-side line number
+- hunk position
+
+Requirements:
+
+- Context or a hunk boundary ends the current change block.
+- Multiple hunks never pair across boundaries.
+- `\ No newline at end of file` is metadata, not changed content.
+- CRLF handling must match upstream.
+- Deleted virtual lines must remain virtual and must never become fake GitHub
+  review lines.
+- Existing comment placement and navigation semantics must remain unchanged.
+
+## Rendering
+
+Use one shared semantic planner and one shared rendering layer for:
+
+- flat PR diff buffers
+- deleted virtual lines
+- commit-viewer grid cells
+- commit-viewer file previews
+- maximized commit diffs
+- local commit viewer
+- local “Current changes”
+- working-directory refreshes
+
+Required visual mapping:
+
+- Whole added row: `RaccoonAdd`
+- Added inline decorations: `RaccoonAddText`
+- Whole deleted row: `RaccoonDelete`
+- Deleted inline decorations: `RaccoonDeleteText`
+- Existing add/delete signs remain intact
+
+Paired additions must receive strong inline backgrounds whenever Pierre emits
+addition decorations. This is not optional.
+
+Unpaired additions and deletions receive only whole-line backgrounds, exactly
+as Pierre emits no line-diff decoration without both sides.
+
+Deleted virtual lines must be rendered as multiple chunks:
+
+- marker/sign chunk
+- subdued unchanged deletion chunks
+- strong changed deletion chunks
+
+Preserve full content without arbitrary byte truncation.
+
+Use `hl_mode = "combine"` and deliberate priorities so native syntax
+foregrounds remain visible. Clear only Raccoon's dedicated namespace.
+
+## No runtime dependencies
+
+Do not add:
+
+- Node.js, npm, Bun, Deno, Python, Ruby, or an external CLI requirement
+- a new Neovim plugin
+- a native library
+- a browser or webview
+- Shiki
+- a network request
+- a git submodule
+- an updater or source-sync command
+- code following an unpinned branch
+
+Temporary development-oracle tooling must remain outside the shipped runtime
+and normal test suite.
+
+## Licensing and vendoring
+
+Before copying code:
+
+- verify the exact upstream license at the pinned commit
+- preserve copyright and SPDX notices
+- include the complete required license text
+- document every copied function and mechanical modification
+- document why vendoring is required
+- do not copy compiled, minified, generated, DOM, React, HAST, Shiki, worker,
+  cache, or browser-rendering code
+
+Use a structure such as:
+
+lua/raccoon/vendor/jsdiff.lua
+lua/raccoon/vendor/README.md
+licenses/jsdiff.txt
+licenses/pierre-diffs.txt
+
+The vendor README must record:
+
+- upstream project and repository
+- exact tag and commit
+- package version
+- original source paths
+- copied functions
+- local destination
+- original license
+- every mechanical Lua adaptation
+- fixture provenance
+- vendoring date
+- reason no runtime dependency is used
+
+## Required tests
+
+Add pure tests for:
+
+- exact positional block pairing
+- all equal and unequal block shapes
+- inserted lines at the beginning, middle, and end
+- deleted lines at the beginning, middle, and end
+- add-only and delete-only blocks
+- multiple hunks and context boundaries
+- exact Pierre word-alt output
+- exact upstream Myers tie-breaking
+- repeated words and punctuation
+- empty lines
+- whitespace-only changes
+- leading and trailing whitespace
+- tabs and CRLF
+- no-newline markers
+- extended Latin
+- CJK
+- emoji
+- combining marks
+- zero-width joiner sequences
+- UTF-16-to-UTF-8 mapping
+- exactly 999, 1000, and 1001 UTF-16 units
+- deterministic output
+
+Add real Neovim extmark tests for:
+
+- whole-line groups
+- sign text and sign groups
+- deletion and addition inline groups
+- exact byte start/end columns
+- deleted virtual-line chunk structure
+- valid UTF-8 boundaries
+- namespace clearing
+- reapplication without duplicate marks
+- preservation of unrelated namespaces
+
+Add route tests proving the same oracle-derived spans appear in:
+
+- flat PR buffers
+- commit grid cells
+- file previews
+- maximized views
+- local commits
+- Current changes refreshes
+
+Do not use visual snapshots without exact span assertions.
+
+## Documentation
+
+Document:
+
+- the pinned Pierre and jsdiff revisions
+- the precise definition of semantic parity
+- positional row pairing
+- `word-alt` as the exact default
+- the 1000-UTF-16-unit suppression rule
+- why `old_timeout`/`new_timeout` are whole-token changes
+- UTF-16-to-byte conversion
+- the distinction between semantic parity and browser pixel rendering
+- the absence of runtime JavaScript or external dependencies
+
+Never claim “exact” based only on a green local suite. Exactness requires zero
+mismatches against the pinned executable oracle.
+
+## Workflow
+
+1. Start from the latest `main`.
+2. Run `make test` before modifying code.
+3. Inspect all current parser, renderer, refresh, and review-coordinate routes.
+4. Establish the executable upstream oracle and frozen fixtures before writing
+   the replacement algorithm.
+5. Implement in small, reviewable commits.
+6. Run focused tests after every step.
+7. Run:
+   - make test
+   - make lint
+   - git diff --check
+8. Test under the minimum supported Neovim and current stable Neovim.
+9. Manually inspect representative Lua, TypeScript/Rust, Markdown, Unicode,
+   unequal-block, and 1001-UTF-16-unit diffs.
+10. Push a fresh branch and create a fresh draft PR according to AGENTS.md.
+11. Do not modify or close rejected prior PRs unless explicitly requested.
+
+## Acceptance criteria
+
+The task is complete only when:
+
+1. The complete planner produces zero mismatches against the pinned Pierre
+   oracle.
+2. The Lua jsdiff subset produces zero mismatches against `diff@9.0.0`.
+3. Change blocks and row pairs match `iterateOverDiff.ts` exactly.
+4. Word-alt spans match `computeLineDiffDecorations` and
+   `pushOrJoinSpan` exactly.
+5. No identifier refinement or similarity pairing remains.
+6. Both deleted and added paired rows receive their exact upstream spans.
+7. UTF-16 thresholds and span positions are converted to valid byte columns
+   without changing coverage.
+8. Every Raccoon diff route uses the same exact semantic engine.
+9. Review comments and navigation remain correct.
+10. No new runtime dependency exists.
+11. Vendored code and fixtures are pinned, licensed, and fully documented.
+12. `make test`, `make lint`, minimum-Neovim tests, stable-Neovim tests, and all
+    GitHub checks pass.
+13. The PR documentation explicitly states that semantic behavior is exact but
+    browser pixels are not reproduced.
+14. No “100% exact” claim is made unless the differential oracle reports zero
+    mismatches.
+
+## Final report
+
+Report:
+
+- all files changed
+- architecture and data flow
+- exact upstream tags and commit hashes
+- copied functions and mechanical adaptations
+- licenses and fixture provenance
+- oracle design, seed, case count, and mismatch count
+- tests added
+- commands run and results
+- performance measurements
+- any unavoidable Neovim rendering differences
+- branch, commit hashes, and fresh PR URL
