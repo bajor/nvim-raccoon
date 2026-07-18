@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.3] - 2026-07-18
+
+### Added
+- Documented the optional [nvim-raccoon-diffs](https://github.com/bajor/nvim-raccoon-diffs) extension for stronger word-level inline diff highlighting in supported Raccoon views.
+
 ## [0.13.2] - 2026-07-01
 
 ### Fixed
