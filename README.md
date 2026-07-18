@@ -68,6 +68,31 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 }
 ```
 
+## Inline Diff Extension (Optional)
+
+For stronger word-level highlighting inside changed lines, install
+[nvim-raccoon-diffs](https://github.com/bajor/nvim-raccoon-diffs) after
+raccoon.nvim.
+
+`nvim-raccoon-diffs` is a separate extension plugin. It observes supported
+Raccoon diff views and adds extension-owned highlights for the words or text
+fragments that changed inside paired lines. Raccoon still owns PR opening,
+comments, commit viewer mode, local commit viewing, sync, and merge actions.
+No extra command or keymap is required after the extension is configured.
+
+```lua
+{
+  "bajor/nvim-raccoon-diffs",
+  main = "raccoon_inline_diff",
+  dependencies = { "bajor/nvim-raccoon" },
+  opts = {},
+}
+```
+
+See the
+[nvim-raccoon-diffs README](https://github.com/bajor/nvim-raccoon-diffs) for
+compatibility details and optional diagnostics settings.
+
 ## Configuration
 
 Run `:Raccoon config` to create and open the config file at `~/.config/raccoon/config.json`. A minimal config looks like this:
