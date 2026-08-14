@@ -85,6 +85,7 @@ It restores your last flat-diff location or composer draft when you come back, a
 | `comment_resolve` | `<leader>cr` | Resolve the current thread. |
 | `comment_unresolve` | `<leader>cu` | Unresolve the current thread. |
 | `close` | `<leader>q` | Close the current popup when allowed. `Esc` always works as a fallback. |
+| `copy_commit_ref` | `<leader>cc` | Temporarily switch to commit mode to copy the current commit URL and name, then return to the composer with the draft preserved. |
 
 If a composer contains text, close is blocked until you clear the message or send it.
 
