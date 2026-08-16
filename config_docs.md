@@ -112,7 +112,7 @@ Hide repositories from the `:Raccoon prs` list. Each entry is an `"owner/repo"` 
 
 ```json
 {
-  "excluded_repos": ["Pietia1978/kwztutorial"]
+  "excluded_repos": ["bajor/nvim-racoon"]
 }
 ```
 
