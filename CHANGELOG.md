@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - `:Raccoon prs` now lists open PRs from repositories visible to configured tokens instead of only PRs involving the authenticated user. Bot-authored PRs, such as Dependabot updates, now appear when the token can access their repository.
 - `repos` is now an explicit allowlist: when set, only those repositories are scanned for open PRs; when empty, all token-visible repositories are scanned except entries in `excluded_repos`.
+- Archived repositories discovered from token visibility are skipped before fetching open PRs.
 
 ## [0.13.3] - 2026-07-18
 

@@ -717,6 +717,37 @@ describe("raccoon.ui", function()
       assert.equals("https://github.com/acme/backend/pull/8", prs[1].html_url)
       assert.equals(0, #errors)
     end)
+
+    it("skips archived repos during discovery", function()
+      config.load = function()
+        return {
+          github_host = "github.com",
+          tokens = { acme = "token-a" },
+          repos = {},
+          excluded_repos = {},
+        }, nil
+      end
+      config.get_all_tokens = function()
+        return { { key = "acme", token = "token-a", host = "github.com" } }
+      end
+
+      local pr_repos = {}
+      api.list_repos = function(_, callback)
+        callback({
+          { full_name = "acme/active", archived = false },
+          { full_name = "acme/archived", archived = true },
+        }, nil)
+      end
+      api.list_prs = function(owner, repo, _, callback)
+        table.insert(pr_repos, owner .. "/" .. repo)
+        callback({}, nil)
+      end
+
+      local _, errors = wait_fetch()
+
+      assert.same({ "acme/active" }, pr_repos)
+      assert.equals(0, #errors)
+    end)
   end)
 
   describe("grid_total_height", function()

@@ -89,7 +89,7 @@ For GitHub Enterprise, create a **Classic token** on your enterprise instance at
 |------|---------|
 | array | `[]` |
 
-Allowlist repositories for the `:Raccoon prs` list. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). When set, only open PRs from these repositories are shown. When empty or omitted, Raccoon discovers all repositories accessible by each token and lists open PRs from them.
+Allowlist repositories for the `:Raccoon prs` list. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). When set, only open PRs from these repositories are shown. When empty or omitted, Raccoon discovers all active repositories accessible by each token and lists open PRs from them.
 
 ```json
 {
@@ -108,7 +108,7 @@ The owner in each repo entry must have a matching token in `tokens`.
 Hide repositories from the `:Raccoon prs` list. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). This skip list is applied in both modes:
 
 - If `repos` is set, Raccoon scans only allowlisted repositories minus `excluded_repos`.
-- If `repos` is empty or omitted, Raccoon discovers all token-visible repositories minus `excluded_repos`.
+- If `repos` is empty or omitted, Raccoon discovers all active token-visible repositories minus `excluded_repos`.
 
 ```json
 {

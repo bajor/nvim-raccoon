@@ -116,7 +116,7 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org — string or `{"token": "...", "host": "...", "login": "..."}` for multi-host |
 | `repos` | array | `[]` | Optional allowlist for PR discovery. When set, only these repos are scanned, e.g. `["my-org/backend"]`. |
-| `excluded_repos` | array | `[]` | Repos to skip during PR discovery, e.g. `["my-org/noisy"]`. Applied to both allowlisted and auto-discovered repos. |
+| `excluded_repos` | array | `[]` | Repos to skip during PR discovery, e.g. `["my-org/noisy"]`. Applied to both allowlisted and auto-discovered repos. Archived repos are skipped during auto-discovery. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `sync_interval` | number | `300` | How often (in seconds) to auto-sync with remote (minimum 10) *(formerly `pull_changes_interval`)* |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |

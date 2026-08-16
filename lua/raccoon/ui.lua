@@ -856,7 +856,10 @@ function M.fetch_all_prs(callback)
       elseif repos then
         for _, repo_data in ipairs(repos) do
           local full_name = repo_data.full_name
-          if type(full_name) == "string" and full_name ~= "" and not is_excluded(full_name) then
+          if type(full_name) == "string"
+              and full_name ~= ""
+              and repo_data.archived ~= true
+              and not is_excluded(full_name) then
             local owner, repo = full_name:match("^([^/]+)/(.+)$")
             if owner and repo and not repos_by_name[full_name:lower()] then
               repos_by_name[full_name:lower()] = {
