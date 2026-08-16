@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `repos` is now an explicit allowlist: when set, only those repositories are scanned for open PRs; when empty, all token-visible repositories are scanned except entries in `excluded_repos`.
 - Archived repositories discovered from token visibility are skipped before fetching open PRs.
 
+### Fixed
+- Visual explanation SVG cleanup now authenticates with the configured bypass token so repository rules can allow the post-merge deletion commit.
+
 ## [0.13.3] - 2026-07-18
 
 ### Added
