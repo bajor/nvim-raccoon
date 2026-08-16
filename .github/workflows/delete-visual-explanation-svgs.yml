@@ -10,3 +10,5 @@ permissions:
 jobs:
   delete-visual-explanation-svgs:
     uses: bajor/github-workflows/.github/workflows/delete-visual-explanation-svgs.yml@main
+    secrets:
+      REMOVE_VISUALS_MAIN: ${{ secrets.REMOVE_VISUALS_MAIN }}
