@@ -2,6 +2,7 @@
 ---@field github_host string GitHub host (default: "github.com", set for GitHub Enterprise)
 ---@field tokens table<string, string|{token:string, host:string?, login:string?}> Per-owner/org tokens
 ---@field repos string[] Optional list of repos to show PRs from ("owner/repo" format)
+---@field excluded_repos string[] Optional list of repos to hide from PR discovery ("owner/repo" format)
 ---@field clone_root string Root directory for cloned PR repos
 ---@field sync_interval number Auto-sync interval in seconds (default: 300, minimum: 10)
 
@@ -26,6 +27,7 @@ M.defaults = {
   github_host = "github.com",
   tokens = {},
   repos = {},
+  excluded_repos = {},
   clone_root = vim.fs.joinpath(vim.fn.stdpath("data"), "raccoon", "repos"),
   sync_interval = 300,
   commit_viewer = {
@@ -109,6 +111,7 @@ function M.default_config_template()
     "your-username": "ghp_xxxxxxxxxxxxxxxxxxxx"
   },
   "repos": [],
+  "excluded_repos": [],
   "clone_root": "%s",
   "sync_interval": %d,
   "commit_viewer": {

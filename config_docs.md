@@ -27,7 +27,7 @@ The smallest valid config needs just a token:
 }
 ```
 
-This uses `github.com` as the host, shows open PRs involving you (authored, assigned, review-requested, or commented) from all repos accessible by the token, and uses defaults for everything else.
+This uses `github.com` as the host, shows open PRs from all repositories accessible by the token, and uses defaults for everything else.
 
 ## Required fields
 
@@ -89,7 +89,7 @@ For GitHub Enterprise, create a **Classic token** on your enterprise instance at
 |------|---------|
 | array | `[]` |
 
-Limit the `:Raccoon prs` list to specific repositories. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). When set, only open PRs from these repos that involve you (authored, assigned, review-requested, or commented) are shown. When empty or omitted, PRs involving you from all repos accessible by each token are shown.
+Allowlist repositories for the `:Raccoon prs` list. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). When set, only open PRs from these repositories are shown. When empty or omitted, Raccoon discovers all repositories accessible by each token and lists open PRs from them.
 
 ```json
 {
@@ -98,6 +98,25 @@ Limit the `:Raccoon prs` list to specific repositories. Each entry is an `"owner
 ```
 
 The owner in each repo entry must have a matching token in `tokens`.
+
+### `excluded_repos`
+
+| Type | Default |
+|------|---------|
+| array | `[]` |
+
+Hide repositories from the `:Raccoon prs` list. Each entry is an `"owner/repo"` string matching the repo URL (`github.com/{owner}/{repo}`). This skip list is applied in both modes:
+
+- If `repos` is set, Raccoon scans only allowlisted repositories minus `excluded_repos`.
+- If `repos` is empty or omitted, Raccoon discovers all token-visible repositories minus `excluded_repos`.
+
+```json
+{
+  "excluded_repos": ["Pietia1978/kwztutorial"]
+}
+```
+
+Use `excluded_repos` for repositories with noisy automation PRs or repositories you can access but do not want in the picker.
 
 ### `github_host`
 
@@ -283,6 +302,7 @@ Partial overrides are merged with defaults — you only need to specify keys you
     "work-org": "ghp_work_token"
   },
   "repos": ["your-username/project", "work-org/api"],
+  "excluded_repos": ["your-username/noisy-project"],
   "clone_root": "~/code/pr-reviews",
   "sync_interval": 120,
   "commit_viewer": {
