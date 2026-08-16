@@ -9,47 +9,6 @@ permissions:
 
 jobs:
   delete-visual-explanation-svgs:
-    name: Delete merged visual explanation SVGs
-    if: github.actor != 'github-actions[bot]' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.REMOVE_VISUALS_MAIN }}
-
-      - name: Delete visual explanation SVGs
-        run: |
-          visual_explanations_dir="visual-explanations"
-
-          if [ ! -d "$visual_explanations_dir" ]; then
-            echo "No $visual_explanations_dir directory found."
-            exit 0
-          fi
-
-          mapfile -t svg_files < <(find "$visual_explanations_dir" -type f -name '*.svg' | sort)
-
-          if [ "${#svg_files[@]}" -eq 0 ]; then
-            echo "No visual explanation SVGs found."
-            exit 0
-          fi
-
-          echo "Deleting visual explanation SVGs:"
-          printf '%s\n' "${svg_files[@]}"
-          rm -f "${svg_files[@]}"
-
-          find "$visual_explanations_dir" -depth -type d -empty -delete
-
-      - name: Commit deletion if needed
-        run: |
-          visual_explanations_dir="visual-explanations"
-
-          if git diff --quiet -- "$visual_explanations_dir"; then
-            echo "No visual explanation SVG deletions to commit."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -- "$visual_explanations_dir"
-          git commit -m "Delete visual explanation SVGs after merge"
-          git push
+    uses: bajor/github-workflows/.github/workflows/delete-visual-explanation-svgs.yml@main
+    secrets:
+      REMOVE_VISUALS_MAIN: ${{ secrets.REMOVE_VISUALS_MAIN }}
