@@ -294,11 +294,29 @@ end
 ---@param repo string Repository name
 ---@param token string GitHub token
 ---@param callback fun(prs: table[]|nil, err: string|nil)
-function M.list_prs(owner, repo, token, callback)
+---@param host string|nil GitHub host (captures base URL before vim.schedule to avoid race)
+function M.list_prs(owner, repo, token, callback, host)
+  local base_url = host and compute_api_urls(host) or M.base_url
   vim.schedule(function()
-    local url = string.format("%s/repos/%s/%s/pulls?state=open&per_page=100", M.base_url, owner, repo)
+    local url = string.format("%s/repos/%s/%s/pulls?state=open&per_page=100", base_url, owner, repo)
     local prs, err = fetch_all_pages(url, token)
     callback(prs, err)
+  end)
+end
+
+--- List repositories visible to the authenticated token.
+---@param token string GitHub token
+---@param callback fun(repos: table[]|nil, err: string|nil)
+---@param host string|nil GitHub host (captures base URL before vim.schedule to avoid race)
+function M.list_repos(token, callback, host)
+  local base_url = host and compute_api_urls(host) or M.base_url
+  vim.schedule(function()
+    local url = string.format(
+      "%s/user/repos?affiliation=owner,collaborator,organization_member&visibility=all&per_page=100",
+      base_url
+    )
+    local repos, err = fetch_all_pages(url, token)
+    callback(repos, err)
   end)
 end
 

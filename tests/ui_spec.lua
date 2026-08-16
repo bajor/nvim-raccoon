@@ -1,4 +1,6 @@
 local ui = require("raccoon.ui")
+local api = require("raccoon.api")
+local config = require("raccoon.config")
 local commit_ui = require("raccoon.commit_ui")
 local commits = require("raccoon.commits")
 local localcommits = require("raccoon.localcommits")
@@ -559,6 +561,192 @@ describe("raccoon.ui", function()
       assert.is_false(fetch_called)
       assert.is_nil(ui.state.win)
       assert.equals("Cannot switch PRs with unsent text; clear it or send it first", notify_msg)
+    end)
+  end)
+
+  describe("fetch_all_prs", function()
+    local original_config_load
+    local original_get_all_tokens
+    local original_get_token_for_owner
+    local original_list_prs
+    local original_list_repos
+
+    before_each(function()
+      original_config_load = config.load
+      original_get_all_tokens = config.get_all_tokens
+      original_get_token_for_owner = config.get_token_for_owner
+      original_list_prs = api.list_prs
+      original_list_repos = api.list_repos
+    end)
+
+    after_each(function()
+      config.load = original_config_load
+      config.get_all_tokens = original_get_all_tokens
+      config.get_token_for_owner = original_get_token_for_owner
+      api.list_prs = original_list_prs
+      api.list_repos = original_list_repos
+    end)
+
+    local function wait_fetch()
+      local done = false
+      local result_prs
+      local result_errors
+      ui.fetch_all_prs(function(prs, errors)
+        result_prs = prs
+        result_errors = errors
+        done = true
+      end)
+
+      vim.wait(5000, function()
+        return done
+      end, 10)
+
+      assert.is_true(done)
+      return result_prs, result_errors
+    end
+
+    it("lists all PRs from allowed repos without involves filtering", function()
+      config.load = function()
+        return {
+          github_host = "github.com",
+          tokens = { acme = "token-a" },
+          repos = { "acme/backend" },
+          excluded_repos = {},
+        }, nil
+      end
+      config.get_all_tokens = function()
+        return { { key = "acme", token = "token-a", host = "github.com" } }
+      end
+      config.get_token_for_owner = function(_, owner)
+        if owner == "acme" then return "token-a", "github.com" end
+        return nil, nil
+      end
+
+      local listed = {}
+      api.list_prs = function(owner, repo, token, callback, host)
+        table.insert(listed, { owner = owner, repo = repo, token = token, host = host })
+        callback({
+          {
+            html_url = "https://github.com/acme/backend/pull/7",
+            number = 7,
+            title = "Bump dependency",
+            user = { login = "dependabot[bot]" },
+            base = { repo = { full_name = "acme/backend" } },
+          },
+        }, nil)
+      end
+
+      local prs, errors = wait_fetch()
+
+      assert.equals(1, #listed)
+      assert.same({ owner = "acme", repo = "backend", token = "token-a", host = "github.com" }, listed[1])
+      assert.equals(1, #prs)
+      assert.equals("https://github.com/acme/backend/pull/7", prs[1].html_url)
+      assert.equals(0, #errors)
+    end)
+
+    it("skips excluded repos from the allowlist", function()
+      config.load = function()
+        return {
+          github_host = "github.com",
+          tokens = { acme = "token-a" },
+          repos = { "acme/backend", "acme/noisy" },
+          excluded_repos = { "acme/noisy" },
+        }, nil
+      end
+      config.get_all_tokens = function()
+        return { { key = "acme", token = "token-a", host = "github.com" } }
+      end
+      config.get_token_for_owner = function()
+        return "token-a", "github.com"
+      end
+
+      local listed = {}
+      api.list_prs = function(owner, repo, _, callback)
+        table.insert(listed, owner .. "/" .. repo)
+        callback({}, nil)
+      end
+
+      local _, errors = wait_fetch()
+
+      assert.same({ "acme/backend" }, listed)
+      assert.equals(0, #errors)
+    end)
+
+    it("discovers visible repos and skips excluded repos when no allowlist is configured", function()
+      config.load = function()
+        return {
+          github_host = "github.com",
+          tokens = { acme = "token-a" },
+          repos = {},
+          excluded_repos = { "acme/noisy" },
+        }, nil
+      end
+      config.get_all_tokens = function()
+        return { { key = "acme", token = "token-a", host = "github.com" } }
+      end
+
+      local repo_listed = false
+      local pr_repos = {}
+      api.list_repos = function(token, callback, host)
+        assert.equals("token-a", token)
+        assert.equals("github.com", host)
+        repo_listed = true
+        callback({
+          { full_name = "acme/backend" },
+          { full_name = "acme/noisy" },
+        }, nil)
+      end
+      api.list_prs = function(owner, repo, _, callback)
+        table.insert(pr_repos, owner .. "/" .. repo)
+        callback({
+          {
+            html_url = "https://github.com/acme/backend/pull/8",
+            number = 8,
+            title = "Visible PR",
+            base = { repo = { full_name = "acme/backend" } },
+          },
+        }, nil)
+      end
+
+      local prs, errors = wait_fetch()
+
+      assert.is_true(repo_listed)
+      assert.same({ "acme/backend" }, pr_repos)
+      assert.equals(1, #prs)
+      assert.equals("https://github.com/acme/backend/pull/8", prs[1].html_url)
+      assert.equals(0, #errors)
+    end)
+
+    it("skips archived repos during discovery", function()
+      config.load = function()
+        return {
+          github_host = "github.com",
+          tokens = { acme = "token-a" },
+          repos = {},
+          excluded_repos = {},
+        }, nil
+      end
+      config.get_all_tokens = function()
+        return { { key = "acme", token = "token-a", host = "github.com" } }
+      end
+
+      local pr_repos = {}
+      api.list_repos = function(_, callback)
+        callback({
+          { full_name = "acme/active", archived = false },
+          { full_name = "acme/archived", archived = true },
+        }, nil)
+      end
+      api.list_prs = function(owner, repo, _, callback)
+        table.insert(pr_repos, owner .. "/" .. repo)
+        callback({}, nil)
+      end
+
+      local _, errors = wait_fetch()
+
+      assert.same({ "acme/active" }, pr_repos)
+      assert.equals(0, #errors)
     end)
   end)
 

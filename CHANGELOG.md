@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.4] - 2026-08-16
+
+### Added
+- `excluded_repos` config for hiding specific repositories from `:Raccoon prs` while still discovering all other repositories visible to configured tokens.
+
+### Changed
+- `:Raccoon prs` now lists open PRs from repositories visible to configured tokens instead of only PRs involving the authenticated user. Bot-authored PRs, such as Dependabot updates, now appear when the token can access their repository.
+- `repos` is now an explicit allowlist: when set, only those repositories are scanned for open PRs; when empty, all token-visible repositories are scanned except entries in `excluded_repos`.
+- Archived repositories discovered from token visibility are skipped before fetching open PRs.
+
 ## [0.13.3] - 2026-07-18
 
 ### Added

@@ -115,7 +115,8 @@ See [config_docs.md](config_docs.md) for a detailed reference of every config fi
 |-------|------|---------|-------------|
 | `github_host` | string | `"github.com"` | GitHub host (set to your GHE domain for GitHub Enterprise) |
 | `tokens` | object | `{}` | Token per owner/org — string or `{"token": "...", "host": "...", "login": "..."}` for multi-host |
-| `repos` | array | `[]` | Limit PR list to specific repos, e.g. `["my-org/backend"]`. Only PRs involving you are shown. |
+| `repos` | array | `[]` | Optional allowlist for PR discovery. When set, only these repos are scanned, e.g. `["my-org/backend"]`. |
+| `excluded_repos` | array | `[]` | Repos to skip during PR discovery, e.g. `["my-org/noisy"]`. Applied to both allowlisted and auto-discovered repos. Archived repos are skipped during auto-discovery. |
 | `clone_root` | string | `<nvim data dir>/raccoon/repos` | Where PR branches are cloned for review |
 | `sync_interval` | number | `300` | How often (in seconds) to auto-sync with remote (minimum 10) *(formerly `pull_changes_interval`)* |
 | `shortcuts` | object | see below | Custom keyboard shortcuts (partial overrides merged with defaults) |
@@ -176,6 +177,7 @@ See [shortcuts_docs.md](shortcuts_docs.md) for the full shortcut reference, mode
     "work-org": { "token": "ghp_work_token", "host": "github.mycompany.com" }
   },
   "repos": ["your-username/project", "work-org/api"],
+  "excluded_repos": ["your-username/noisy-project"],
   "clone_root": "~/code/pr-reviews",
   "sync_interval": 120,
   "commit_viewer": {

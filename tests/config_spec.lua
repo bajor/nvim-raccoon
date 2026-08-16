@@ -22,6 +22,7 @@ describe("raccoon.config", function()
     it("has all required default fields", function()
       assert.is_table(config.defaults.tokens)
       assert.is_table(config.defaults.repos)
+      assert.is_table(config.defaults.excluded_repos)
       assert.is_string(config.defaults.clone_root)
       assert.is_number(config.defaults.sync_interval)
       assert.equals(300, config.defaults.sync_interval)
@@ -29,6 +30,10 @@ describe("raccoon.config", function()
 
     it("repos defaults to empty table", function()
       assert.same({}, config.defaults.repos)
+    end)
+
+    it("excluded_repos defaults to empty table", function()
+      assert.same({}, config.defaults.excluded_repos)
     end)
 
     it("has commit_viewer defaults", function()
@@ -206,6 +211,24 @@ describe("raccoon.config", function()
       os.remove(tmpfile)
     end)
 
+    it("loads config with excluded repos", function()
+      local tmpfile = test_tmp_dir .. "/excluded_repos.json"
+      local f = io.open(tmpfile, "w")
+      f:write([[{
+        "tokens": {"acme": "ghp_xxx"},
+        "excluded_repos": ["acme/noisy", "acme/archive"]
+      }]])
+      f:close()
+
+      config.config_path = tmpfile
+      local cfg, err = config.load()
+      assert.is_nil(err)
+      assert.is_not_nil(cfg)
+      assert.same({ "acme/noisy", "acme/archive" }, cfg.excluded_repos)
+
+      os.remove(tmpfile)
+    end)
+
     it("defaults repos to empty table when not specified", function()
       local tmpfile = test_tmp_dir .. "/no_repos.json"
       local f = io.open(tmpfile, "w")
@@ -216,6 +239,7 @@ describe("raccoon.config", function()
       local cfg, err = config.load()
       assert.is_nil(err)
       assert.same({}, cfg.repos)
+      assert.same({}, cfg.excluded_repos)
 
       os.remove(tmpfile)
     end)
