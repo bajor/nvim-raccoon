@@ -178,10 +178,6 @@ function M.apply_highlights(buf, patch)
       local virt_lines = {}
       for _, content in ipairs(contents) do
         local display_content = "- " .. (content or "")
-        -- Truncate if too long
-        if #display_content > 120 then
-          display_content = display_content:sub(1, 117) .. "..."
-        end
         local pad = string.rep(" ", 300)
         table.insert(virt_lines, { { display_content .. pad, "RaccoonDelete" } })
       end
