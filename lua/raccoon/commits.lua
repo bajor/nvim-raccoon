@@ -981,6 +981,7 @@ M._lock_maximize_buf = function(buf) ui.lock_maximize_buf(buf, commit_state.grid
 M._clamp_int = ui.clamp_int
 M._get_state = function() return commit_state end
 M._select_commit = select_commit
+M._maximize_cell = maximize_cell
 M._setup_keymaps = setup_keymaps
 M._render_filetree = function() ui.render_filetree(commit_state) end
 M._build_file_tree = ui.build_file_tree

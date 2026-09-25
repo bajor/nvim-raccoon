@@ -973,6 +973,7 @@ end
 -- Exposed for testing
 M._get_state = function() return local_state end
 M._select_commit = select_commit
+M._maximize_cell = maximize_cell
 M._setup_keymaps = setup_keymaps
 
 return M
