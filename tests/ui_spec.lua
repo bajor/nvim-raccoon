@@ -576,7 +576,7 @@ describe("raccoon.ui", function()
       original_get_all_tokens = config.get_all_tokens
       original_get_token_for_owner = config.get_token_for_owner
       original_list_prs = api.list_prs
-      original_list_repos = api.list_repos
+      original_list_repos = api.list_repos_with_open_prs
     end)
 
     after_each(function()
@@ -584,7 +584,7 @@ describe("raccoon.ui", function()
       config.get_all_tokens = original_get_all_tokens
       config.get_token_for_owner = original_get_token_for_owner
       api.list_prs = original_list_prs
-      api.list_repos = original_list_repos
+      api.list_repos_with_open_prs = original_list_repos
     end)
 
     local function wait_fetch()
@@ -673,80 +673,106 @@ describe("raccoon.ui", function()
       assert.equals(0, #errors)
     end)
 
-    it("discovers visible repos and skips excluded repos when no allowlist is configured", function()
+    local function use_discovery_config(excluded_repos)
       config.load = function()
         return {
           github_host = "github.com",
           tokens = { acme = "token-a" },
           repos = {},
-          excluded_repos = { "acme/noisy" },
+          excluded_repos = excluded_repos,
         }, nil
       end
       config.get_all_tokens = function()
         return { { key = "acme", token = "token-a", host = "github.com" } }
       end
+    end
 
-      local repo_listed = false
-      local pr_repos = {}
-      api.list_repos = function(token, callback, host)
+    local function visible_pr(full_name, number)
+      return {
+        html_url = string.format("https://github.com/%s/pull/%d", full_name, number),
+        number = number,
+        title = "PR " .. number,
+        base = { repo = { full_name = full_name } },
+      }
+    end
+
+    local function record_rest_listing()
+      local rest_repos = {}
+      api.list_prs = function(owner, repo, _, callback)
+        table.insert(rest_repos, owner .. "/" .. repo)
+        vim.schedule(function()
+          callback({ visible_pr(owner .. "/" .. repo, 1) }, nil)
+        end)
+      end
+      return rest_repos
+    end
+
+    it("discovers visible repos from one batched call and skips excluded repos", function()
+      use_discovery_config({ "acme/noisy" })
+      api.list_repos_with_open_prs = function(token, callback, host)
         assert.equals("token-a", token)
         assert.equals("github.com", host)
-        repo_listed = true
         callback({
-          { full_name = "acme/backend" },
-          { full_name = "acme/noisy" },
+          { full_name = "acme/backend", archived = false, open_prs = { visible_pr("acme/backend", 8) } },
+          { full_name = "acme/noisy", archived = false, open_prs = { visible_pr("acme/noisy", 9) } },
         }, nil)
       end
-      api.list_prs = function(owner, repo, _, callback)
-        table.insert(pr_repos, owner .. "/" .. repo)
-        callback({
-          {
-            html_url = "https://github.com/acme/backend/pull/8",
-            number = 8,
-            title = "Visible PR",
-            base = { repo = { full_name = "acme/backend" } },
-          },
-        }, nil)
-      end
+      local rest_repos = record_rest_listing()
 
       local prs, errors = wait_fetch()
 
-      assert.is_true(repo_listed)
-      assert.same({ "acme/backend" }, pr_repos)
-      assert.equals(1, #prs)
-      assert.equals("https://github.com/acme/backend/pull/8", prs[1].html_url)
+      assert.same({}, rest_repos)
+      assert.same({ "https://github.com/acme/backend/pull/8" }, vim.tbl_map(function(pr) return pr.html_url end, prs))
       assert.equals(0, #errors)
     end)
 
     it("skips archived repos during discovery", function()
-      config.load = function()
-        return {
-          github_host = "github.com",
-          tokens = { acme = "token-a" },
-          repos = {},
-          excluded_repos = {},
-        }, nil
-      end
-      config.get_all_tokens = function()
-        return { { key = "acme", token = "token-a", host = "github.com" } }
-      end
-
-      local pr_repos = {}
-      api.list_repos = function(_, callback)
+      use_discovery_config({})
+      api.list_repos_with_open_prs = function(_, callback)
         callback({
-          { full_name = "acme/active", archived = false },
-          { full_name = "acme/archived", archived = true },
+          { full_name = "acme/active", archived = false, open_prs = { visible_pr("acme/active", 1) } },
+          { full_name = "acme/archived", archived = true, open_prs = { visible_pr("acme/archived", 2) } },
         }, nil)
       end
-      api.list_prs = function(owner, repo, _, callback)
-        table.insert(pr_repos, owner .. "/" .. repo)
-        callback({}, nil)
+
+      local prs = wait_fetch()
+
+      assert.same({ "https://github.com/acme/active/pull/1" }, vim.tbl_map(function(pr) return pr.html_url end, prs))
+    end)
+
+    it("lists repos with more open PRs than one batch page via REST and keeps repo order", function()
+      use_discovery_config({})
+      api.list_repos_with_open_prs = function(_, callback)
+        callback({
+          { full_name = "acme/zeta", archived = false, open_prs = { visible_pr("acme/zeta", 3) } },
+          { full_name = "acme/alpha", archived = false, open_prs = nil },
+        }, nil)
+      end
+      local rest_repos = record_rest_listing()
+
+      local prs = wait_fetch()
+
+      assert.same({ "acme/alpha" }, rest_repos)
+      assert.same({
+        "https://github.com/acme/alpha/pull/1",
+        "https://github.com/acme/zeta/pull/3",
+      }, vim.tbl_map(function(pr) return pr.html_url end, prs))
+    end)
+
+    it("keeps PRs from a partial discovery result and reports its error", function()
+      use_discovery_config({})
+      api.list_repos_with_open_prs = function(_, callback)
+        callback({
+          { full_name = "acme/backend", archived = false, open_prs = { visible_pr("acme/backend", 8) } },
+        }, "GraphQL error: Resource protected by organization SAML enforcement.")
       end
 
-      local _, errors = wait_fetch()
+      local prs, errors = wait_fetch()
 
-      assert.same({ "acme/active" }, pr_repos)
-      assert.equals(0, #errors)
+      assert.equals(1, #prs)
+      assert.same({
+        { key = "acme", err = "GraphQL error: Resource protected by organization SAML enforcement." },
+      }, errors)
     end)
   end)
 
