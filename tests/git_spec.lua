@@ -124,6 +124,27 @@ describe("raccoon.git", function()
     end)
   end)
 
+  describe("diff_working_dir_file", function()
+    it("returns an empty patch for an untracked file with NUL bytes, as git does for binary files", function()
+      local repo = vim.fn.tempname()
+      vim.fn.mkdir(repo, "p")
+      vim.fn.system({ "git", "init", "-q", repo })
+      local file = assert(io.open(repo .. "/blob.bin", "wb"))
+      file:write("a\0 b\nc\n")
+      file:close()
+
+      local done, result_patch = false, nil
+      git.diff_working_dir_file(repo, "blob.bin", function(patch)
+        result_patch = patch
+        done = true
+      end)
+      vim.wait(5000, function() return done end)
+      vim.fn.delete(repo, "rf")
+
+      assert.equals("", result_patch)
+    end)
+  end)
+
   describe("get_current_sha", function()
     it("gets SHA for current repo", function()
       local done = false

@@ -407,6 +407,27 @@ describe("raccoon.diff", function()
       assert.equals(2, #hunks[1].lines)
       assert.equals(1, #hunks[2].lines)
     end)
+
+    it("keeps an added line that follows a mid-hunk no-newline marker", function()
+      -- A file gains its final newline, so git marks the old last line inside the hunk.
+      local patch = table.concat({
+        "@@ -1,2 +1,2 @@",
+        " a",
+        "-b",
+        "\\ No newline at end of file",
+        "+b",
+      }, "\n")
+      local lines = diff.parse_patch(patch)[1].lines
+
+      assert.same({ "ctx", "del", "add" }, vim.tbl_map(function(l) return l.type end, lines))
+    end)
+
+    it("reads an omitted header count as one line", function()
+      -- Deleting a one-line file omits the old count.
+      local hunks = diff.parse_patch("@@ -1 +0,0 @@\n-only line")
+
+      assert.equals(1, #hunks[1].changes)
+    end)
   end)
 
   describe("get_changed_lines edge cases", function()

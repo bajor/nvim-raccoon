@@ -821,6 +821,13 @@ local function build_new_file_patch(path, filename)
   if not ok or not lines then
     return nil
   end
+  -- readfile returns NUL bytes as "\n" inside a line. Git treats such files as binary and
+  -- prints no hunks, so return the same empty patch a tracked binary file gets.
+  for _, line in ipairs(lines) do
+    if line:find("\n", 1, true) then
+      return ""
+    end
+  end
   if #lines == 0 then
     return "@@ -0,0 +0,0 @@"
   end

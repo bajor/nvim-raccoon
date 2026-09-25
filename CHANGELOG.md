@@ -7,7 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.13.7] - 2026-09-25
 
 ### Fixed
-- Diff lines whose content starts with `--` or `++` are no longer dropped. Examples are a deleted Lua or SQL comment such as `-- note` (patch line `--- note`), a deleted YAML `---` separator, and an added `++i;` (patch line `+++i;`). These lines were missing from the PR file view, the commit viewer grid, maximize windows, and file stats. Each dropped added line also made every later line in its hunk one number too low, which put diff highlights and review-comment checks on the wrong lines. A hunk body now ends when the line counts in its `@@` header are used up, so real file headers are still ignored.
+- Deleted lines starting with `--` and added lines starting with `++` are no longer dropped from diffs. In a patch they become `---` and `+++` lines, which the parser skipped as if they were file headers. Examples are a deleted Lua or SQL comment `-- note`, a deleted YAML `---` separator, and an added `++i;`. They were missing from the PR file view, the commit viewer grid, maximize windows, and file stats. Each dropped added line also made every later line in its hunk one number too low, which put diff highlights and review-comment checks on the wrong lines. A hunk body now ends when the line counts in its `@@` header are used up, so real file headers are still ignored.
+- Untracked files that contain NUL bytes now show no hunks, the same as tracked binary files. Their generated patch used to split lines at each NUL byte, which showed wrong line contents and line numbers.
 
 ## [0.13.5] - 2026-09-25
 
