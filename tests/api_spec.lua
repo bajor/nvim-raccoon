@@ -377,5 +377,16 @@ describe("raccoon.api edge cases", function()
       assert.same({ { full_name = "acme/api", archived = false, open_prs = {} } }, repos)
       assert.equals("GraphQL error: Resource protected by organization SAML enforcement.", err)
     end)
+
+    it("calls back with an error when the server answers with a non-JSON body", function()
+      mocks.mock_curl({
+        ["api%.github%.com/graphql"] = { status = 502, body = "<html>Bad Gateway</html>", headers = {} },
+      })
+
+      local repos, err = wait_list("github.com")
+
+      assert.same({}, repos)
+      assert.equals("GraphQL API error (502): Unknown error", err)
+    end)
   end)
 end)

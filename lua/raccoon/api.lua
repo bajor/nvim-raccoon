@@ -352,6 +352,13 @@ local function rest_pr_from_graphql(node, full_name)
   }
 end
 
+--- GraphQL list fields may be null, which vim.json.decode returns as vim.NIL
+---@param value any
+---@return table
+local function table_or_empty(value)
+  return type(value) == "table" and value or {}
+end
+
 --- Convert a GraphQL repository node, keeping its open PRs only when the first page holds all of them
 ---@param node table
 ---@return table
@@ -361,7 +368,7 @@ local function visible_repo_from_graphql(node)
   local open_prs = nil
   if type(connection) == "table" and not connection.pageInfo.hasNextPage then
     open_prs = {}
-    for _, pr in ipairs(connection.nodes) do
+    for _, pr in ipairs(table_or_empty(connection.nodes)) do
       if type(pr) == "table" then
         table.insert(open_prs, rest_pr_from_graphql(pr, full_name))
       end
@@ -374,9 +381,10 @@ end
 --- One request covers 100 repositories, instead of one REST request per repository.
 --- Each repo is { full_name, archived, open_prs }. `open_prs` holds REST-shaped PRs, or is nil
 --- when the repo has more open PRs than one page holds; the caller must then list them via REST.
---- `repos` and `err` are both set when GitHub returns partial data, e.g. SSO-protected repos.
+--- `err` is set with the repos gathered so far when GitHub returns partial data (e.g. SSO-protected
+--- repos) or a page fails.
 ---@param token string GitHub token
----@param callback fun(repos: table[]|nil, err: string|nil)
+---@param callback fun(repos: table[], err: string|nil)
 ---@param host string|nil GitHub host (captures GraphQL URL before vim.schedule to avoid race)
 function M.list_repos_with_open_prs(token, callback, host)
   local graphql_url = host and select(2, compute_api_urls(host)) or M.graphql_url
@@ -387,16 +395,18 @@ function M.list_repos_with_open_prs(token, callback, host)
       local data, err = graphql_request(VISIBLE_REPOS_QUERY, variables, token, graphql_url)
       local connection = type(data) == "table" and type(data.viewer) == "table" and data.viewer.repositories
       if type(connection) ~= "table" then
-        callback(nil, err or "GraphQL response has no viewer repositories")
+        callback(repos, err or "GraphQL response has no viewer repositories")
         return
       end
       partial_err = partial_err or err
-      for _, node in ipairs(connection.nodes) do
+      for _, node in ipairs(table_or_empty(connection.nodes)) do
         if type(node) == "table" then
           table.insert(repos, visible_repo_from_graphql(node))
         end
       end
-      cursor = connection.pageInfo.hasNextPage and connection.pageInfo.endCursor or nil
+      -- A string check keeps a null cursor (vim.NIL, which is truthy) from re-requesting page 1 forever.
+      local end_cursor = connection.pageInfo.endCursor
+      cursor = connection.pageInfo.hasNextPage and type(end_cursor) == "string" and end_cursor or nil
     until not cursor
     callback(repos, partial_err)
   end)
@@ -736,14 +746,21 @@ graphql_request = function(query, variables, token, url)
     return nil, "GraphQL request failed: no response"
   end
 
+  -- Proxies and outages can answer with HTML or an empty body; a throw here would skip the caller's callback.
+  local ok, body = pcall(vim.json.decode, response.body or "{}")
+  if not ok or type(body) ~= "table" then
+    body = nil
+  end
+
   if response.status >= 400 then
-    local err_body = vim.json.decode(response.body or "{}") or {}
-    local message = err_body.message or "Unknown error"
+    local message = body and body.message or "Unknown error"
     return nil, ghes_hint(string.format("GraphQL API error (%d): %s", response.status, message), response.status)
   end
 
-  local body = vim.json.decode(response.body or "{}")
-  if body.errors then
+  if not body then
+    return nil, "GraphQL error: response is not valid JSON"
+  end
+  if type(body.errors) == "table" then
     local err_msg = body.errors[1] and body.errors[1].message or "Unknown GraphQL error"
     return body.data, ghes_hint("GraphQL error: " .. err_msg)
   end

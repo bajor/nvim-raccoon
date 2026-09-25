@@ -858,7 +858,7 @@ function M.fetch_all_prs(callback)
       if repo_err then
         table.insert(all_errors, { key = entry.key, err = repo_err })
       end
-      for _, repo_data in ipairs(repos or {}) do
+      for _, repo_data in ipairs(repos) do
         local full_name = repo_data.full_name
         if not repo_data.archived and not is_excluded(full_name) and not repos_by_name[full_name:lower()] then
           local owner, repo = full_name:match("^([^/]+)/(.+)$")

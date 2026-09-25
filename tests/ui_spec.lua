@@ -569,14 +569,14 @@ describe("raccoon.ui", function()
     local original_get_all_tokens
     local original_get_token_for_owner
     local original_list_prs
-    local original_list_repos
+    local original_list_repos_with_open_prs
 
     before_each(function()
       original_config_load = config.load
       original_get_all_tokens = config.get_all_tokens
       original_get_token_for_owner = config.get_token_for_owner
       original_list_prs = api.list_prs
-      original_list_repos = api.list_repos_with_open_prs
+      original_list_repos_with_open_prs = api.list_repos_with_open_prs
     end)
 
     after_each(function()
@@ -584,7 +584,7 @@ describe("raccoon.ui", function()
       config.get_all_tokens = original_get_all_tokens
       config.get_token_for_owner = original_get_token_for_owner
       api.list_prs = original_list_prs
-      api.list_repos_with_open_prs = original_list_repos
+      api.list_repos_with_open_prs = original_list_repos_with_open_prs
     end)
 
     local function wait_fetch()
@@ -734,6 +734,7 @@ describe("raccoon.ui", function()
           { full_name = "acme/archived", archived = true, open_prs = { visible_pr("acme/archived", 2) } },
         }, nil)
       end
+      record_rest_listing()
 
       local prs = wait_fetch()
 
