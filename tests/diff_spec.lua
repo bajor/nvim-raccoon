@@ -369,6 +369,44 @@ describe("raccoon.diff", function()
         end
       end
     end)
+
+    it("keeps changed lines whose content starts with -- or ++", function()
+      local patch = table.concat({
+        "@@ -1,3 +1,3 @@",
+        " local a = 1",
+        "--- old comment",
+        "+++x",
+        " local b = 2",
+      }, "\n")
+      local lines = diff.parse_patch(patch)[1].lines
+
+      assert.same({
+        { type = "ctx", content = "local a = 1", line_num = 1 },
+        { type = "del", content = "-- old comment", line_num = 1 },
+        { type = "add", content = "++x", line_num = 2 },
+        { type = "ctx", content = "local b = 2", line_num = 3 },
+      }, lines)
+    end)
+
+    it("ends a hunk when its header line counts are used up", function()
+      -- A type change (file to symlink) yields two patches for one path.
+      local patch = table.concat({
+        "@@ -1,2 +0,0 @@",
+        "-old",
+        "-same",
+        "diff --git a/f b/f",
+        "new file mode 120000",
+        "--- /dev/null",
+        "+++ b/f",
+        "@@ -0,0 +1 @@",
+        "+target",
+      }, "\n")
+      local hunks = diff.parse_patch(patch)
+
+      assert.equals(2, #hunks)
+      assert.equals(2, #hunks[1].lines)
+      assert.equals(1, #hunks[2].lines)
+    end)
   end)
 
   describe("get_changed_lines edge cases", function()

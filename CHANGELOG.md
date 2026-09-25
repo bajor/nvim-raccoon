@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.7] - 2026-09-25
+
+### Fixed
+- Diff lines whose content starts with `--` or `++` are no longer dropped. Examples are a deleted Lua or SQL comment such as `-- note` (patch line `--- note`), a deleted YAML `---` separator, and an added `++i;` (patch line `+++i;`). These lines were missing from the PR file view, the commit viewer grid, maximize windows, and file stats. Each dropped added line also made every later line in its hunk one number too low, which put diff highlights and review-comment checks on the wrong lines. A hunk body now ends when the line counts in its `@@` header are used up, so real file headers are still ignored.
+
 ## [0.13.5] - 2026-09-25
 
 ### Fixed
