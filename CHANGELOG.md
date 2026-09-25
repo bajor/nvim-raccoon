@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.8] - 2026-09-25
+
+### Added
+- Documented the optional [nvim-raccoon-segments](https://github.com/bajor/nvim-raccoon-segments) companion plugin, which shows AI-written, per-commit segment explanations in the commit viewers. The README now describes it next to [nvim-raccoon-diffs](https://github.com/bajor/nvim-raccoon-diffs) in one "Companion Plugins (Optional)" section.
+
 ## [0.13.7] - 2026-09-25
 
 ### Fixed

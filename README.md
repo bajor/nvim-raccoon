@@ -68,17 +68,19 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 }
 ```
 
-## Inline Diff Extension (Optional)
+## Companion Plugins (Optional)
 
-For stronger word-level highlighting inside changed lines, install
-[nvim-raccoon-diffs](https://github.com/bajor/nvim-raccoon-diffs) after
-raccoon.nvim.
-
-`nvim-raccoon-diffs` is a separate extension plugin. It observes supported
-Raccoon diff views and adds extension-owned highlights for the words or text
-fragments that changed inside paired lines. Raccoon still owns PR opening,
+Two separate plugins extend raccoon.nvim. Each one reads Raccoon's views and
+never patches or replaces the host plugin, so Raccoon still owns PR opening,
 comments, commit viewer mode, local commit viewing, sync, and merge actions.
-No extra command or keymap is required after the extension is configured.
+Install either one after raccoon.nvim.
+
+### nvim-raccoon-diffs: word-level inline diffs
+
+[nvim-raccoon-diffs](https://github.com/bajor/nvim-raccoon-diffs) adds a
+stronger background to the words or text fragments that changed inside paired
+added and deleted lines. Raccoon alone highlights whole lines. It works in the
+supported Raccoon diff views automatically, with no extra command or keymap.
 
 ```lua
 {
@@ -89,9 +91,26 @@ No extra command or keymap is required after the extension is configured.
 }
 ```
 
-See the
-[nvim-raccoon-diffs README](https://github.com/bajor/nvim-raccoon-diffs) for
-compatibility details and optional diagnostics settings.
+### nvim-raccoon-segments: AI explanations per commit
+
+[nvim-raccoon-segments](https://github.com/bajor/nvim-raccoon-segments) uses
+an agent CLI (`opencode`, `claude`, or `codex`) to split each commit into
+logical segments and explain the commit and every segment with text and a
+diagram. Explanations are generated when you ask for them (`<leader>vg`) and
+stored by commit SHA. In the PR commit viewer and `:Raccoon local`, segments
+are tinted in the diff grid, and `<leader>ve` opens the explanation for the
+selected commit. Flat diff mode is unchanged.
+
+```lua
+{
+  "bajor/nvim-raccoon-segments",
+  main = "raccoon_segments",
+  dependencies = { "bajor/nvim-raccoon" },
+  opts = {},
+}
+```
+
+See each plugin's README for requirements, setup options, and keymaps.
 
 ## Configuration
 
