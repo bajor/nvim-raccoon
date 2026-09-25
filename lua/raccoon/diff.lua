@@ -8,20 +8,22 @@ local state = require("raccoon.state")
 local ns_id = vim.api.nvim_create_namespace("raccoon_diff")
 
 --- Parse a unified diff hunk header
---- Returns start_line, count for the new file (right side)
+--- Returns start_line, count for the new file (right side), then the old file's line count
 ---@param header string Hunk header like "@@ -1,4 +1,5 @@"
 ---@return number|nil start_line
 ---@return number|nil count
+---@return number|nil old_count
 function M.parse_hunk_header(header)
   -- Format: @@ -old_start,old_count +new_start,new_count @@
   -- Sometimes count is omitted if it's 1
   local new_start, new_count = header:match("^@@.-+(%d+),?(%d*)%s*@@")
   if not new_start then
-    return nil, nil
+    return nil, nil, nil
   end
+  local old_count = header:match("^@@ %-%d+,?(%d*)")
   new_start = tonumber(new_start)
   new_count = tonumber(new_count) or 1
-  return new_start, new_count
+  return new_start, new_count, tonumber(old_count) or 1
 end
 
 --- Parse a unified diff patch into structured hunks
@@ -40,6 +42,10 @@ function M.parse_patch(patch)
   local hunks = {}
   local current_hunk = nil
   local line_num = 0
+  -- Body lines the current hunk header still promises for each side. The hunk ends when
+  -- both reach 0, so "--- x" and "+++ x" inside it are changed lines, and the file
+  -- headers of a following patch are not.
+  local old_left, new_left = 0, 0
 
   for line in normalized_patch:gmatch("(.-)\n") do
     if line:match("^@@") then
@@ -47,7 +53,7 @@ function M.parse_patch(patch)
       if current_hunk then
         table.insert(hunks, current_hunk)
       end
-      local start_line, count = M.parse_hunk_header(line)
+      local start_line, count, old_count = M.parse_hunk_header(line)
       current_hunk = {
         header = line,
         lines = {},
@@ -56,20 +62,24 @@ function M.parse_patch(patch)
         changes = {},
       }
       line_num = (start_line or 1) - 1
-    elseif current_hunk then
-      if line:match("^%+") and not line:match("^%+%+%+") then
+      old_left, new_left = old_count or 0, count or 0
+    elseif current_hunk and (old_left > 0 or new_left > 0) then
+      if line:match("^%+") then
         -- Added line
         line_num = line_num + 1
+        new_left = new_left - 1
         table.insert(current_hunk.lines, { type = "add", content = line:sub(2), line_num = line_num })
         table.insert(current_hunk.changes, { type = "add", line_num = line_num })
-      elseif line:match("^%-") and not line:match("^%-%-%-") then
+      elseif line:match("^%-") then
         -- Removed line (doesn't increment line number in new file)
         -- Store the content for virtual text display
+        old_left = old_left - 1
         table.insert(current_hunk.lines, { type = "del", content = line:sub(2), line_num = line_num })
         table.insert(current_hunk.changes, { type = "del", line_num = line_num, content = line:sub(2) })
       elseif not line:match("^\\ No newline at end of file$") and (line:match("^%s") or line == "") then
         -- Context line
         line_num = line_num + 1
+        old_left, new_left = old_left - 1, new_left - 1
         table.insert(current_hunk.lines, { type = "ctx", content = line:sub(2), line_num = line_num })
       end
     end
