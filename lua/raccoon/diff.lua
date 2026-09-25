@@ -103,6 +103,27 @@ function M.get_changed_lines(patch)
   return changes
 end
 
+--- Find a hunk's first change in the lines of a wider-context diff of the same change.
+--- Both diffs number lines by the new file, so a change keeps its line_num across them.
+--- The type is matched too because a deleted line shares its line_num with the context
+--- line just above it.
+---@param line_list table[] Lines from parse_patch hunks, in display order
+---@param hunk table|nil Hunk from parse_patch of the same change
+---@return number|nil index 1-based index into line_list, or nil when nothing matches
+function M.find_first_change_line(line_list, hunk)
+  local first_change = hunk and hunk.changes[1]
+  if not first_change then
+    return nil
+  end
+
+  for idx, line_data in ipairs(line_list) do
+    if line_data.type == first_change.type and line_data.line_num == first_change.line_num then
+      return idx
+    end
+  end
+  return nil
+end
+
 --- Check whether a file line is in GitHub PR review diff context.
 --- GitHub accepts review comments on added lines and unchanged context lines
 --- that are shown inside a diff hunk.

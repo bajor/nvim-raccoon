@@ -143,6 +143,7 @@ local function maximize_cell(cell_num)
     get_generation = function() return local_state.select_generation end,
     state = local_state,
     is_working_dir = commit.sha == nil,
+    hunk = hunk_data.hunk,
   })
 end
 

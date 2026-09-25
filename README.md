@@ -326,7 +326,7 @@ Commit mode is read-only. It does not show inline comments, issue notes, thread 
 
 Most vim keybindings are disabled in commit mode to prevent breaking the layout. Only the keys listed above work. Exit with `<leader>cm`. Auto-sync is paused while commit/local viewer mode is active and resumes automatically when you exit.
 
-Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. Close with the configured `close` shortcut or `Esc`.
+Press `<leader>m<N>` to maximize a cell — this opens a floating window with the full file diff, centered on the change shown in that cell. Normal vim navigation works inside (scrolling, search), but page/cell switching is blocked. Close with the configured `close` shortcut or `Esc`.
 
 ### File tree browsing
 

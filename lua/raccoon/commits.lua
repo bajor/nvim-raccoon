@@ -441,6 +441,7 @@ local function maximize_cell(cell_num)
     generation = commit_state.select_generation,
     get_generation = function() return commit_state.select_generation end,
     state = commit_state,
+    hunk = hunk_data.hunk,
   })
 end
 
