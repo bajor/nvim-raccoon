@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] - 2026-09-25
+
+### Changed
+- `:Raccoon prs` (`<leader>pr`) loads much faster when no `repos` allowlist is set. It now fetches visible repositories and their open PRs with one GraphQL request per 100 repositories, instead of one REST request per repository. For an account with 72 active repositories, the list loads in about 3 s instead of about 20 s. Repositories with more than 100 open PRs still load their full PR list through REST, and the `repos` allowlist path is unchanged.
+- When GitHub returns partial results, for example because some organization repositories need SAML single sign-on authorization, the PR list still shows the PRs it received and lists the error above them.
+
 ## [0.13.7] - 2026-09-25
 
 ### Fixed

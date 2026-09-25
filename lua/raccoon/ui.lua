@@ -773,9 +773,7 @@ function M.fetch_all_prs(callback)
     return
   end
 
-  local all_prs = {}
   local all_errors = {}
-  local seen_pr = {}
   local excluded = {}
   for _, repo_str in ipairs(cfg.excluded_repos or {}) do
     if type(repo_str) == "string" then
@@ -787,12 +785,10 @@ function M.fetch_all_prs(callback)
     return excluded[repo_str:lower()] == true
   end
 
-  local function collect_prs(prs, api_err, key, pending_ref)
-    pending_ref.n = pending_ref.n - 1
-
-    if api_err then
-      table.insert(all_errors, { key = key, err = api_err })
-    elseif prs then
+  -- Emit PRs in `repos` order, even when REST fallbacks finish after preloaded repos
+  local function finish(prs_by_repo)
+    local all_prs, seen_pr = {}, {}
+    for _, prs in ipairs(prs_by_repo) do
       for _, pr in ipairs(prs) do
         if pr.html_url and not seen_pr[pr.html_url] then
           seen_pr[pr.html_url] = true
@@ -800,23 +796,30 @@ function M.fetch_all_prs(callback)
         end
       end
     end
-
-    if pending_ref.n == 0 then
-      callback(all_prs, all_errors)
-    end
+    callback(all_prs, all_errors)
   end
 
   local function list_prs_for_repos(repos)
-    if #repos == 0 then
-      callback(all_prs, all_errors)
-      return
+    local prs_by_repo = {}
+    local pending = #repos
+    local function collect(i, prs, api_err, key)
+      if api_err then
+        table.insert(all_errors, { key = key, err = api_err })
+      end
+      prs_by_repo[i] = (not api_err and prs) or {}
+      pending = pending - 1
+      if pending == 0 then finish(prs_by_repo) end
     end
 
-    local pending = { n = #repos }
-    for _, r in ipairs(repos) do
-      api.list_prs(r.owner, r.repo, r.token, function(prs, api_err)
-        collect_prs(prs, api_err, r.key, pending)
-      end, r.host)
+    if pending == 0 then finish(prs_by_repo) end
+    for i, r in ipairs(repos) do
+      if r.open_prs then
+        collect(i, r.open_prs, nil, r.key)
+      else
+        api.list_prs(r.owner, r.repo, r.token, function(prs, api_err)
+          collect(i, prs, api_err, r.key)
+        end, r.host)
+      end
     end
   end
 
@@ -848,25 +851,21 @@ function M.fetch_all_prs(callback)
   local pending_repo_lists = { n = #token_entries }
 
   for _, entry in ipairs(token_entries) do
-    api.list_repos(entry.token, function(repos, repo_err)
+    api.list_repos_with_open_prs(entry.token, function(repos, repo_err)
       pending_repo_lists.n = pending_repo_lists.n - 1
 
+      -- A partial GraphQL result carries both repos and an error; keep both.
       if repo_err then
         table.insert(all_errors, { key = entry.key, err = repo_err })
-      elseif repos then
-        for _, repo_data in ipairs(repos) do
-          local full_name = repo_data.full_name
-          if type(full_name) == "string"
-              and full_name ~= ""
-              and repo_data.archived ~= true
-              and not is_excluded(full_name) then
-            local owner, repo = full_name:match("^([^/]+)/(.+)$")
-            if owner and repo and not repos_by_name[full_name:lower()] then
-              repos_by_name[full_name:lower()] = {
-                owner = owner, repo = repo, token = entry.token, host = entry.host, key = full_name,
-              }
-            end
-          end
+      end
+      for _, repo_data in ipairs(repos) do
+        local full_name = repo_data.full_name
+        if not repo_data.archived and not is_excluded(full_name) and not repos_by_name[full_name:lower()] then
+          local owner, repo = full_name:match("^([^/]+)/(.+)$")
+          repos_by_name[full_name:lower()] = {
+            owner = owner, repo = repo, token = entry.token, host = entry.host, key = full_name,
+            open_prs = repo_data.open_prs,
+          }
         end
       end
 
