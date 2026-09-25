@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.5] - 2026-09-25
+
+### Fixed
+- Deleted lines in the PR file view are shown in full. They were cut at 117 bytes and ended with `...`, which could also split a multibyte UTF-8 character (bajor/nvim-raccoon-diffs#3).
+
 ## [0.13.4] - 2026-08-16
 
 ### Added

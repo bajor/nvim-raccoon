@@ -472,6 +472,23 @@ describe("raccoon.diff", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+    it("shows long deleted lines in full without truncation", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "kept" })
+      local long = "local value = " .. string.rep("ąbc", 80)
+      diff.apply_highlights(buf, "@@ -1,2 +1,1 @@\n-" .. long .. "\n kept")
+
+      local marks = vim.api.nvim_buf_get_extmarks(buf, diff.get_namespace(), 0, -1, { details = true })
+      local text
+      for _, mark in ipairs(marks) do
+        if mark[4].virt_lines then text = mark[4].virt_lines[1][1][1] end
+      end
+      assert.is_not_nil(text)
+      assert.equals("- " .. long, vim.trim(text))
+      assert.is_nil(text:find("...", 1, true))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 
   describe("parse_hunk_header edge cases", function()
