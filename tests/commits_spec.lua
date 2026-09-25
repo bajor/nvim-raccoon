@@ -2,6 +2,7 @@ local commit_ui = require("raccoon.commit_ui")
 local comments = require("raccoon.comments")
 local commits = require("raccoon.commits")
 local config = require("raccoon.config")
+local diff = require("raccoon.diff")
 local git = require("raccoon.git")
 local state = require("raccoon.state")
 
@@ -723,6 +724,35 @@ describe("raccoon.commits keybinding lockdown", function()
       -- Should not error
       commits._lock_maximize_buf(nil)
       commits._lock_maximize_buf(99999)
+    end)
+  end)
+
+  describe("maximize_cell", function()
+    local original_open_maximize = commit_ui.open_maximize
+
+    after_each(function()
+      commit_ui.open_maximize = original_open_maximize
+      state.reset()
+    end)
+
+    it("passes the cell's hunk so the maximized diff centers on it", function()
+      local captured
+      commit_ui.open_maximize = function(opts) captured = opts end
+      local cell_hunk = diff.parse_patch("@@ -9 +9 @@\n-old\n+new")[1]
+      local cs = commits._get_state()
+      cs.pr_commits = { { sha = "aaaa", message = "commit 1" } }
+      cs.selected_index = 1
+      cs.grid_rows, cs.grid_cols, cs.current_page = 2, 2, 1
+      cs.all_hunks = {
+        { hunk = diff.parse_patch("@@ -1 +1 @@\n-a\n+b")[1], filename = "a.lua" },
+        { hunk = cell_hunk, filename = "a.lua" },
+      }
+      state.session = state.session or {}
+      state.session.clone_path = "/tmp/fake"
+
+      commits._maximize_cell(2)
+
+      assert.equals(cell_hunk, captured.hunk)
     end)
   end)
 end)

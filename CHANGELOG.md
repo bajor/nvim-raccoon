@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.6] - 2026-09-25
+
+### Fixed
+- Maximizing a commit viewer grid cell (`<leader>m<N>`) now opens the full-file diff with the cursor on the first change of that cell's hunk, centered in the window. It previously opened at the top of the file, so hunks further down had to be found by scrolling (#99, #54).
+- The local commit viewer's file picker (`<leader>mf`) now opens the chosen file centered on its first hunk, because it maximizes that hunk's grid cell.
+
 ## [0.13.5] - 2026-09-25
 
 ### Fixed

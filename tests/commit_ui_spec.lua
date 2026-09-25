@@ -380,4 +380,89 @@ describe("raccoon.commit_ui", function()
     -- A small width that fits should pass through unchanged
     assert.equals(10, commit_ui.compute_effective_sidebar_width(cols, 10))
   end)
+
+  describe("open_maximize", function()
+    local git = require("raccoon.git")
+    local diff = require("raccoon.diff")
+    local ns_id = vim.api.nvim_create_namespace("raccoon_commit_ui_spec")
+    local original_show_commit_file = git.show_commit_file
+
+    -- The commit inserts "added" after line 10 and deletes line 30 of an 80-line file.
+    local FILE_LINES = 80
+    local ADDED_AFTER = 10
+    local DELETED_LINE = 30
+
+    -- The same commit as the grid shows it with 3 lines of context.
+    local GRID_PATCH = table.concat({
+      "@@ -8,6 +8,7 @@",
+      " line 8", " line 9", " line 10",
+      "+added",
+      " line 11", " line 12", " line 13",
+      "@@ -27,7 +28,6 @@",
+      " line 27", " line 28", " line 29",
+      "-line 30",
+      " line 31", " line 32", " line 33",
+    }, "\n")
+
+    local function full_file_patch()
+      local lines = { "@@ -1,80 +1,80 @@" }
+      for i = 1, FILE_LINES do
+        table.insert(lines, (i == DELETED_LINE and "-" or " ") .. "line " .. i)
+        if i == ADDED_AFTER then
+          table.insert(lines, "+added")
+        end
+      end
+      return table.concat(lines, "\n")
+    end
+
+    local function open(hunk)
+      local s = { grid_rows = 2, grid_cols = 2 }
+      commit_ui.open_maximize({
+        ns_id = ns_id,
+        repo_path = "/repo",
+        sha = "abc123",
+        filename = "file.txt",
+        generation = 1,
+        get_generation = function() return 1 end,
+        state = s,
+        hunk = hunk,
+      })
+      return s
+    end
+
+    before_each(function()
+      git.show_commit_file = function(_, _, _, callback) callback(full_file_patch(), nil) end
+    end)
+
+    after_each(function()
+      git.show_commit_file = original_show_commit_file
+    end)
+
+    it("centers each grid hunk's first change in a file with several hunks", function()
+      local grid_hunks = diff.parse_patch(GRID_PATCH)
+      local expected_lines = { "added", "line " .. DELETED_LINE }
+
+      for i, hunk in ipairs(grid_hunks) do
+        local s = open(hunk)
+        local win = s.maximize_win
+        local cursor = vim.api.nvim_win_get_cursor(win)[1]
+        local cursor_text = vim.api.nvim_buf_get_lines(s.maximize_buf, cursor - 1, cursor, false)[1]
+        local above = cursor - vim.fn.line("w0", win)
+        local below = vim.fn.line("w$", win) - cursor
+        commit_ui.close_win_pair(s, "maximize_win", "maximize_buf")
+
+        assert.equals(expected_lines[i], cursor_text)
+        assert.is_true(math.abs(above - below) <= 1,
+          ("hunk %d: %d lines above cursor, %d below"):format(i, above, below))
+      end
+    end)
+
+    it("opens at the top of the file when no grid hunk is given", function()
+      local s = open(nil)
+      local cursor = vim.api.nvim_win_get_cursor(s.maximize_win)[1]
+      commit_ui.close_win_pair(s, "maximize_win", "maximize_buf")
+
+      assert.equals(1, cursor)
+    end)
+  end)
 end)

@@ -143,6 +143,7 @@ local function maximize_cell(cell_num)
     get_generation = function() return local_state.select_generation end,
     state = local_state,
     is_working_dir = commit.sha == nil,
+    hunk = hunk_data.hunk,
   })
 end
 
@@ -972,6 +973,7 @@ end
 -- Exposed for testing
 M._get_state = function() return local_state end
 M._select_commit = select_commit
+M._maximize_cell = maximize_cell
 M._setup_keymaps = setup_keymaps
 
 return M

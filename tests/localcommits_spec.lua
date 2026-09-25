@@ -1,4 +1,5 @@
 local commit_ui = require("raccoon.commit_ui")
+local diff = require("raccoon.diff")
 local git = require("raccoon.git")
 local localcommits = require("raccoon.localcommits")
 local state = require("raccoon.state")
@@ -242,6 +243,34 @@ describe("raccoon.localcommits", function()
       local expected = commit_ui.compute_grid_context(3)
       localcommits._select_commit(1)
       assert.equals(expected, captured_context)
+    end)
+  end)
+
+  describe("maximize_cell", function()
+    local original_open_maximize = commit_ui.open_maximize
+
+    after_each(function()
+      commit_ui.open_maximize = original_open_maximize
+      state.reset()
+    end)
+
+    it("passes the cell's hunk so the maximized diff centers on it", function()
+      local captured
+      commit_ui.open_maximize = function(opts) captured = opts end
+      local cell_hunk = diff.parse_patch("@@ -9 +9 @@\n-old\n+new")[1]
+      local ls = localcommits._get_state()
+      ls.branch_commits = { { sha = "aaaa", message = "commit 1" } }
+      ls.selected_index = 1
+      ls.grid_rows, ls.grid_cols, ls.current_page = 2, 2, 1
+      ls.all_hunks = {
+        { hunk = diff.parse_patch("@@ -1 +1 @@\n-a\n+b")[1], filename = "a.lua" },
+        { hunk = cell_hunk, filename = "a.lua" },
+      }
+      ls.repo_path = "/tmp/fake"
+
+      localcommits._maximize_cell(2)
+
+      assert.equals(cell_hunk, captured.hunk)
     end)
   end)
 

@@ -976,8 +976,9 @@ function M._set_preview_empty(buf, win, filename, msg)
   end
 end
 
---- Open a maximize floating window for a full-file diff
----@param opts table {ns_id, repo_path, sha, filename, commit_message, generation, ...}
+--- Open a maximize floating window for a full-file diff.
+--- Centers the view on opts.hunk (a grid cell's hunk) when given, else opens at the top.
+---@param opts table {ns_id, repo_path, sha, filename, commit_message, generation, hunk?, ...}
 function M.open_maximize(opts)
   local git = require("raccoon.git")
 
@@ -1001,7 +1002,7 @@ function M.open_maximize(opts)
     for _, hunk in ipairs(hunks) do
       for _, line_data in ipairs(hunk.lines) do
         table.insert(lines, line_data.content or "")
-        table.insert(hl_lines, { type = line_data.type })
+        table.insert(hl_lines, line_data)
       end
     end
 
@@ -1069,6 +1070,12 @@ function M.open_maximize(opts)
     vim.wo[win].winbar = " " .. opts.filename .. "%=%#Comment# " .. close_hint .. " %*"
     vim.wo[win].signcolumn = "yes:1"
     vim.wo[win].wrap = true
+
+    local focus_line = diff.find_first_change_line(hl_lines, opts.hunk)
+    if focus_line then
+      vim.api.nvim_win_set_cursor(win, { focus_line, 0 })
+      vim.api.nvim_win_call(win, function() vim.cmd("normal! zz") end)
+    end
 
     local skip_keys
     if #change_starts > 0 then
