@@ -290,4 +290,103 @@ describe("raccoon.api edge cases", function()
       assert.equals("file level body", result_comment.body)
     end)
   end)
+
+  describe("list_repos_with_open_prs", function()
+    after_each(function()
+      mocks.restore()
+    end)
+
+    local function repo_node(full_name, opts)
+      return {
+        nameWithOwner = full_name,
+        isArchived = opts.archived or false,
+        pullRequests = { pageInfo = { hasNextPage = opts.more_prs or false }, nodes = opts.prs or {} },
+      }
+    end
+
+    local function graphql_page(nodes, next_cursor, errors)
+      return mocks.api_response({
+        data = { viewer = { repositories = {
+          pageInfo = { hasNextPage = next_cursor ~= nil, endCursor = next_cursor or vim.NIL },
+          nodes = nodes,
+        } } },
+        errors = errors,
+      })
+    end
+
+    local function wait_list(host)
+      local done, result_repos, result_err = false, nil, nil
+      api.list_repos_with_open_prs("ghp_fake", function(repos, err)
+        result_repos, result_err, done = repos, err, true
+      end, host)
+      vim.wait(5000, function() return done end, 10)
+      assert.is_true(done)
+      return result_repos, result_err
+    end
+
+    it("pages through repos on the token's host and maps open PRs to the REST shape", function()
+      local recorded = mocks.mock_curl({
+        ["git%.corp%.example%.com/api/graphql"] = function(opts)
+          if vim.json.decode(opts.body).variables.cursor == nil then
+            return graphql_page({
+              repo_node("acme/api", { prs = {
+                { number = 7, title = "Bump", url = "https://git.corp.example.com/acme/api/pull/7",
+                  updatedAt = "2026-09-20T10:00:00Z", author = { login = "dependabot", __typename = "Bot" } },
+                { number = 8, title = "Ghost", url = "https://git.corp.example.com/acme/api/pull/8",
+                  updatedAt = "2026-09-21T10:00:00Z", author = vim.NIL },
+              } }),
+              vim.NIL,
+            }, "cursor-1")
+          end
+          return graphql_page({ repo_node("acme/busy", { archived = true, more_prs = true }) }, nil)
+        end,
+      })
+
+      local repos, err = wait_list("git.corp.example.com")
+
+      assert.is_nil(err)
+      assert.equals(2, #recorded)
+      assert.equals("cursor-1", vim.json.decode(recorded[2].body).variables.cursor)
+      assert.same({
+        {
+          full_name = "acme/api",
+          archived = false,
+          open_prs = {
+            { number = 7, title = "Bump", html_url = "https://git.corp.example.com/acme/api/pull/7",
+              updated_at = "2026-09-20T10:00:00Z", user = { login = "dependabot[bot]" },
+              base = { repo = { full_name = "acme/api" } } },
+            { number = 8, title = "Ghost", html_url = "https://git.corp.example.com/acme/api/pull/8",
+              updated_at = "2026-09-21T10:00:00Z", base = { repo = { full_name = "acme/api" } } },
+          },
+        },
+        { full_name = "acme/busy", archived = true },
+      }, repos)
+    end)
+
+    it("returns repos from a partial response together with the GraphQL error", function()
+      mocks.mock_curl({
+        ["api%.github%.com/graphql"] = graphql_page(
+          { repo_node("acme/api", {}), vim.NIL },
+          nil,
+          { { message = "Resource protected by organization SAML enforcement." } }
+        ),
+      })
+
+      local repos, err = wait_list("github.com")
+
+      assert.same({ { full_name = "acme/api", archived = false, open_prs = {} } }, repos)
+      assert.equals("GraphQL error: Resource protected by organization SAML enforcement.", err)
+    end)
+
+    it("calls back with an error when the server answers with a non-JSON body", function()
+      mocks.mock_curl({
+        ["api%.github%.com/graphql"] = { status = 502, body = "<html>Bad Gateway</html>", headers = {} },
+      })
+
+      local repos, err = wait_list("github.com")
+
+      assert.same({}, repos)
+      assert.equals("GraphQL API error (502): Unknown error", err)
+    end)
+  end)
 end)
